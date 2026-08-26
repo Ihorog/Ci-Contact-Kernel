@@ -1,0 +1,19 @@
+{
+  "name": "ci-contact-kernel",
+  "version": "0.1.0",
+  "description": "Ci Contact Kernel / Universal Control Core minimal implementation",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "5.2.1"
+  },
+  "devDependencies": {
+    "supertest": "7.2.2"
+  }
+}

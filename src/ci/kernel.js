@@ -311,7 +311,11 @@ function createKernel(options = {}) {
       nextSuggestedAction
     };
 
-    await memoryStore.append(memoryRecord);
+    try {
+      await memoryStore.append(memoryRecord);
+    } catch (appendError) {
+      memoryRecord.error = memoryRecord.error || appendError.message;
+    }
 
     return {
       signal,

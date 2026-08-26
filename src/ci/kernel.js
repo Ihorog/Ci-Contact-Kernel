@@ -74,8 +74,8 @@ function evaluatePermission(signal, classification) {
   const permissions = signal.permissions || {};
   const haystack = `${signal.text || ''} ${JSON.stringify(signal.payload || {})}`.toLowerCase();
   const required = new Set();
-  const addRequired = (allowed, key) => {
-    if (allowed) required.add(key);
+  const addRequired = (isRequired, key) => {
+    if (isRequired) required.add(key);
   };
 
   addRequired(classification === 'repo_action', 'repo_write');

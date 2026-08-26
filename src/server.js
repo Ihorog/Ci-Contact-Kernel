@@ -7,7 +7,7 @@ function createRateLimiter({ windowMs, maxRequests }) {
 
   return (req, res, next) => {
     const now = Date.now();
-    const key = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+    const key = req.ip || 'unknown';
     const bucket = hits.get(key);
 
     if (!bucket || now > bucket.resetAt) {

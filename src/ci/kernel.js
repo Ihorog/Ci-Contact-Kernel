@@ -53,15 +53,15 @@ function classifySignal(signal) {
 
   const haystack = `${signal.text} ${JSON.stringify(signal.payload || {})}`.toLowerCase();
 
-  if (/(repo|repository|branch|commit|merge|pull request|git push|push to repo|delete file)/.test(haystack)) return 'repo_action';
-  if (/(device|sensor|hardware|camera)/.test(haystack)) return 'device_action';
-  if (/(deploy|external api|service action|call api|webhook post)/.test(haystack)) return 'service_action';
-  if (/(remember|memory|recall)/.test(haystack)) return 'memory';
-  if (/(fact|status|state)/.test(haystack)) return 'fact';
-  if (/(intent|want|need|goal|plan)/.test(haystack)) return 'intent';
-  if (/(task|todo|implement|build)/.test(haystack)) return 'task';
+  if (/\b(repo|repository|branch|commit|merge|pull request|git push|push to repo|delete file)\b/.test(haystack)) return 'repo_action';
+  if (/\b(device|sensor|hardware|camera)\b/.test(haystack)) return 'device_action';
+  if (/\b(deploy|external api|service action|call api|webhook post)\b/.test(haystack)) return 'service_action';
+  if (/\b(remember|memory|recall)\b/.test(haystack)) return 'memory';
+  if (/\b(fact|status|state)\b/.test(haystack)) return 'fact';
+  if (/\b(intent|want|need|goal|plan)\b/.test(haystack)) return 'intent';
+  if (/\b(task|todo|implement|build)\b/.test(haystack)) return 'task';
   if (signal.source === 'webhook') return 'event';
-  if (/(webhook|event|trigger)/.test(haystack)) return 'event';
+  if (/\b(webhook|event|trigger)\b/.test(haystack)) return 'event';
 
   return 'unknown';
 }
@@ -73,18 +73,21 @@ function routeNode(classification) {
 function evaluatePermission(signal, classification) {
   const permissions = signal.permissions || {};
   const haystack = `${signal.text || ''} ${JSON.stringify(signal.payload || {})}`.toLowerCase();
-  const required = [];
+  const required = new Set();
+  const addRequired = (allowed, key) => {
+    if (allowed) required.add(key);
+  };
 
-  if (classification === 'repo_action') required.push('repo_write');
-  if (classification === 'device_action') required.push('device_action');
-  if (classification === 'service_action') required.push('external_api_write');
-  if (/(repo|repository|branch|commit|merge|pull request|git push|push to repo|delete file)/.test(haystack)) required.push('repo_write');
-  if (/(device|sensor|hardware|camera)/.test(haystack)) required.push('device_action');
-  if (/(api write|external api|service action|service write|call api|webhook post|deploy)/.test(haystack)) required.push('external_api_write');
-  if (/deploy/.test(haystack)) required.push('deploy');
-  if (/(delete|destroy|drop|remove|truncate)/.test(haystack)) required.push('destructive_action');
+  addRequired(classification === 'repo_action', 'repo_write');
+  addRequired(classification === 'device_action', 'device_action');
+  addRequired(classification === 'service_action', 'external_api_write');
+  addRequired(/\b(repo|repository|branch|commit|merge|pull request|git push|push to repo|delete file)\b/.test(haystack), 'repo_write');
+  addRequired(/\b(device|sensor|hardware|camera)\b/.test(haystack), 'device_action');
+  addRequired(/\b(api write|external api|service action|service write|call api|webhook post|deploy)\b/.test(haystack), 'external_api_write');
+  addRequired(/\bdeploy\b/.test(haystack), 'deploy');
+  addRequired(/\b(delete|destroy|drop|remove|truncate)\b/.test(haystack), 'destructive_action');
 
-  const dedupedRequired = [...new Set(required)];
+  const dedupedRequired = [...required];
 
   if (classification === 'unknown') {
     return {

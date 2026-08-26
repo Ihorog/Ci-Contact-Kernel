@@ -6,7 +6,8 @@
   <title>Ci Contact Widget</title>
   <style>
     body { font-family: system-ui, sans-serif; margin: 2rem; background: #f5f7fb; color: #111; }
-    h1 { margin-top: 0; }
+    .ci-logo { height: 48px; vertical-align: middle; margin-right: 0.75rem; }
+    h1 { margin-top: 0; display: flex; align-items: center; }
     .grid { display: grid; gap: 1rem; grid-template-columns: 1fr 1fr; }
     .card { background: #fff; border: 1px solid #d7dfef; border-radius: 8px; padding: 1rem; }
     textarea { width: 100%; min-height: 90px; }
@@ -17,7 +18,7 @@
   </style>
 </head>
 <body>
-  <h1>Ci Contact Widget</h1>
+  <h1><img class="ci-logo" src="https://raw.githubusercontent.com/Ihorog/media/main/logo/ci1_logo_1.png" alt="Ci logo" />Ci Contact Widget</h1>
   <p>signal → classify → route → gate → execute/stub → verify → memory</p>
   <div class="grid">
     <section class="card full">

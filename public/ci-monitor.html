@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ci Orchestration Monitor</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 16px; background: #10131a; color: #e6edf3; }
+    h1, h2 { margin: 0 0 12px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(340px,1fr)); gap: 16px; }
+    .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 12px; }
+    pre { white-space: pre-wrap; word-break: break-word; max-height: 280px; overflow: auto; margin: 0; }
+    .blocked { color: #ff7b72; }
+    button { background: #238636; color: white; border: none; padding: 8px 10px; border-radius: 6px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>Ci Orchestration Monitor</h1>
+  <p>signal → contact → classification → queue → permission → execution → verification → memory</p>
+  <button id="refresh">Refresh</button>
+  <div class="grid">
+    <div class="card"><h2>Status</h2><pre id="status"></pre></div>
+    <div class="card"><h2>Task Queue & Recent Tasks</h2><pre id="tasks"></pre></div>
+    <div class="card"><h2>Active Task</h2><pre id="active"></pre></div>
+    <div class="card"><h2>Blocked Tasks Requiring User Action</h2><pre id="blocked" class="blocked"></pre></div>
+    <div class="card"><h2>Memory Log</h2><pre id="memory"></pre></div>
+    <div class="card"><h2>Recent Signals</h2><pre id="signals"></pre></div>
+  </div>
+
+  <script>
+    async function fetchJson(url) {
+      const res = await fetch(url);
+      return res.json();
+    }
+
+    function pretty(value) {
+      return JSON.stringify(value, null, 2);
+    }
+
+    async function refresh() {
+      const [status, tasksResp, memoryResp] = await Promise.all([
+        fetchJson('/ci/status'),
+        fetchJson('/ci/tasks?limit=50'),
+        fetchJson('/ci/memory?limit=50')
+      ]);
+
+      const tasks = tasksResp.tasks || [];
+      const blocked = tasks.filter((task) => task.status === 'BLOCKED');
+      const activeTask = tasks.find((task) => task.id === status.activeTaskId) || null;
+      const signals = tasks.map((task) => ({
+        id: task.id,
+        source: task.source,
+        classification: task.classification,
+        routedNode: task.targetNode,
+        executionCenter: task.executionCenter,
+        permissionDecision: task.permissionDecision,
+        verification: task.verification,
+        status: task.status,
+        createdAt: task.createdAt
+      }));
+
+      document.getElementById('status').textContent = pretty(status);
+      document.getElementById('tasks').textContent = pretty(tasks);
+      document.getElementById('active').textContent = pretty(activeTask || { message: 'No active task.' });
+      document.getElementById('blocked').textContent = pretty(blocked.length ? blocked : { message: 'No blocked tasks.' });
+      document.getElementById('memory').textContent = pretty(memoryResp.records || []);
+      document.getElementById('signals').textContent = pretty(signals);
+    }
+
+    document.getElementById('refresh').addEventListener('click', refresh);
+    refresh();
+    setInterval(refresh, 3000);
+  </script>
+</body>
+</html>

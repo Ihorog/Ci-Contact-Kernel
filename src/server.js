@@ -32,7 +32,6 @@ function createApp(options = {}) {
   const app = express();
   const kernel = createKernel(options);
   const memoryReadLimiter = createRateLimiter({ windowMs: 60_000, maxRequests: 120 });
-  const fileReadLimiter = createRateLimiter({ windowMs: 60_000, maxRequests: 240 });
 
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: true }));
@@ -63,8 +62,8 @@ function createApp(options = {}) {
     res.json({ records: await kernel.getMemory(limit) });
   });
 
-  app.get('/ci/widget', fileReadLimiter, (req, res) => {
-    res.sendFile(path.join(__dirname, '..', 'public', 'ci-widget.html'));
+  app.get('/ci/widget', (req, res) => {
+    res.redirect('/public/ci-widget.html');
   });
 
   app.get('/', (req, res) => {

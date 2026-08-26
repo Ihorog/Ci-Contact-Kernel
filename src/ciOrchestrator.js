@@ -20,17 +20,18 @@ function nextId() {
 }
 
 class CiOrchestrator {
-  constructor() {
+  constructor(options = {}) {
     this.tasks = new Map();
-    this.maxTasksInMemory = 2000;
+    this.maxTasksInMemory = options.maxTasksInMemory || 2000;
     this.queue = [];
     this.activeTaskId = null;
-    this.memoryStore = new MemoryStore(path.resolve(process.cwd(), 'data/ci-memory.jsonl'));
+    this.memoryStore = new MemoryStore(options.memoryFilePath || path.resolve(process.cwd(), 'data/ci-memory.jsonl'));
     this.permissions = {
       localWrite: false,
       repoWrite: false,
       externalApiWrite: false,
-      deployOrDeviceConfirm: false
+      deployOrDeviceConfirm: false,
+      ...(options.permissions || {})
     };
     this.worker = null;
 

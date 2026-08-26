@@ -53,9 +53,9 @@ function classifySignal(signal) {
 
   const haystack = `${signal.text} ${JSON.stringify(signal.payload || {})}`.toLowerCase();
 
-  if (/(repo|branch|commit|merge|push|delete file)/.test(haystack)) return 'repo_action';
+  if (/(repo|repository|branch|commit|merge|pull request|git push|push to repo|delete file)/.test(haystack)) return 'repo_action';
   if (/(device|sensor|hardware|camera)/.test(haystack)) return 'device_action';
-  if (/(deploy|service|api|notify)/.test(haystack)) return 'service_action';
+  if (/(deploy|external api|service action|call api|webhook post)/.test(haystack)) return 'service_action';
   if (/(remember|memory|recall)/.test(haystack)) return 'memory';
   if (/(fact|status|state)/.test(haystack)) return 'fact';
   if (/(intent|want|need|goal|plan)/.test(haystack)) return 'intent';
@@ -78,9 +78,9 @@ function evaluatePermission(signal, classification) {
   if (classification === 'repo_action') required.push('repo_write');
   if (classification === 'device_action') required.push('device_action');
   if (classification === 'service_action') required.push('external_api_write');
-  if (/(repo|branch|commit|merge|push|delete file|pull request)/.test(haystack)) required.push('repo_write');
+  if (/(repo|repository|branch|commit|merge|pull request|git push|push to repo|delete file)/.test(haystack)) required.push('repo_write');
   if (/(device|sensor|hardware|camera)/.test(haystack)) required.push('device_action');
-  if (/(api write|external api|notify|service write|webhook post|deploy)/.test(haystack)) required.push('external_api_write');
+  if (/(api write|external api|service action|service write|call api|webhook post|deploy)/.test(haystack)) required.push('external_api_write');
   if (/deploy/.test(haystack)) required.push('deploy');
   if (/(delete|destroy|drop|remove|truncate)/.test(haystack)) required.push('destructive_action');
 
@@ -222,10 +222,11 @@ class MemoryStore {
   }
 
   async append(record) {
-    this.writeQueue = this.writeQueue.then(() =>
+    const writePromise = this.writeQueue.then(() =>
       fsp.appendFile(this.memoryFilePath, `${JSON.stringify(record)}\n`)
     );
-    await this.writeQueue;
+    this.writeQueue = writePromise.catch(() => Promise.resolve());
+    await writePromise;
     return record;
   }
 

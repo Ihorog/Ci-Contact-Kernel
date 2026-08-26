@@ -1,4 +1,5 @@
 const fs = require('node:fs');
+const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const {
@@ -52,15 +53,15 @@ function classifySignal(signal) {
 
   const haystack = `${signal.text} ${JSON.stringify(signal.payload || {})}`.toLowerCase();
 
-  if (signal.source === 'webhook') return 'event';
+  if (/(repo|branch|commit|merge|push|delete file)/.test(haystack)) return 'repo_action';
+  if (/(device|sensor|hardware|camera)/.test(haystack)) return 'device_action';
+  if (/(deploy|service|api|notify)/.test(haystack)) return 'service_action';
   if (/(remember|memory|recall)/.test(haystack)) return 'memory';
   if (/(fact|status|state)/.test(haystack)) return 'fact';
   if (/(intent|want|need|goal|plan)/.test(haystack)) return 'intent';
   if (/(task|todo|implement|build)/.test(haystack)) return 'task';
+  if (signal.source === 'webhook') return 'event';
   if (/(webhook|event|trigger)/.test(haystack)) return 'event';
-  if (/(deploy|service|api|notify)/.test(haystack)) return 'service_action';
-  if (/(device|sensor|hardware|camera)/.test(haystack)) return 'device_action';
-  if (/(repo|branch|commit|merge|push|delete file)/.test(haystack)) return 'repo_action';
 
   return 'unknown';
 }
@@ -71,38 +72,43 @@ function routeNode(classification) {
 
 function evaluatePermission(signal, classification) {
   const permissions = signal.permissions || {};
-  const text = (signal.text || '').toLowerCase();
+  const haystack = `${signal.text || ''} ${JSON.stringify(signal.payload || {})}`.toLowerCase();
   const required = [];
 
   if (classification === 'repo_action') required.push('repo_write');
   if (classification === 'device_action') required.push('device_action');
   if (classification === 'service_action') required.push('external_api_write');
-  if (/deploy/.test(text)) required.push('deploy');
-  if (/(delete|destroy|drop|remove)/.test(text)) required.push('destructive_action');
+  if (/(repo|branch|commit|merge|push|delete file|pull request)/.test(haystack)) required.push('repo_write');
+  if (/(device|sensor|hardware|camera)/.test(haystack)) required.push('device_action');
+  if (/(api write|external api|notify|service write|webhook post|deploy)/.test(haystack)) required.push('external_api_write');
+  if (/deploy/.test(haystack)) required.push('deploy');
+  if (/(delete|destroy|drop|remove|truncate)/.test(haystack)) required.push('destructive_action');
+
+  const dedupedRequired = [...new Set(required)];
 
   if (classification === 'unknown') {
     return {
       state: 'UNKNOWN',
-      required,
-      missing: required,
+      required: dedupedRequired,
+      missing: dedupedRequired,
       reason: 'Signal classification is unknown.'
     };
   }
 
-  if (required.length === 0) {
+  if (dedupedRequired.length === 0) {
     return {
       state: 'READY',
-      required,
+      required: dedupedRequired,
       missing: [],
       reason: 'No explicit elevated permissions required.'
     };
   }
 
-  const missing = required.filter((key) => permissions[key] !== true);
+  const missing = dedupedRequired.filter((key) => permissions[key] !== true);
   if (missing.length > 0) {
     return {
       state: 'BLOCKED',
-      required,
+      required: dedupedRequired,
       missing,
       reason: `Missing required permissions: ${missing.join(', ')}`
     };
@@ -110,7 +116,7 @@ function evaluatePermission(signal, classification) {
 
   return {
     state: 'EXECUTABLE',
-    required,
+    required: dedupedRequired,
     missing: [],
     reason: 'All required permissions were explicitly granted.'
   };
@@ -212,15 +218,26 @@ class MemoryStore {
     if (!fs.existsSync(memoryFilePath)) {
       fs.writeFileSync(memoryFilePath, '');
     }
+    this.writeQueue = Promise.resolve();
   }
 
-  append(record) {
-    fs.appendFileSync(this.memoryFilePath, `${JSON.stringify(record)}\n`);
+  async append(record) {
+    this.writeQueue = this.writeQueue.then(() =>
+      fsp.appendFile(this.memoryFilePath, `${JSON.stringify(record)}\n`)
+    );
+    await this.writeQueue;
     return record;
   }
 
-  readAll(limit = 200) {
-    const content = fs.readFileSync(this.memoryFilePath, 'utf8').trim();
+  async readAll(limit = 200) {
+    let content = '';
+    try {
+      content = (await fsp.readFile(this.memoryFilePath, 'utf8')).trim();
+    } catch (error) {
+      if (error.code !== 'ENOENT') {
+        throw error;
+      }
+    }
     if (!content) return [];
 
     return content
@@ -244,7 +261,7 @@ function createKernel(options = {}) {
     options.memoryFilePath || path.join(process.cwd(), 'data', 'ci-memory.jsonl')
   );
 
-  function handleSignal(input, source = 'signal') {
+  async function handleSignal(input, source = 'signal') {
     const signal = normalizeSignal(input, source);
     const classification = classifySignal(signal);
     const node = routeNode(classification);
@@ -293,7 +310,7 @@ function createKernel(options = {}) {
       nextSuggestedAction
     };
 
-    memoryStore.append(memoryRecord);
+    await memoryStore.append(memoryRecord);
 
     return {
       signal,
@@ -309,14 +326,14 @@ function createKernel(options = {}) {
 
   return {
     handleSignal,
-    getStatus() {
+    async getStatus() {
       return {
         status: 'ok',
         executionCenters: EXECUTION_CENTERS,
-        memoryRecords: memoryStore.readAll().length
+        memoryRecords: (await memoryStore.readAll()).length
       };
     },
-    getMemory(limit) {
+    async getMemory(limit) {
       return memoryStore.readAll(limit);
     }
   };

@@ -10,28 +10,29 @@ function createApp(options = {}) {
   app.use(express.urlencoded({ extended: true }));
   app.use('/public', express.static(path.join(__dirname, '..', 'public')));
 
-  app.post('/ci/signal', (req, res) => {
-    const response = kernel.handleSignal(req.body, 'signal');
+  app.post('/ci/signal', async (req, res) => {
+    const response = await kernel.handleSignal(req.body, 'signal');
     res.json(response);
   });
 
-  app.post('/ci/command', (req, res) => {
-    const response = kernel.handleSignal(req.body, 'command');
+  app.post('/ci/command', async (req, res) => {
+    const response = await kernel.handleSignal(req.body, 'command');
     res.json(response);
   });
 
-  app.post('/ciopen/webhook', (req, res) => {
-    const response = kernel.handleSignal(req.body, 'webhook');
+  app.post('/ciopen/webhook', async (req, res) => {
+    const response = await kernel.handleSignal(req.body, 'webhook');
     res.json(response);
   });
 
-  app.get('/ci/status', (req, res) => {
-    res.json(kernel.getStatus());
+  app.get('/ci/status', async (req, res) => {
+    res.json(await kernel.getStatus());
   });
 
-  app.get('/ci/memory', (req, res) => {
-    const limit = Number(req.query.limit) || 200;
-    res.json({ records: kernel.getMemory(limit) });
+  app.get('/ci/memory', async (req, res) => {
+    const parsedLimit = Number(req.query.limit);
+    const limit = Math.max(1, Math.min(Number.isFinite(parsedLimit) ? parsedLimit : 200, 1000));
+    res.json({ records: await kernel.getMemory(limit) });
   });
 
   app.get('/ci/widget', (req, res) => {

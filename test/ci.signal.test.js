@@ -57,3 +57,17 @@ test('POST /ciopen/webhook normalizes as webhook event input', async () => {
   assert.equal(response.body.classification, 'event');
   assert.equal(response.body.node, 'event');
 });
+
+test('webhook payload with privileged action keywords is permission-gated', async () => {
+  const app = createApp({ memoryFilePath: tempMemory });
+
+  const response = await request(app)
+    .post('/ciopen/webhook')
+    .send({ payload: { action: 'deploy' } })
+    .expect(200);
+
+  assert.equal(response.body.classification, 'service_action');
+  assert.equal(response.body.permission.state, 'BLOCKED');
+  assert.ok(response.body.permission.missing.includes('deploy'));
+  assert.ok(response.body.permission.missing.includes('external_api_write'));
+});

@@ -8,25 +8,39 @@ const { createApp } = require('../src/server');
 const tempMemory = path.join(__dirname, 'tmp-memory.jsonl');
 
 test.beforeEach(() => {
-  if (fs.existsSync(tempMemory)) {
-    fs.unlinkSync(tempMemory);
-  }
+  if (fs.existsSync(tempMemory)) fs.unlinkSync(tempMemory);
 });
 
-test('POST /ci/signal returns orchestration details and verification', async () => {
+test('POST /ci/signal creates a normalized queued task', async () => {
   const app = createApp({ memoryFilePath: tempMemory });
 
   const response = await request(app)
     .post('/ci/signal')
     .send({ text: 'fact: system status is stable' })
+    .expect(202);
+
+  assert.equal(response.body.task.classification, 'fact');
+  assert.equal(response.body.task.targetNode, 'current_fact');
+  assert.equal(response.body.task.executionCenter, 'local');
+  assert.equal(response.body.task.status, 'QUEUED');
+});
+
+test('POST /ci/task/:id/run completes safe local task with verification', async () => {
+  const app = createApp({ memoryFilePath: tempMemory });
+
+  const createResponse = await request(app)
+    .post('/ci/signal')
+    .send({ text: 'fact: system status is stable' })
+    .expect(202);
+
+  const runResponse = await request(app)
+    .post(`/ci/task/${createResponse.body.task.id}/run`)
+    .send({})
     .expect(200);
 
-  assert.equal(response.body.classification, 'fact');
-  assert.equal(response.body.node, 'current_fact');
-  assert.equal(response.body.permission.state, 'READY');
-  assert.equal(response.body.executionCenter, 'local');
-  assert.equal(response.body.verification.status, 'verified');
-  assert.equal(response.body.memoryRecord.classification, 'fact');
+  assert.equal(runResponse.body.task.status, 'COMPLETED');
+  assert.equal(runResponse.body.task.verification.status, 'verified');
+  assert.equal(runResponse.body.task.verification.method, 'direct_result');
 });
 
 test('unsafe external actions are blocked by default', async () => {
@@ -35,14 +49,12 @@ test('unsafe external actions are blocked by default', async () => {
   const response = await request(app)
     .post('/ci/signal')
     .send({ text: 'deploy service now' })
-    .expect(200);
+    .expect(202);
 
-  assert.equal(response.body.classification, 'service_action');
-  assert.equal(response.body.permission.state, 'BLOCKED');
-  assert.equal(response.body.executionResult.status, 'BLOCKED');
-  assert.equal(response.body.verification.status, 'blocked');
-  assert.ok(response.body.permission.missing.includes('deploy'));
-  assert.ok(response.body.permission.missing.includes('external_api_write'));
+  assert.equal(response.body.task.classification, 'service_action');
+  assert.equal(response.body.task.status, 'BLOCKED');
+  assert.equal(response.body.task.verification.status, 'blocked');
+  assert.match(response.body.task.permissionDecision, /BLOCKED/);
 });
 
 test('POST /ciopen/webhook normalizes as webhook event input', async () => {
@@ -51,11 +63,11 @@ test('POST /ciopen/webhook normalizes as webhook event input', async () => {
   const response = await request(app)
     .post('/ciopen/webhook')
     .send({ event: 'push', payload: { type: 'event' } })
-    .expect(200);
+    .expect(202);
 
-  assert.equal(response.body.signal.source, 'webhook');
-  assert.equal(response.body.classification, 'event');
-  assert.equal(response.body.node, 'event');
+  assert.equal(response.body.task.source, 'ciopen.webhook');
+  assert.equal(response.body.task.classification, 'event');
+  assert.equal(response.body.task.targetNode, 'event');
 });
 
 test('webhook payload with privileged action keywords is permission-gated', async () => {
@@ -64,10 +76,9 @@ test('webhook payload with privileged action keywords is permission-gated', asyn
   const response = await request(app)
     .post('/ciopen/webhook')
     .send({ payload: { action: 'deploy' } })
-    .expect(200);
+    .expect(202);
 
-  assert.equal(response.body.classification, 'service_action');
-  assert.equal(response.body.permission.state, 'BLOCKED');
-  assert.ok(response.body.permission.missing.includes('deploy'));
-  assert.ok(response.body.permission.missing.includes('external_api_write'));
+  assert.equal(response.body.task.classification, 'service_action');
+  assert.equal(response.body.task.status, 'BLOCKED');
+  assert.match(response.body.task.permissionDecision, /deploy/);
 });

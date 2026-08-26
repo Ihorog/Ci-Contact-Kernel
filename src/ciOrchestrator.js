@@ -22,6 +22,7 @@ function nextId() {
 class CiOrchestrator {
   constructor() {
     this.tasks = new Map();
+    this.maxTasksInMemory = 2000;
     this.queue = [];
     this.activeTaskId = null;
     this.memoryStore = new MemoryStore(path.resolve(process.cwd(), 'data/ci-memory.jsonl'));
@@ -42,7 +43,11 @@ class CiOrchestrator {
   startWorker(intervalMs = 500) {
     if (this.worker) return;
     this.worker = setInterval(async () => {
-      await this.processNext();
+      try {
+        await this.processNext();
+      } catch (error) {
+        console.error('Ci worker error:', error);
+      }
     }, intervalMs);
   }
 
@@ -51,10 +56,6 @@ class CiOrchestrator {
       clearInterval(this.worker);
       this.worker = null;
     }
-  }
-
-  applyPermissionOverrides(overrides = {}) {
-    this.permissions = { ...this.permissions, ...overrides };
   }
 
   transition(task, nextStatus, patch = {}) {
@@ -112,6 +113,7 @@ class CiOrchestrator {
     };
 
     this.tasks.set(task.id, task);
+    this.pruneTasksIfNeeded();
 
     task.classification = classifySignal(input);
     this.transition(task, TASK_STATUS.CLASSIFIED);
@@ -127,9 +129,9 @@ class CiOrchestrator {
     return task;
   }
 
-  evaluateAndQueueTask(task, shouldQueue) {
+  evaluateAndQueueTask(task, shouldQueue, permissionContext = this.permissions) {
     this.transition(task, TASK_STATUS.WAITING_PERMISSION);
-    const decision = evaluatePermission(task, this.permissions);
+    const decision = evaluatePermission(task, permissionContext);
     task.permissionDecision = `${decision.decision}: ${decision.reason}`;
 
     if (!decision.allowed) {
@@ -158,6 +160,17 @@ class CiOrchestrator {
       .slice(0, Math.max(1, Number(limit) || 50));
   }
 
+  pruneTasksIfNeeded() {
+    if (this.tasks.size <= this.maxTasksInMemory) return;
+    const overflow = this.tasks.size - this.maxTasksInMemory;
+    const oldIds = Array.from(this.tasks.values())
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .slice(0, overflow)
+      .map((task) => task.id);
+    oldIds.forEach((id) => this.tasks.delete(id));
+    this.queue = this.queue.filter((id) => !oldIds.includes(id));
+  }
+
   async processNext() {
     if (this.activeTaskId || this.queue.length === 0) return;
 
@@ -177,10 +190,13 @@ class CiOrchestrator {
   async runTaskNow(taskId, permissionOverrides = {}) {
     const task = this.getTask(taskId);
     if (!task) return null;
+    if ([TASK_STATUS.COMPLETED, TASK_STATUS.FAILED, TASK_STATUS.UNKNOWN].includes(task.status)) {
+      task.nextSuggestedAction = 'Create a new task to execute this action again.';
+      return task;
+    }
 
-    this.applyPermissionOverrides(permissionOverrides);
-
-    const decision = evaluatePermission(task, this.permissions);
+    const permissionContext = { ...this.permissions, ...permissionOverrides };
+    const decision = evaluatePermission(task, permissionContext);
     task.permissionDecision = `${decision.decision}: ${decision.reason}`;
     if (!decision.allowed) {
       task.verification = {
@@ -192,13 +208,43 @@ class CiOrchestrator {
       return task;
     }
 
-    if (task.status !== TASK_STATUS.QUEUED && task.status !== TASK_STATUS.RUNNING) {
+    if (task.status === TASK_STATUS.RUNNING || task.status === TASK_STATUS.VERIFYING) {
+      await this.waitForTaskToSettle(task.id);
+      return this.getTask(task.id);
+    }
+
+    if (task.status !== TASK_STATUS.QUEUED) {
       this.transition(task, TASK_STATUS.QUEUED);
       this.queue.push(task.id);
     }
 
+    if (this.activeTaskId && this.activeTaskId !== task.id) {
+      return this.getTask(task.id);
+    }
+
     await this.processNext();
-    return task;
+    const settled = await this.waitForTaskToSettle(task.id);
+    if (!settled) {
+      const latest = this.getTask(task.id);
+      if (latest) {
+        latest.nextSuggestedAction = 'Execution still in progress. Poll task status or /ci/tasks.';
+      }
+    }
+    return this.getTask(task.id);
+  }
+
+  async waitForTaskToSettle(taskId, timeoutMs = 5000) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const task = this.getTask(taskId);
+      if (!task) return true;
+      if (![TASK_STATUS.QUEUED, TASK_STATUS.RUNNING, TASK_STATUS.VERIFYING].includes(task.status)) return true;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      if (!this.activeTaskId || this.activeTaskId === taskId) {
+        await this.processNext();
+      }
+    }
+    return false;
   }
 
   async executeTask(task) {

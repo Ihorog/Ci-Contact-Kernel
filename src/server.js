@@ -2,9 +2,36 @@ const path = require('node:path');
 const express = require('express');
 const { createKernel } = require('./ci/kernel');
 
+function createRateLimiter({ windowMs, maxRequests }) {
+  const hits = new Map();
+
+  return (req, res, next) => {
+    const now = Date.now();
+    const key = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+    const bucket = hits.get(key);
+
+    if (!bucket || now > bucket.resetAt) {
+      hits.set(key, { count: 1, resetAt: now + windowMs });
+      return next();
+    }
+
+    if (bucket.count >= maxRequests) {
+      res.status(429).json({
+        error: 'Too many requests',
+        retryAfterMs: bucket.resetAt - now
+      });
+      return;
+    }
+
+    bucket.count += 1;
+    next();
+  };
+}
+
 function createApp(options = {}) {
   const app = express();
   const kernel = createKernel(options);
+  const memoryReadLimiter = createRateLimiter({ windowMs: 60_000, maxRequests: 120 });
 
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: true }));
@@ -29,7 +56,7 @@ function createApp(options = {}) {
     res.json(await kernel.getStatus());
   });
 
-  app.get('/ci/memory', async (req, res) => {
+  app.get('/ci/memory', memoryReadLimiter, async (req, res) => {
     const parsedLimit = Number(req.query.limit);
     const limit = Math.max(1, Math.min(Number.isFinite(parsedLimit) ? parsedLimit : 200, 1000));
     res.json({ records: await kernel.getMemory(limit) });

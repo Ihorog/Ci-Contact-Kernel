@@ -1,12 +1,12 @@
 const { CLASSIFICATIONS } = require('./constants');
 
 function textFromSignal(signal) {
-  if (typeof signal === 'string') return signal;
+  if (typeof signal === 'string') return signal.toLowerCase();
   return JSON.stringify(signal || {}).toLowerCase();
 }
 
 function classifySignal(signal = {}) {
-  const direct = signal.classification || signal.type;
+  const direct = (signal.classification || signal.type || '').toLowerCase();
   const valid = Object.values(CLASSIFICATIONS);
   if (valid.includes(direct)) return direct;
 

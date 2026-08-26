@@ -1,19 +1,20 @@
 {
   "name": "ci-contact-kernel",
-  "version": "0.1.0",
-  "description": "Ci Contact Kernel / Universal Control Core minimal implementation",
+  "version": "1.0.0",
+  "description": "",
   "main": "src/server.js",
   "scripts": {
-    "start": "node src/server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "start": "node src/server.js"
   },
-  "engines": {
-    "node": ">=20"
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ihorog/Ci-Contact-Kernel.git"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
-    "express": "5.2.1"
-  },
-  "devDependencies": {
-    "supertest": "7.2.2"
+    "express": "^5.2.1"
   }
 }

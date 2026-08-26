@@ -1,15 +1,23 @@
-# Ci Memory Loop
+# CI Memory Loop
 
-Memory records are appended to local JSONL storage (`data/ci-memory.jsonl`) and include:
+Task lifecycle records are persisted to local JSONL storage:
 
-- timestamp
-- signal
-- classification
-- node
-- permission decision
-- execution result
-- verification
-- error
-- next suggested action
+- File: `data/ci-memory.jsonl`
 
-`GET /ci/memory` returns the latest records.
+Each record includes:
+
+- `timestamp`
+- `taskId`
+- `signal`
+- `classification`
+- `node`
+- `executionCenter`
+- `permissionDecision`
+- `statusBefore`
+- `statusAfter`
+- `result`
+- `verification`
+- `error`
+- `nextSuggestedAction`
+
+This creates a durable loop for post-run introspection and follow-up signal generation.

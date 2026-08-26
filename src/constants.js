@@ -1,0 +1,53 @@
+const TASK_STATUS = {
+  CREATED: 'CREATED',
+  CLASSIFIED: 'CLASSIFIED',
+  ROUTED: 'ROUTED',
+  WAITING_PERMISSION: 'WAITING_PERMISSION',
+  QUEUED: 'QUEUED',
+  RUNNING: 'RUNNING',
+  VERIFYING: 'VERIFYING',
+  COMPLETED: 'COMPLETED',
+  BLOCKED: 'BLOCKED',
+  FAILED: 'FAILED',
+  UNKNOWN: 'UNKNOWN'
+};
+
+const CLASSIFICATIONS = {
+  FACT: 'fact',
+  INTENT: 'intent',
+  TASK: 'task',
+  EVENT: 'event',
+  MEMORY: 'memory',
+  SERVICE_ACTION: 'service_action',
+  DEVICE_ACTION: 'device_action',
+  REPO_ACTION: 'repo_action',
+  DEPLOY_ACTION: 'deploy_action',
+  HUMAN_ACTION: 'human_action',
+  UNKNOWN: 'unknown'
+};
+
+const EXECUTION_CENTERS = {
+  LOCAL: 'local',
+  MEMORY: 'memory',
+  AI: 'ai',
+  SERVICE: 'service',
+  REPO: 'repo',
+  DEVICE: 'device',
+  HUMAN: 'human'
+};
+
+const PERMISSION_LEVELS = {
+  L0_READ: 'L0_READ',
+  L1_DRAFT: 'L1_DRAFT',
+  L2_LOCAL_WRITE: 'L2_LOCAL_WRITE',
+  L3_REPO_WRITE: 'L3_REPO_WRITE',
+  L4_EXTERNAL_API_WRITE: 'L4_EXTERNAL_API_WRITE',
+  L5_DEPLOY_OR_DEVICE_ACTION: 'L5_DEPLOY_OR_DEVICE_ACTION'
+};
+
+module.exports = {
+  TASK_STATUS,
+  CLASSIFICATIONS,
+  EXECUTION_CENTERS,
+  PERMISSION_LEVELS
+};

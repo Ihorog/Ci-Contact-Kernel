@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ci Contact Widget</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; background: #f5f7fb; color: #111; }
+    h1 { margin-top: 0; }
+    .grid { display: grid; gap: 1rem; grid-template-columns: 1fr 1fr; }
+    .card { background: #fff; border: 1px solid #d7dfef; border-radius: 8px; padding: 1rem; }
+    textarea { width: 100%; min-height: 90px; }
+    button { padding: 0.5rem 1rem; }
+    pre { white-space: pre-wrap; word-break: break-word; background: #0a1020; color: #d8ecff; padding: 0.75rem; border-radius: 6px; min-height: 80px; }
+    .full { grid-column: 1 / -1; }
+    label { display: inline-flex; margin-right: 1rem; gap: 0.3rem; align-items: center; }
+  </style>
+</head>
+<body>
+  <h1>Ci Contact Widget</h1>
+  <p>signal → classify → route → gate → execute/stub → verify → memory</p>
+  <div class="grid">
+    <section class="card full">
+      <h2>Send Signal</h2>
+      <textarea id="signalText" placeholder="Type a signal (e.g. deploy service, remember fact, task: implement)"></textarea>
+      <div>
+        <label><input type="checkbox" id="permRepoWrite" /> repo_write</label>
+        <label><input type="checkbox" id="permDeploy" /> deploy</label>
+        <label><input type="checkbox" id="permApiWrite" /> external_api_write</label>
+        <label><input type="checkbox" id="permDevice" /> device_action</label>
+        <label><input type="checkbox" id="permDestructive" /> destructive_action</label>
+      </div>
+      <button id="sendBtn">POST /ci/signal</button>
+    </section>
+
+    <section class="card"><h2>Current Signal</h2><pre id="signal"></pre></section>
+    <section class="card"><h2>Classification</h2><pre id="classification"></pre></section>
+    <section class="card"><h2>Routed Node</h2><pre id="node"></pre></section>
+    <section class="card"><h2>Permission State</h2><pre id="permission"></pre></section>
+    <section class="card"><h2>Execution Center</h2><pre id="center"></pre></section>
+    <section class="card"><h2>Verification</h2><pre id="verification"></pre></section>
+    <section class="card full"><h2>Memory Log (GET /ci/memory)</h2><pre id="memory"></pre></section>
+  </div>
+
+  <script>
+    const ids = ['signal', 'classification', 'node', 'permission', 'center', 'verification', 'memory'];
+    const set = (id, value) => document.getElementById(id).textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+
+    function permissions() {
+      return {
+        repo_write: document.getElementById('permRepoWrite').checked,
+        deploy: document.getElementById('permDeploy').checked,
+        external_api_write: document.getElementById('permApiWrite').checked,
+        device_action: document.getElementById('permDevice').checked,
+        destructive_action: document.getElementById('permDestructive').checked
+      };
+    }
+
+    async function refreshMemory() {
+      try {
+        const res = await fetch('/ci/memory');
+        if (!res.ok) {
+          throw new Error(`Memory request failed: ${res.status}`);
+        }
+        const data = await res.json();
+        set('memory', data.records || []);
+      } catch (error) {
+        set('memory', { error: error.message });
+      }
+    }
+
+    document.getElementById('sendBtn').addEventListener('click', async () => {
+      try {
+        const text = document.getElementById('signalText').value.trim();
+        const res = await fetch('/ci/signal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, permissions: permissions() })
+        });
+
+        if (!res.ok) {
+          throw new Error(`Signal request failed: ${res.status}`);
+        }
+
+        const data = await res.json();
+        set('signal', data.signal);
+        set('classification', data.classification);
+        set('node', data.node);
+        set('permission', data.permission);
+        set('center', data.executionCenter);
+        set('verification', data.verification);
+        await refreshMemory();
+      } catch (error) {
+        set('verification', { status: 'failed', details: error.message });
+      }
+    });
+
+    ids.forEach((id) => set(id, 'waiting...'));
+    refreshMemory();
+  </script>
+</body>
+</html>

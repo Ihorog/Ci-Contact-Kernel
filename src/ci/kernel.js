@@ -45,13 +45,21 @@ function normalizeSignal(input = {}, source = 'signal') {
   };
 }
 
+function safeStringify(value) {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '[unserializable_payload]';
+  }
+}
+
 function classifySignal(signal) {
   const requestedType = signal.payload?.type;
   if (CLASSIFICATIONS.includes(requestedType)) {
     return requestedType;
   }
 
-  const haystack = `${signal.text} ${JSON.stringify(signal.payload || {})}`.toLowerCase();
+  const haystack = `${signal.text} ${safeStringify(signal.payload || {})}`.toLowerCase();
 
   if (/\b(repo|repository|branch|commit|merge|pull request|git push|push to repo|delete file)\b/.test(haystack)) return 'repo_action';
   if (/\b(device|sensor|hardware|camera)\b/.test(haystack)) return 'device_action';
@@ -72,7 +80,7 @@ function routeNode(classification) {
 
 function evaluatePermission(signal, classification) {
   const permissions = signal.permissions || {};
-  const haystack = `${signal.text || ''} ${JSON.stringify(signal.payload || {})}`.toLowerCase();
+  const haystack = `${signal.text || ''} ${safeStringify(signal.payload || {})}`.toLowerCase();
   const required = new Set();
   const addRequired = (isRequired, key) => {
     if (isRequired) required.add(key);

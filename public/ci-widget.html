@@ -57,27 +57,42 @@
     }
 
     async function refreshMemory() {
-      const res = await fetch('/ci/memory');
-      const data = await res.json();
-      set('memory', data.records || []);
+      try {
+        const res = await fetch('/ci/memory');
+        if (!res.ok) {
+          throw new Error(`Memory request failed: ${res.status}`);
+        }
+        const data = await res.json();
+        set('memory', data.records || []);
+      } catch (error) {
+        set('memory', { error: error.message });
+      }
     }
 
     document.getElementById('sendBtn').addEventListener('click', async () => {
-      const text = document.getElementById('signalText').value.trim();
-      const res = await fetch('/ci/signal', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, permissions: permissions() })
-      });
+      try {
+        const text = document.getElementById('signalText').value.trim();
+        const res = await fetch('/ci/signal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, permissions: permissions() })
+        });
 
-      const data = await res.json();
-      set('signal', data.signal);
-      set('classification', data.classification);
-      set('node', data.node);
-      set('permission', data.permission);
-      set('center', data.executionCenter);
-      set('verification', data.verification);
-      await refreshMemory();
+        if (!res.ok) {
+          throw new Error(`Signal request failed: ${res.status}`);
+        }
+
+        const data = await res.json();
+        set('signal', data.signal);
+        set('classification', data.classification);
+        set('node', data.node);
+        set('permission', data.permission);
+        set('center', data.executionCenter);
+        set('verification', data.verification);
+        await refreshMemory();
+      } catch (error) {
+        set('verification', { status: 'failed', details: error.message });
+      }
     });
 
     ids.forEach((id) => set(id, 'waiting...'));

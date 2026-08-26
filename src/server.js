@@ -4,9 +4,19 @@ const { createKernel } = require('./ci/kernel');
 
 function createRateLimiter({ windowMs, maxRequests }) {
   const hits = new Map();
+  let callCount = 0;
 
   return (req, res, next) => {
     const now = Date.now();
+    callCount += 1;
+    if (callCount % 100 === 0) {
+      for (const [ip, details] of hits.entries()) {
+        if (now > details.resetAt) {
+          hits.delete(ip);
+        }
+      }
+    }
+
     const key = req.ip || 'unknown';
     const bucket = hits.get(key);
 

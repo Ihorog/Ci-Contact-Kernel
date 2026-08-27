@@ -6,196 +6,43 @@
   <meta name="theme-color" content="#071019">
   <title>Ci+ — контактне ядро</title>
   <style>
-    :root {
-      color-scheme: dark;
-      --ink: #f3f7fa;
-      --muted: #91a0ad;
-      --line: rgba(255,255,255,.1);
-      --panel: rgba(8,16,24,.96);
-      --cyan: #58d8ee;
-      --gold: #f3aa27;
-      --ok: #61d69a;
-      --warn: #ffbd57;
-      --bad: #ff7373;
-    }
-
-    * { box-sizing: border-box; }
-    html, body { margin: 0; min-height: 100%; }
-    body { font: 15px/1.45 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); background: transparent; }
-    button, textarea, select, input { font: inherit; }
-    button { color: inherit; }
-
-    .launcher {
-      position: fixed;
-      right: max(18px, env(safe-area-inset-right));
-      bottom: max(18px, env(safe-area-inset-bottom));
-      z-index: 20;
-      width: 82px;
-      height: 82px;
-      padding: 0;
-      border: 0;
-      background: transparent;
-      cursor: pointer;
-      filter: drop-shadow(0 12px 22px rgba(0,0,0,.42));
-      transition: transform .2s ease, filter .2s ease;
-    }
-    .launcher:hover { transform: translateY(-3px) scale(1.03); filter: drop-shadow(0 16px 26px rgba(0,0,0,.5)); }
-    .launcher:focus-visible { outline: 2px solid var(--cyan); outline-offset: 5px; border-radius: 50%; }
-    .launcher img { display: block; width: 100%; height: 100%; object-fit: contain; filter: brightness(.72) contrast(1.16) saturate(.9); }
-
-    .shell[hidden] { display: none; }
-    .shell { position: fixed; inset: 0; z-index: 30; display: grid; place-items: end; padding: 16px; background: rgba(1,5,9,.38); backdrop-filter: blur(9px); }
-    .panel {
-      width: min(100%, 460px);
-      max-height: min(820px, calc(100dvh - 32px));
-      overflow: auto;
-      border: 1px solid var(--line);
-      border-radius: 26px;
-      background: radial-gradient(circle at 85% -10%, rgba(54,172,196,.18), transparent 35%), var(--panel);
-      box-shadow: 0 30px 90px rgba(0,0,0,.55);
-    }
-    .topbar { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: rgba(8,16,24,.92); backdrop-filter: blur(16px); border-bottom: 1px solid var(--line); border-radius: 26px 26px 0 0; }
-    .mini-mark { width: 46px; height: 46px; object-fit: contain; filter: brightness(.72) contrast(1.16) saturate(.9); }
-    .identity { min-width: 0; flex: 1; }
-    .identity strong { display: block; font-size: 16px; letter-spacing: .02em; }
-    .identity span { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
-    .dot { width: 7px; height: 7px; border-radius: 99px; background: var(--muted); }
-    .dot.online { background: var(--ok); box-shadow: 0 0 0 4px rgba(97,214,154,.1); }
-    .icon-button { display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid var(--line); border-radius: 13px; background: rgba(255,255,255,.04); cursor: pointer; }
-    .icon-button:hover { background: rgba(255,255,255,.08); }
-
-    main { padding: 18px 16px 20px; }
-    .eyebrow { margin: 0 0 5px; color: var(--gold); font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
-    h1 { margin: 0; font-size: clamp(24px, 8vw, 34px); line-height: 1.06; letter-spacing: -.04em; }
-    .intro { margin: 9px 0 18px; color: var(--muted); }
-
-    .composer { border: 1px solid var(--line); border-radius: 19px; background: rgba(255,255,255,.035); overflow: hidden; }
-    textarea { display: block; width: 100%; min-height: 112px; resize: vertical; padding: 15px 15px 8px; border: 0; outline: 0; color: var(--ink); background: transparent; }
-    textarea::placeholder { color: #71808c; }
-    .composer-actions { display: flex; align-items: center; gap: 8px; padding: 9px; border-top: 1px solid var(--line); }
-    .voice { width: 42px; height: 42px; border: 1px solid var(--line); border-radius: 13px; background: rgba(255,255,255,.04); cursor: pointer; }
-    .voice.listening { color: var(--bad); border-color: rgba(255,115,115,.45); animation: pulse 1s infinite; }
-    @keyframes pulse { 50% { box-shadow: 0 0 0 7px rgba(255,115,115,.08); } }
-    .send { flex: 1; height: 42px; border: 0; border-radius: 13px; background: linear-gradient(125deg, #0d7f99, #14a2bb 55%, #d58917 140%); font-weight: 750; cursor: pointer; }
-    .send:disabled { opacity: .5; cursor: wait; }
-
-    details { margin-top: 12px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.025); }
-    summary { padding: 12px 14px; color: var(--muted); cursor: pointer; user-select: none; }
-    .permissions { display: grid; gap: 10px; padding: 0 14px 14px; }
-    .permissions label { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-    select { min-width: 170px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); background: #111e29; }
-    .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    .checks label { justify-content: flex-start; font-size: 12px; color: var(--muted); }
-
-    .result { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 16px; }
-    .result[hidden] { display: none; }
-    .result-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
-    .result-head h2 { margin: 0; font-size: 16px; }
-    .status { padding: 5px 9px; border-radius: 999px; background: rgba(145,160,173,.12); color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .06em; }
-    .status.completed { background: rgba(97,214,154,.12); color: var(--ok); }
-    .status.blocked, .status.failed { background: rgba(255,115,115,.12); color: var(--bad); }
-    .status.queued, .status.running, .status.verifying { background: rgba(255,189,87,.12); color: var(--warn); }
-    .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    .fact { min-width: 0; padding: 11px; border: 1px solid var(--line); border-radius: 13px; background: rgba(255,255,255,.025); }
-    .fact span { display: block; margin-bottom: 3px; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
-    .fact strong { display: block; overflow: hidden; text-overflow: ellipsis; font-size: 13px; white-space: nowrap; }
-    .proof { margin-top: 8px; padding: 11px; border-left: 2px solid var(--gold); border-radius: 0 12px 12px 0; background: rgba(243,170,39,.06); color: #d9e0e5; font-size: 12px; word-break: break-word; }
-    .error { margin-top: 12px; color: var(--bad); }
-    .history { margin-top: 16px; }
-    .history h2 { margin: 0 0 9px; font-size: 14px; }
-    .history-list { display: grid; gap: 7px; }
-    .history-item { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 10px 11px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.02); }
-    .history-item strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-    .history-item span { color: var(--muted); font-size: 10px; }
-
-    @media (min-width: 700px) {
-      .shell { place-items: center end; padding: 22px; }
-      .panel { max-height: calc(100dvh - 44px); }
-    }
-    @media (max-width: 520px) {
-      .shell { padding: 0; }
-      .panel { width: 100%; max-height: 100dvh; min-height: 100dvh; border-radius: 0; border: 0; }
-      .topbar { border-radius: 0; padding-top: max(14px, env(safe-area-inset-top)); }
-    }
-    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+    body { font-family: system-ui, sans-serif; margin: 2rem; background: #f5f7fb; color: #111; }
+    .ci-logo { height: 48px; vertical-align: middle; margin-right: 0.75rem; }
+    h1 { margin-top: 0; display: flex; align-items: center; }
+    .grid { display: grid; gap: 1rem; grid-template-columns: 1fr 1fr; }
+    .card { background: #fff; border: 1px solid #d7dfef; border-radius: 8px; padding: 1rem; }
+    textarea { width: 100%; min-height: 90px; }
+    button { padding: 0.5rem 1rem; }
+    pre { white-space: pre-wrap; word-break: break-word; background: #0a1020; color: #d8ecff; padding: 0.75rem; border-radius: 6px; min-height: 80px; }
+    .full { grid-column: 1 / -1; }
+    label { display: inline-flex; margin-right: 1rem; gap: 0.3rem; align-items: center; }
   </style>
 </head>
 <body>
-  <button class="launcher" id="launcher" type="button" aria-label="Відкрити Ci+" aria-expanded="false">
-    <img src="/ci-mark-dark.png" alt="Ci">
-  </button>
+  <h1><img class="ci-logo" src="https://raw.githubusercontent.com/Ihorog/media/main/logo/ci1_logo_1.png" alt="Ci logo" />Ci Contact Widget</h1>
+  <p>signal → classify → route → gate → execute/stub → verify → memory</p>
+  <div class="grid">
+    <section class="card full">
+      <h2>Send Signal</h2>
+      <textarea id="signalText" placeholder="Type a signal (e.g. deploy service, remember fact, task: implement)"></textarea>
+      <div>
+        <label><input type="checkbox" id="permRepoWrite" /> repo_write</label>
+        <label><input type="checkbox" id="permDeploy" /> deploy</label>
+        <label><input type="checkbox" id="permApiWrite" /> external_api_write</label>
+        <label><input type="checkbox" id="permDevice" /> device_action</label>
+        <label><input type="checkbox" id="permDestructive" /> destructive_action</label>
+      </div>
+      <button id="sendBtn">POST /ci/signal</button>
+    </section>
 
-  <section class="shell" id="shell" hidden aria-label="Ci+ контактне ядро">
-    <article class="panel" role="dialog" aria-modal="true" aria-labelledby="title">
-      <header class="topbar">
-        <img class="mini-mark" src="/ci-mark-dark.png" alt="">
-        <div class="identity">
-          <strong>Ci+</strong>
-          <span><i class="dot" id="healthDot"></i><b id="healthText">перевірка ядра</b></span>
-        </div>
-        <button class="icon-button" id="close" type="button" aria-label="Згорнути">↓</button>
-      </header>
-
-      <main>
-        <p class="eyebrow">Єдина точка входу</p>
-        <h1 id="title">Передай сигнал.</h1>
-        <p class="intro">Ci визначить контекст, маршрут, дозвіл і збереже доказ фактичного результату.</p>
-
-        <form id="signalForm">
-          <div class="composer">
-            <textarea id="signalText" required placeholder="Що сталося або що потрібно зробити?"></textarea>
-            <div class="composer-actions">
-              <button class="voice" id="voice" type="button" aria-label="Голосове введення">●</button>
-              <button class="send" id="send" type="submit">Передати в Ci</button>
-            </div>
-          </div>
-
-          <details>
-            <summary>Контроль дозволу</summary>
-            <div class="permissions">
-              <label>Рівень дії
-                <select id="permissionLevel">
-                  <option value="L0_READ">L0 · облік / читання</option>
-                  <option value="L1_DRAFT">L1 · підготовка</option>
-                  <option value="L2_LOCAL_WRITE">L2 · локальний запис</option>
-                  <option value="L3_REPO_WRITE">L3 · запис у репозиторій</option>
-                  <option value="L4_EXTERNAL_API_WRITE">L4 · зовнішній API</option>
-                  <option value="L5_DEPLOY_OR_DEVICE_ACTION">L5 · пристрій / deploy</option>
-                </select>
-              </label>
-              <div class="checks">
-                <label><input type="checkbox" id="localWrite"> local write</label>
-                <label><input type="checkbox" id="repoWrite"> repo write</label>
-                <label><input type="checkbox" id="externalApiWrite"> API write</label>
-                <label><input type="checkbox" id="deployConfirm"> device / deploy</label>
-              </div>
-            </div>
-          </details>
-        </form>
-
-        <p class="error" id="error" hidden></p>
-
-        <section class="result" id="result" hidden aria-live="polite">
-          <div class="result-head">
-            <h2>Стан сигналу</h2>
-            <span class="status" id="status">—</span>
-          </div>
-          <div class="facts">
-            <div class="fact"><span>Домен</span><strong id="domain">—</strong></div>
-            <div class="fact"><span>Класифікація</span><strong id="classification">—</strong></div>
-            <div class="fact"><span>Маршрут</span><strong id="route">—</strong></div>
-            <div class="fact"><span>Дозвіл</span><strong id="permission">—</strong></div>
-          </div>
-          <div class="proof" id="proof">Доказ ще не отримано.</div>
-        </section>
-
-        <section class="history">
-          <h2>Останні сигнали на цьому пристрої</h2>
-          <div class="history-list" id="history"></div>
-        </section>
-      </main>
-    </article>
-  </section>
+    <section class="card"><h2>Current Signal</h2><pre id="signal"></pre></section>
+    <section class="card"><h2>Classification</h2><pre id="classification"></pre></section>
+    <section class="card"><h2>Routed Node</h2><pre id="node"></pre></section>
+    <section class="card"><h2>Permission State</h2><pre id="permission"></pre></section>
+    <section class="card"><h2>Execution Center</h2><pre id="center"></pre></section>
+    <section class="card"><h2>Verification</h2><pre id="verification"></pre></section>
+    <section class="card full"><h2>Memory Log (GET /ci/memory)</h2><pre id="memory"></pre></section>
+  </div>
 
   <script>
     const $ = (id) => document.getElementById(id);

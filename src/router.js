@@ -1,27 +1,46 @@
 const { CLASSIFICATIONS, EXECUTION_CENTERS } = require('./constants');
 
 function routeTask(task) {
+  let primary;
   switch (task.classification) {
     case CLASSIFICATIONS.MEMORY:
     case CLASSIFICATIONS.FACT:
-      return { targetNode: 'ci.memory.node', executionCenter: EXECUTION_CENTERS.MEMORY };
+      primary = { targetNode: 'ci.memory.node', executionCenter: EXECUTION_CENTERS.MEMORY };
+      break;
     case CLASSIFICATIONS.REPO_ACTION:
-      return { targetNode: 'ci.repo.node', executionCenter: EXECUTION_CENTERS.REPO };
+      primary = { targetNode: 'ci.repo.node', executionCenter: EXECUTION_CENTERS.REPO };
+      break;
     case CLASSIFICATIONS.SERVICE_ACTION:
-      return { targetNode: 'ci.service.node', executionCenter: EXECUTION_CENTERS.SERVICE };
+      primary = { targetNode: 'ci.service.node', executionCenter: EXECUTION_CENTERS.SERVICE };
+      break;
     case CLASSIFICATIONS.DEVICE_ACTION:
     case CLASSIFICATIONS.DEPLOY_ACTION:
-      return { targetNode: 'ci.device.node', executionCenter: EXECUTION_CENTERS.DEVICE };
+      primary = { targetNode: 'ci.device.node', executionCenter: EXECUTION_CENTERS.DEVICE };
+      break;
     case CLASSIFICATIONS.HUMAN_ACTION:
-      return { targetNode: 'ci.human.node', executionCenter: EXECUTION_CENTERS.HUMAN };
+      primary = { targetNode: 'ci.human.node', executionCenter: EXECUTION_CENTERS.HUMAN };
+      break;
     case CLASSIFICATIONS.INTENT:
     case CLASSIFICATIONS.TASK:
-      return { targetNode: 'ci.ai.node', executionCenter: EXECUTION_CENTERS.AI };
+      primary = { targetNode: 'ci.ai.node', executionCenter: EXECUTION_CENTERS.AI };
+      break;
     case CLASSIFICATIONS.EVENT:
-      return { targetNode: 'ci.local.node', executionCenter: EXECUTION_CENTERS.LOCAL };
+      primary = { targetNode: 'ci.local.node', executionCenter: EXECUTION_CENTERS.LOCAL };
+      break;
     default:
-      return { targetNode: 'ci.unknown.node', executionCenter: EXECUTION_CENTERS.LOCAL };
+      primary = { targetNode: 'ci.unknown.node', executionCenter: EXECUTION_CENTERS.LOCAL };
   }
+
+  const requestedCenters = Array.isArray(task.payload && task.payload.executionCenters)
+    ? task.payload.executionCenters.filter((c) => Object.values(EXECUTION_CENTERS).includes(c))
+    : [];
+
+  const executionCenters = requestedCenters.length > 0
+    ? requestedCenters
+    : [primary.executionCenter];
+
+  return { ...primary, executionCenters };
 }
 
 module.exports = { routeTask };
+

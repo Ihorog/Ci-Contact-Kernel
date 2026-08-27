@@ -5,11 +5,37 @@ const { classifySignal } = require('./classifier');
 const { routeTask } = require('./router');
 const { evaluatePermission } = require('./permissionGate');
 const { MemoryStore } = require('./memoryStore');
+const { CheckpointStore } = require('./checkpointStore');
+const { buildDefaultContract, runVerification } = require('./completionContract');
+const { aggregate } = require('./resultAggregator');
 const {
   TASK_STATUS,
   EXECUTION_CENTERS,
-  PERMISSION_LEVELS
+  PERMISSION_LEVELS,
+  CLASSIFICATIONS,
+  AGGREGATION_POLICIES,
+  APPROVAL_POLICIES
 } = require('./constants');
+
+const SENSITIVE_CENTERS = new Set([
+  EXECUTION_CENTERS.SERVICE,
+  EXECUTION_CENTERS.REPO,
+  EXECUTION_CENTERS.DEVICE,
+  EXECUTION_CENTERS.HUMAN
+]);
+
+const CLASSIFICATION_PERMISSION_MAP = {
+  [CLASSIFICATIONS.DEPLOY_ACTION]: PERMISSION_LEVELS.L5_DEPLOY_OR_DEVICE_ACTION,
+  [CLASSIFICATIONS.DEVICE_ACTION]: PERMISSION_LEVELS.L5_DEPLOY_OR_DEVICE_ACTION,
+  [CLASSIFICATIONS.SERVICE_ACTION]: PERMISSION_LEVELS.L4_EXTERNAL_API_WRITE,
+  [CLASSIFICATIONS.REPO_ACTION]: PERMISSION_LEVELS.L3_REPO_WRITE,
+  [CLASSIFICATIONS.HUMAN_ACTION]: PERMISSION_LEVELS.L2_LOCAL_WRITE,
+  [CLASSIFICATIONS.TASK]: PERMISSION_LEVELS.L1_DRAFT
+};
+
+function inferPermissionLevel(classification) {
+  return CLASSIFICATION_PERMISSION_MAP[classification] || PERMISSION_LEVELS.L0_READ;
+}
 
 function now() {
   return new Date().toISOString();
@@ -26,6 +52,7 @@ class CiOrchestrator {
     this.queue = [];
     this.activeTaskId = null;
     this.memoryStore = new MemoryStore(options.memoryFilePath || path.resolve(process.cwd(), 'data/ci-memory.jsonl'));
+    this.checkpointStore = new CheckpointStore();
     this.permissions = {
       localWrite: false,
       repoWrite: false,
@@ -73,11 +100,17 @@ class CiOrchestrator {
       classification: task.classification,
       node: task.targetNode,
       executionCenter: task.executionCenter,
+      executionCenters: task.executionCenters,
       permissionDecision: task.permissionDecision,
       statusBefore: prev,
       statusAfter: nextStatus,
       result: task.result,
       verification: task.verification,
+      verificationResults: task.verificationResults,
+      incidentRecord: task.incidentRecord,
+      branches: task.branches,
+      checkpointId: task.checkpointId,
+      approvalState: task.approvalState,
       error: task.error,
       nextSuggestedAction: task.nextSuggestedAction
     });
@@ -87,6 +120,14 @@ class CiOrchestrator {
 
   createTask(input = {}, source = 'api', shouldQueue = true) {
     const timestamp = now();
+    const contract = buildDefaultContract({
+      completionPolicy: input.completionPolicy,
+      requiredVerifiers: input.requiredVerifiers,
+      maxVerificationRetries: input.maxVerificationRetries
+    });
+
+    const approvalPolicy = input.approvalPolicy || null;
+
     const task = {
       id: nextId(),
       createdAt: timestamp,
@@ -99,15 +140,30 @@ class CiOrchestrator {
       classification: null,
       targetNode: null,
       executionCenter: null,
+      executionCenters: [],
       requestedAction: input.requestedAction || input.action || null,
       permissionLevel: input.permissionLevel || PERMISSION_LEVELS.L0_READ,
       permissionDecision: 'PENDING',
+      approvalPolicy,
+      approvalState: null,
+      checkpointId: null,
       payload: input,
       result: null,
       verification: {
         status: 'unknown',
         method: 'none'
       },
+      // Completion contract fields
+      completionPolicy: contract.completionPolicy,
+      requiredVerifiers: contract.requiredVerifiers,
+      verificationResults: contract.verificationResults,
+      verificationAttempt: contract.verificationAttempt,
+      maxVerificationRetries: contract.maxVerificationRetries,
+      incidentRecord: contract.incidentRecord,
+      // Multi-target fields
+      aggregationPolicy: input.aggregationPolicy || AGGREGATION_POLICIES.ALL_REQUIRED,
+      branches: [],
+      aggregationSummary: null,
       error: null,
       memoryRecordId: null,
       nextSuggestedAction: null
@@ -117,12 +173,16 @@ class CiOrchestrator {
     this.pruneTasksIfNeeded();
 
     task.classification = classifySignal(input);
+    if (!input.permissionLevel) {
+      task.permissionLevel = inferPermissionLevel(task.classification);
+    }
     this.transition(task, TASK_STATUS.CLASSIFIED);
 
     const route = routeTask(task);
     this.transition(task, TASK_STATUS.ROUTED, {
       targetNode: route.targetNode,
-      executionCenter: route.executionCenter
+      executionCenter: route.executionCenter,
+      executionCenters: route.executionCenters
     });
 
     this.evaluateAndQueueTask(task, shouldQueue);
@@ -191,7 +251,7 @@ class CiOrchestrator {
   async runTaskNow(taskId, permissionOverrides = {}) {
     const task = this.getTask(taskId);
     if (!task) return null;
-    if ([TASK_STATUS.COMPLETED, TASK_STATUS.FAILED, TASK_STATUS.UNKNOWN].includes(task.status)) {
+    if ([TASK_STATUS.COMPLETED, TASK_STATUS.FAILED, TASK_STATUS.VERIFICATION_FAILED, TASK_STATUS.UNKNOWN].includes(task.status)) {
       task.nextSuggestedAction = 'Create a new task to execute this action again.';
       return task;
     }
@@ -234,6 +294,73 @@ class CiOrchestrator {
     return this.getTask(task.id);
   }
 
+  /**
+   * Approve a pending checkpoint, then resume execution of the associated task.
+   */
+  async approveTask(taskId, checkpointId, actor = 'unknown', reason = '') {
+    const task = this.getTask(taskId);
+    if (!task) return null;
+
+    const cp = this.checkpointStore.get(checkpointId);
+    if (!cp || cp.taskId !== taskId) {
+      return { error: 'Checkpoint not found or does not belong to this task.' };
+    }
+
+    this.checkpointStore.decide(checkpointId, 'approved', actor, reason);
+    task.approvalState = 'approved';
+
+    this.memoryStore.append({
+      timestamp: now(),
+      taskId,
+      event: 'approval_decision',
+      decision: 'approved',
+      actor,
+      reason,
+      checkpointId
+    });
+
+    if (task.status === TASK_STATUS.WAITING_APPROVAL) {
+      this.transition(task, TASK_STATUS.QUEUED);
+      this.queue.push(task.id);
+      if (!this.activeTaskId) {
+        await this.processNext();
+        await this.waitForTaskToSettle(task.id);
+      }
+    }
+
+    return this.getTask(taskId);
+  }
+
+  /**
+   * Reject a pending checkpoint — task transitions to BLOCKED with an auditable reason.
+   */
+  rejectTask(taskId, checkpointId, actor = 'unknown', reason = '') {
+    const task = this.getTask(taskId);
+    if (!task) return null;
+
+    const cp = this.checkpointStore.get(checkpointId);
+    if (!cp || cp.taskId !== taskId) {
+      return { error: 'Checkpoint not found or does not belong to this task.' };
+    }
+
+    this.checkpointStore.decide(checkpointId, 'rejected', actor, reason);
+    task.approvalState = 'rejected';
+    task.nextSuggestedAction = `Approval rejected by ${actor}: ${reason}`;
+
+    this.memoryStore.append({
+      timestamp: now(),
+      taskId,
+      event: 'approval_decision',
+      decision: 'rejected',
+      actor,
+      reason,
+      checkpointId
+    });
+
+    this.transition(task, TASK_STATUS.BLOCKED);
+    return task;
+  }
+
   async waitForTaskToSettle(taskId, timeoutMs = 5000) {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
@@ -248,9 +375,143 @@ class CiOrchestrator {
     return false;
   }
 
+  _requiresApproval(task, center) {
+    if (task.approvalPolicy === APPROVAL_POLICIES.AUTO) return false;
+    if (task.approvalPolicy === APPROVAL_POLICIES.REQUIRE_HUMAN) return true;
+    return SENSITIVE_CENTERS.has(center);
+  }
+
   async executeTask(task) {
     this.transition(task, TASK_STATUS.RUNNING);
 
+    const centers = task.executionCenters && task.executionCenters.length > 0
+      ? task.executionCenters
+      : [task.executionCenter];
+
+    if (centers.length > 1) {
+      await this._executeMultiBranch(task, centers);
+      return;
+    }
+
+    await this._executeSingleBranch(task, centers[0]);
+  }
+
+  async _executeSingleBranch(task, center) {
+    if (this._requiresApproval(task, center) && task.approvalState !== 'approved') {
+      const cp = this.checkpointStore.create(task, { center, phase: 'pre_execution' });
+      task.checkpointId = cp.id;
+      task.approvalState = 'pending';
+      task.nextSuggestedAction = `Sensitive execution requires approval. POST /ci/task/${task.id}/approve with checkpointId=${cp.id}`;
+
+      this.memoryStore.append({
+        timestamp: now(),
+        taskId: task.id,
+        event: 'approval_requested',
+        checkpointId: cp.id,
+        center
+      });
+
+      this.transition(task, TASK_STATUS.WAITING_APPROVAL);
+      return;
+    }
+
+    const result = await this._runHandler(center, task);
+    task.result = result;
+
+    this.transition(task, TASK_STATUS.VERIFYING);
+    await this._applyVerificationAndComplete(task, result);
+  }
+
+  async _executeMultiBranch(task, centers) {
+    if (task.branches.length === 0) {
+      task.branches = centers.map((center) => ({
+        id: nextId(),
+        executionCenter: center,
+        status: 'pending',
+        result: null,
+        error: null,
+        verification: null,
+        checkpointId: null,
+        approvalState: null
+      }));
+    }
+
+    for (const branch of task.branches) {
+      if (branch.status !== 'pending') continue;
+
+      if (this._requiresApproval(task, branch.executionCenter) && branch.approvalState !== 'approved') {
+        const cp = this.checkpointStore.create(task, {
+          branchId: branch.id,
+          center: branch.executionCenter,
+          phase: 'pre_execution'
+        });
+        branch.checkpointId = cp.id;
+        branch.approvalState = 'pending';
+        branch.status = 'waiting_approval';
+
+        this.memoryStore.append({
+          timestamp: now(),
+          taskId: task.id,
+          event: 'approval_requested',
+          checkpointId: cp.id,
+          branchId: branch.id,
+          center: branch.executionCenter
+        });
+        continue;
+      }
+
+      const result = await this._runHandler(branch.executionCenter, task);
+      branch.result = result;
+
+      const verif = runVerification(
+        { ...task, result },
+        result
+      );
+
+      branch.verification = {
+        passed: verif.canComplete,
+        policyResult: verif.policyResult,
+        exhausted: verif.exhausted
+      };
+      branch.status = result.outcome === 'ok' ? 'success' : (result.outcome === 'stub' ? 'blocked' : 'failed');
+    }
+
+    const waitingApproval = task.branches.some((b) => b.status === 'waiting_approval');
+    if (waitingApproval) {
+      const pendingIds = task.branches
+        .filter((b) => b.status === 'waiting_approval')
+        .map((b) => b.checkpointId);
+      task.nextSuggestedAction = `Branches awaiting approval. Approve checkpoints: ${pendingIds.join(', ')}`;
+      this.transition(task, TASK_STATUS.WAITING_APPROVAL);
+      return;
+    }
+
+    this.transition(task, TASK_STATUS.VERIFYING);
+
+    const summary = aggregate(task.branches, task.aggregationPolicy);
+    task.aggregationSummary = summary;
+
+    if (summary.outcome === 'success') {
+      task.verification = { status: 'verified', method: 'aggregation', policy: task.aggregationPolicy };
+      task.result = { outcome: 'ok', aggregation: summary };
+      const verif = runVerification(task, task.result);
+      if (verif.canComplete) {
+        task.nextSuggestedAction = 'Observe next signal for follow-up orchestration.';
+        this.transition(task, TASK_STATUS.COMPLETED);
+      } else {
+        this._handleVerificationFailure(task, verif);
+      }
+    } else if (summary.outcome === 'pending') {
+      task.nextSuggestedAction = 'Some branches are still pending.';
+      this.transition(task, TASK_STATUS.WAITING_APPROVAL);
+    } else {
+      task.verification = { status: 'failed', method: 'aggregation', policy: task.aggregationPolicy };
+      task.error = summary.conflict ? summary.conflict.reason : 'Aggregation failed.';
+      this.transition(task, TASK_STATUS.FAILED);
+    }
+  }
+
+  async _runHandler(center, task) {
     const handlers = {
       [EXECUTION_CENTERS.LOCAL]: async () => ({
         outcome: 'ok',
@@ -273,23 +534,17 @@ class CiOrchestrator {
       [EXECUTION_CENTERS.HUMAN]: async () => ({ outcome: 'stub', message: 'Human action requires manual confirmation.' })
     };
 
-    const handler = handlers[task.executionCenter];
+    const handler = handlers[center];
     if (!handler) {
-      task.error = 'No execution handler found.';
-      task.verification = {
-        status: 'failed',
-        method: 'none'
-      };
-      this.transition(task, TASK_STATUS.FAILED);
-      return;
+      return { outcome: 'error', message: `No execution handler for center: ${center}` };
     }
+    return handler();
+  }
 
-    const result = await handler();
-    task.result = result;
+  async _applyVerificationAndComplete(task, result) {
+    const verif = runVerification(task, result);
 
-    this.transition(task, TASK_STATUS.VERIFYING);
-
-    if (result.outcome === 'ok') {
+    if (verif.canComplete) {
       task.verification = {
         status: 'verified',
         method: 'direct_result'
@@ -309,11 +564,18 @@ class CiOrchestrator {
       return;
     }
 
-    task.verification = {
-      status: 'unknown',
-      method: 'none'
-    };
-    this.transition(task, TASK_STATUS.UNKNOWN);
+    this._handleVerificationFailure(task, verif);
+  }
+
+  _handleVerificationFailure(task, verif) {
+    if (verif.exhausted) {
+      task.verification = { status: 'failed', method: 'retry_exhausted' };
+      task.error = verif.policyResult.reason;
+      this.transition(task, TASK_STATUS.VERIFICATION_FAILED);
+    } else {
+      task.verification = { status: 'unknown', method: 'none' };
+      this.transition(task, TASK_STATUS.UNKNOWN);
+    }
   }
 
   status() {
@@ -336,6 +598,15 @@ class CiOrchestrator {
   recentMemory(limit = 50) {
     return this.memoryStore.recent(limit);
   }
+
+  getCheckpoints() {
+    return this.checkpointStore.all();
+  }
+
+  getCheckpoint(id) {
+    return this.checkpointStore.get(id);
+  }
 }
 
 module.exports = { CiOrchestrator };
+

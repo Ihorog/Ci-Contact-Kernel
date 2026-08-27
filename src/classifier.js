@@ -19,7 +19,7 @@ function classifySignal(signal = {}) {
   if (text.includes('human') || text.includes('approve') || text.includes('review')) return CLASSIFICATIONS.HUMAN_ACTION;
   if (text.includes('task') || text.includes('run')) return CLASSIFICATIONS.TASK;
   if (text.includes('intent') || text.includes('want')) return CLASSIFICATIONS.INTENT;
-  if (signal.fact === true || text.startsWith('fact:') || text.includes('\"fact\"')) return CLASSIFICATIONS.FACT;
+  if (signal.fact === true || text.includes('fact:') || text.includes('\"fact\"')) return CLASSIFICATIONS.FACT;
   if (text.includes('event') || signal.event) return CLASSIFICATIONS.EVENT;
 
   return CLASSIFICATIONS.UNKNOWN;

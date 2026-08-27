@@ -49,8 +49,21 @@ function taskSummary(task) {
     classification: task.classification,
     targetNode: task.targetNode,
     executionCenter: task.executionCenter,
+    executionCenters: task.executionCenters,
     permissionLevel: task.permissionLevel,
     permissionDecision: task.permissionDecision,
+    approvalPolicy: task.approvalPolicy,
+    approvalState: task.approvalState,
+    checkpointId: task.checkpointId,
+    completionPolicy: task.completionPolicy,
+    requiredVerifiers: task.requiredVerifiers,
+    verificationResults: task.verificationResults,
+    verificationAttempt: task.verificationAttempt,
+    maxVerificationRetries: task.maxVerificationRetries,
+    incidentRecord: task.incidentRecord,
+    aggregationPolicy: task.aggregationPolicy,
+    aggregationSummary: task.aggregationSummary,
+    branches: task.branches,
     verification: task.verification,
     nextSuggestedAction: task.nextSuggestedAction,
     createdAt: task.createdAt,
@@ -95,6 +108,34 @@ function createApp(options = {}) {
     const task = await orchestrator.runTaskNow(req.params.id, req.body?.permissions || {});
     if (!task) return res.status(404).json({ error: 'Task not found' });
     return res.json({ task });
+  });
+
+  app.post('/ci/task/:id/approve', async (req, res) => {
+    const { checkpointId, actor, reason } = req.body || {};
+    if (!checkpointId) return res.status(400).json({ error: 'checkpointId is required.' });
+    const result = await orchestrator.approveTask(req.params.id, checkpointId, actor || 'api', reason || '');
+    if (!result) return res.status(404).json({ error: 'Task not found' });
+    if (result.error) return res.status(400).json(result);
+    return res.json({ task: taskSummary(result) });
+  });
+
+  app.post('/ci/task/:id/reject', (req, res) => {
+    const { checkpointId, actor, reason } = req.body || {};
+    if (!checkpointId) return res.status(400).json({ error: 'checkpointId is required.' });
+    const result = orchestrator.rejectTask(req.params.id, checkpointId, actor || 'api', reason || '');
+    if (!result) return res.status(404).json({ error: 'Task not found' });
+    if (result.error) return res.status(400).json(result);
+    return res.json({ task: taskSummary(result) });
+  });
+
+  app.get('/ci/checkpoints', (req, res) => {
+    res.json({ checkpoints: orchestrator.getCheckpoints() });
+  });
+
+  app.get('/ci/checkpoint/:id', (req, res) => {
+    const cp = orchestrator.getCheckpoint(req.params.id);
+    if (!cp) return res.status(404).json({ error: 'Checkpoint not found' });
+    return res.json({ checkpoint: cp });
   });
 
   app.get('/ci/status', (req, res) => {

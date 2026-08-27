@@ -1,9 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="uk">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Ci Contact Widget</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#071019">
+  <title>Ci+ — контактне ядро</title>
   <style>
     body { font-family: system-ui, sans-serif; margin: 2rem; background: #f5f7fb; color: #111; }
     .ci-logo { height: 48px; vertical-align: middle; margin-right: 0.75rem; }
@@ -44,60 +45,200 @@
   </div>
 
   <script>
-    const ids = ['signal', 'classification', 'node', 'permission', 'center', 'verification', 'memory'];
-    const set = (id, value) => document.getElementById(id).textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+    const $ = (id) => document.getElementById(id);
+    const launcher = $('launcher');
+    const shell = $('shell');
+    const form = $('signalForm');
+    const input = $('signalText');
+    const send = $('send');
+    const errorBox = $('error');
+    const historyKey = 'ci-plus-widget-history-v1';
 
-    function permissions() {
+    const domainRules = [
+      ['Домівка', /дім|домів|квартир|світл|вода|газ|опален|роутер|orange|телевізор|пристрій|ремонт/i],
+      ['Фінанси', /грош|оплат|рахунок|банк|ціна|бюджет|paypal|дохід|витрат/i],
+      ['Проєкти й робота', /проєкт|робот|repo|git|deploy|сайт|код|api|задач/i],
+      ['Дані й документи', /файл|документ|архів|дані|резерв|копі|пам'ят|збереж/i],
+      ['Події та автоматизація', /поді|нагад|календар|автомат|заплан|монітор|коли/i],
+      ['Особисте й сімейне', /сім'|марі|юл|здоров|подорож|настрій|особист/i]
+    ];
+
+    function detectDomain(text) {
+      return domainRules.find(([, rule]) => rule.test(text))?.[0] || 'Ci+ · загальний контур';
+    }
+
+    function permissionOverrides() {
       return {
-        repo_write: document.getElementById('permRepoWrite').checked,
-        deploy: document.getElementById('permDeploy').checked,
-        external_api_write: document.getElementById('permApiWrite').checked,
-        device_action: document.getElementById('permDevice').checked,
-        destructive_action: document.getElementById('permDestructive').checked
+        localWrite: $('localWrite').checked,
+        repoWrite: $('repoWrite').checked,
+        externalApiWrite: $('externalApiWrite').checked,
+        deployOrDeviceConfirm: $('deployConfirm').checked
       };
     }
 
-    async function refreshMemory() {
+    function openWidget() {
+      shell.hidden = false;
+      launcher.hidden = true;
+      launcher.setAttribute('aria-expanded', 'true');
+      requestAnimationFrame(() => input.focus());
+      checkHealth();
+    }
+
+    function closeWidget() {
+      shell.hidden = true;
+      launcher.hidden = false;
+      launcher.setAttribute('aria-expanded', 'false');
+      launcher.focus();
+    }
+
+    function statusClass(status = '') {
+      return String(status).toLowerCase().replace(/[^a-z]+/g, '-');
+    }
+
+    function renderTask(task, domain) {
+      if (!task) return;
+      $('result').hidden = false;
+      $('status').textContent = task.status || 'UNKNOWN';
+      $('status').className = `status ${statusClass(task.status)}`;
+      $('domain').textContent = domain || task.payload?.context?.domain || '—';
+      $('classification').textContent = task.classification || '—';
+      $('route').textContent = [task.targetNode, task.executionCenter].filter(Boolean).join(' → ') || '—';
+      $('permission').textContent = task.permissionDecision || '—';
+      const verification = task.verification || {};
+      const proof = [
+        task.id ? `Ci-ID: ${task.id}` : null,
+        verification.status ? `перевірка: ${verification.status}` : null,
+        verification.method ? `метод: ${verification.method}` : null,
+        task.nextSuggestedAction || null
+      ].filter(Boolean).join(' · ');
+      $('proof').textContent = proof || 'Доказ ще не отримано.';
+    }
+
+    function getHistory() {
+      try { return JSON.parse(localStorage.getItem(historyKey) || '[]'); }
+      catch { return []; }
+    }
+
+    function saveHistory(entry) {
+      const next = [entry, ...getHistory().filter((item) => item.id !== entry.id)].slice(0, 8);
+      localStorage.setItem(historyKey, JSON.stringify(next));
+      renderHistory();
+    }
+
+    function renderHistory() {
+      const items = getHistory();
+      $('history').replaceChildren(...(items.length ? items.map((item) => {
+        const row = document.createElement('div');
+        row.className = 'history-item';
+        const title = document.createElement('strong');
+        title.textContent = item.text;
+        const state = document.createElement('span');
+        state.textContent = item.status;
+        const meta = document.createElement('span');
+        meta.textContent = `${item.domain} · ${new Date(item.at).toLocaleString('uk-UA')}`;
+        row.append(title, state, meta);
+        return row;
+      }) : [Object.assign(document.createElement('span'), { textContent: 'Історія порожня.' })]));
+    }
+
+    async function requestJson(url, options) {
+      const response = await fetch(url, options);
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
+      return body;
+    }
+
+    async function settleTask(initialTask) {
+      let task = initialTask;
+      const transient = new Set(['CREATED', 'CLASSIFIED', 'ROUTED', 'WAITING_PERMISSION', 'QUEUED', 'RUNNING', 'VERIFYING']);
+      for (let attempt = 0; attempt < 12 && transient.has(task.status); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 450));
+        const data = await requestJson(`/ci/task/${encodeURIComponent(task.id)}`);
+        task = data.task || task;
+        renderTask(task, task.payload?.context?.domain);
+      }
+      return task;
+    }
+
+    async function checkHealth() {
       try {
-        const res = await fetch('/ci/memory');
-        if (!res.ok) {
-          throw new Error(`Memory request failed: ${res.status}`);
-        }
-        const data = await res.json();
-        set('memory', data.records || []);
-      } catch (error) {
-        set('memory', { error: error.message });
+        const status = await requestJson('/ci/status');
+        $('healthDot').classList.toggle('online', Boolean(status.workerActive));
+        $('healthText').textContent = status.workerActive ? `ядро активне · черга ${status.queueDepth || 0}` : 'ядро відповідає';
+      } catch {
+        $('healthDot').classList.remove('online');
+        $('healthText').textContent = 'ядро недоступне';
       }
     }
 
-    document.getElementById('sendBtn').addEventListener('click', async () => {
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const text = input.value.trim();
+      if (!text) return;
+      const domain = detectDomain(text);
+      send.disabled = true;
+      send.textContent = 'Передаю…';
+      errorBox.hidden = true;
       try {
-        const text = document.getElementById('signalText').value.trim();
-        const res = await fetch('/ci/signal', {
+        const payload = {
+          message: text,
+          source: 'ci-plus-widget',
+          permissionLevel: $('permissionLevel').value,
+          permissions: permissionOverrides(),
+          context: { domain, interface: 'single-icon-widget' }
+        };
+        const created = await requestJson('/ci/signal', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, permissions: permissions() })
+          body: JSON.stringify(payload)
         });
+        let task = created.task;
+        renderTask(task, domain);
 
-        if (!res.ok) {
-          throw new Error(`Signal request failed: ${res.status}`);
+        if (task.status === 'BLOCKED' && Object.values(permissionOverrides()).some(Boolean)) {
+          const rerun = await requestJson(`/ci/task/${encodeURIComponent(task.id)}/run`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ permissions: permissionOverrides() })
+          });
+          task = rerun.task || task;
         }
 
-        const data = await res.json();
-        set('signal', data.signal);
-        set('classification', data.classification);
-        set('node', data.node);
-        set('permission', data.permission);
-        set('center', data.executionCenter);
-        set('verification', data.verification);
-        await refreshMemory();
+        task = await settleTask(task);
+        renderTask(task, domain);
+        saveHistory({ id: task.id, text, domain, status: task.status || 'UNKNOWN', at: new Date().toISOString() });
+        checkHealth();
       } catch (error) {
-        set('verification', { status: 'failed', details: error.message });
+        errorBox.textContent = `Не передано: ${error.message}`;
+        errorBox.hidden = false;
+      } finally {
+        send.disabled = false;
+        send.textContent = 'Передати в Ci';
       }
     });
 
-    ids.forEach((id) => set(id, 'waiting...'));
-    refreshMemory();
+    launcher.addEventListener('click', openWidget);
+    $('close').addEventListener('click', closeWidget);
+    shell.addEventListener('click', (event) => { if (event.target === shell) closeWidget(); });
+    document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !shell.hidden) closeWidget(); });
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'uk-UA';
+      recognition.interimResults = false;
+      recognition.addEventListener('start', () => $('voice').classList.add('listening'));
+      recognition.addEventListener('end', () => $('voice').classList.remove('listening'));
+      recognition.addEventListener('result', (event) => {
+        input.value = event.results[0][0].transcript;
+        input.focus();
+      });
+      $('voice').addEventListener('click', () => recognition.start());
+    } else {
+      $('voice').hidden = true;
+    }
+
+    renderHistory();
   </script>
 </body>
 </html>

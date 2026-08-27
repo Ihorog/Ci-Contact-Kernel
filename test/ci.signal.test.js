@@ -20,8 +20,8 @@ test('POST /ci/signal creates a normalized queued task', async () => {
     .expect(202);
 
   assert.equal(response.body.task.classification, 'fact');
-  assert.equal(response.body.task.targetNode, 'current_fact');
-  assert.equal(response.body.task.executionCenter, 'local');
+  assert.equal(response.body.task.targetNode, 'ci.memory.node');
+  assert.equal(response.body.task.executionCenter, 'memory');
   assert.equal(response.body.task.status, 'QUEUED');
 });
 
@@ -51,7 +51,7 @@ test('unsafe external actions are blocked by default', async () => {
     .send({ text: 'deploy service now' })
     .expect(202);
 
-  assert.equal(response.body.task.classification, 'service_action');
+  assert.equal(response.body.task.classification, 'deploy_action');
   assert.equal(response.body.task.status, 'BLOCKED');
   assert.equal(response.body.task.verification.status, 'blocked');
   assert.match(response.body.task.permissionDecision, /BLOCKED/);
@@ -67,7 +67,7 @@ test('POST /ciopen/webhook normalizes as webhook event input', async () => {
 
   assert.equal(response.body.task.source, 'ciopen.webhook');
   assert.equal(response.body.task.classification, 'event');
-  assert.equal(response.body.task.targetNode, 'event');
+  assert.equal(response.body.task.targetNode, 'ci.local.node');
 });
 
 test('webhook payload with privileged action keywords is permission-gated', async () => {
@@ -78,7 +78,7 @@ test('webhook payload with privileged action keywords is permission-gated', asyn
     .send({ payload: { action: 'deploy' } })
     .expect(202);
 
-  assert.equal(response.body.task.classification, 'service_action');
+  assert.equal(response.body.task.classification, 'deploy_action');
   assert.equal(response.body.task.status, 'BLOCKED');
   assert.match(response.body.task.permissionDecision, /deploy/);
 });

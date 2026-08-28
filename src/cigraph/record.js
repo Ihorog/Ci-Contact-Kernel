@@ -74,7 +74,9 @@ function validateRecord(record) {
 
   const errors = [];
 
-  if (record.ci_id !== null && !isValidCiId(record.ci_id)) {
+  if (!record.ci_id) {
+    errors.push('ci_id is required');
+  } else if (!isValidCiId(record.ci_id)) {
     errors.push(`invalid ci_id: ${record.ci_id}`);
   }
 

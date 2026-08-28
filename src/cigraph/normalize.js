@@ -33,18 +33,24 @@ function hashRaw(raw) {
 function normalizeProvenance(raw = {}, context = {}) {
   const now = new Date().toISOString();
 
-  const sourceType = resolveSourceType(raw.source_type || context.source_type);
+  const prov = raw && typeof raw.provenance === 'object' && raw.provenance !== null ? raw.provenance : {};
+  const sourceType = resolveSourceType(prov.source_type || raw.source_type || context.source_type);
 
   return {
-    ingest_id: raw.ingest_id || context.ingest_id || null,
+    ingest_id: prov.ingest_id || raw.ingest_id || context.ingest_id || null,
     source_type: sourceType,
-    source_ref: raw.source_ref || context.source_ref || null,
-    source_actor_ci_id: raw.source_actor_ci_id || context.source_actor_ci_id || null,
-    received_at: raw.received_at || context.received_at || now,
-    source_timestamp: raw.source_timestamp || raw.timestamp || context.source_timestamp || null,
-    raw_hash: raw.raw_hash || hashRaw(raw),
-    parent_claim_ids: Array.isArray(raw.parent_claim_ids) ? [...raw.parent_claim_ids] : [],
-    transform_chain: Array.isArray(raw.transform_chain) ? [...raw.transform_chain] : [],
+    source_ref: prov.source_ref || raw.source_ref || context.source_ref || null,
+    source_actor_ci_id: prov.source_actor_ci_id || raw.source_actor_ci_id || context.source_actor_ci_id || null,
+    received_at: prov.received_at || raw.received_at || context.received_at || now,
+    source_timestamp: prov.source_timestamp || raw.source_timestamp || raw.timestamp || context.source_timestamp || null,
+    raw_hash: prov.raw_hash || raw.raw_hash || hashRaw(raw),
+    parent_claim_ids: Array.isArray(prov.parent_claim_ids)
+      ? [...prov.parent_claim_ids]
+      : (Array.isArray(raw.parent_claim_ids) ? [...raw.parent_claim_ids] : []),
+    transform_chain: Array.isArray(prov.transform_chain)
+      ? [...prov.transform_chain]
+      : (Array.isArray(raw.transform_chain) ? [...raw.transform_chain] : []),
+    _extra: raw && raw._extra && typeof raw._extra === 'object' ? { ...raw._extra } : {},
   };
 }
 

@@ -218,6 +218,18 @@ function classifyCiGraph(input, context = {}) {
       unresolved.push('domain');
     }
   }
+  if (resolvedScopes.length > 0 && resolvedDomains.length > 0) {
+    const allowed = new Set();
+    for (const s of resolvedScopes) {
+      for (const d of (SCOPE_DOMAINS[s] || [])) allowed.add(d);
+    }
+    const filtered = resolvedDomains.filter(d => allowed.has(d));
+    if (filtered.length !== resolvedDomains.length) {
+      reasons.push(`domain: filtered by scope: ${filtered.join(',') || 'none'}`);
+    }
+    resolvedDomains = filtered;
+    if (resolvedDomains.length === 0) unresolved.push('domain');
+  }
 
   // 6. class — must resolve to exactly one primary class
   const VALID_CLASSES = new Set(Object.values(CLASS));

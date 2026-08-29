@@ -162,6 +162,82 @@ function createApp(options = {}) {
     res.status(202).json({ context, task: taskSummary(task) });
   });
 
+  // ── Cigrafin ingestion routes ─────────────────────────────────────────────
+
+  const {
+    ingestCigrafinItem,
+    runCigrafinScan,
+    reprocessIngestItem,
+    getIngestRecord,
+    listIngestRecords,
+    getQuarantine,
+  } = require('./cigraph/ingest/pipeline');
+  const { buildItemsFromWebhook } = require('./cigraph/ingest/githubCigrafinAdapter');
+
+  // Read-only intake status
+  app.get('/cigrafin/status', ciRateLimiter, (_req, res) => {
+    const records = listIngestRecords();
+    const quarantine = getQuarantine();
+    res.json({
+      total_ingest_records: records.length,
+      quarantined: quarantine.size,
+      status_counts: records.reduce((acc, r) => {
+        acc[r.ingest_status] = (acc[r.ingest_status] || 0) + 1;
+        return acc;
+      }, {}),
+    });
+  });
+
+  app.get('/cigrafin/ingest/:id', ciRateLimiter, (req, res) => {
+    const record = getIngestRecord(req.params.id);
+    if (!record) return res.status(404).json({ error: 'not_found' });
+    return res.json(record);
+  });
+
+  app.get('/cigrafin/quarantine', ciRateLimiter, (req, res) => {
+    res.json({ items: getQuarantine().list() });
+  });
+
+  // Manual reprocess by ingest_id (requires operator intent header)
+  app.post('/cigrafin/reprocess/:id', ciRateLimiter, async (req, res) => {
+    const operatorId = req.headers['x-ci-operator-id'] || 'unknown';
+    try {
+      const result = await reprocessIngestItem(req.params.id, { operator: operatorId });
+      res.json(result);
+    } catch (err) {
+      const safe = String(err.message).slice(0, 300);
+      if (safe.includes('NOT_FOUND')) return res.status(404).json({ error: safe });
+      return res.status(500).json({ error: safe });
+    }
+  });
+
+  // Manual scan trigger (requires operator intent header — not automatic approval)
+  app.post('/cigrafin/scan', ciRateLimiter, async (req, res) => {
+    const operatorId = req.headers['x-ci-operator-id'];
+    if (!operatorId) return res.status(403).json({ error: 'x-ci-operator-id header required' });
+    try {
+      const summary = await runCigrafinScan(process.env, { operator: operatorId });
+      res.json(summary);
+    } catch (err) {
+      return res.status(500).json({ error: String(err.message).slice(0, 300) });
+    }
+  });
+
+  // Push/webhook event from source repository
+  app.post('/cigrafin/webhook', ciRateLimiter, async (req, res) => {
+    const payload = req.body || {};
+    try {
+      const items = await buildItemsFromWebhook(payload, process.env);
+      const results = [];
+      for (const item of items) {
+        results.push(await ingestCigrafinItem(item, { source: 'webhook' }));
+      }
+      res.json({ processed: results.length, results });
+    } catch (err) {
+      return res.status(500).json({ error: String(err.message).slice(0, 300) });
+    }
+  });
+
   app.get('/ci/monitor', ciRateLimiter, (req, res) => {
     res.redirect('/ci-monitor.html');
   });

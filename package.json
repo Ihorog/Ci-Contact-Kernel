@@ -4,6 +4,9 @@
   "description": "",
   "main": "src/server.js",
   "scripts": {
+    "deploy": "wrangler deploy",
+    "dev:worker": "wrangler dev",
+    "preview:worker": "wrangler versions upload",
     "test": "node --test",
     "start": "node src/server.js"
   },
@@ -18,6 +21,7 @@
     "express": "^5.2.1"
   },
   "devDependencies": {
-    "supertest": "^7.2.2"
+    "supertest": "^7.2.2",
+    "wrangler": "4.127.1"
   }
 }

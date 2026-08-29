@@ -7,7 +7,19 @@
   <title>Ci+ — контактне ядро</title>
   <style>
     body { font-family: system-ui, sans-serif; margin: 2rem; background: #f5f7fb; color: #111; }
-    .ci-logo { height: 48px; vertical-align: middle; margin-right: 0.75rem; }
+    .ci-logo {
+      display: block;
+      width: 64px;
+      height: 64px;
+      object-fit: contain;
+      background: transparent;
+      flex-shrink: 0;
+    }
+    .ci-logo-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
     h1 { margin-top: 0; display: flex; align-items: center; }
     .grid { display: grid; gap: 1rem; grid-template-columns: 1fr 1fr; }
     .card { background: #fff; border: 1px solid #d7dfef; border-radius: 8px; padding: 1rem; }
@@ -19,7 +31,7 @@
   </style>
 </head>
 <body>
-  <h1><img class="ci-logo" src="https://raw.githubusercontent.com/Ihorog/media/main/logo/ci1_logo_1.png" alt="Ci logo" />Ci Contact Widget</h1>
+  <h1><span class="ci-logo-wrap"><img class="ci-logo" src="/ci-mark-dark.png" alt="Ci logo" />Ci Contact Widget</span></h1>
   <p>signal → classify → route → gate → execute/stub → verify → memory</p>
   <div class="grid">
     <section class="card full">

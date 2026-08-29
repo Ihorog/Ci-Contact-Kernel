@@ -30,7 +30,8 @@ class SupabaseStore {
     }
     this.client = client;
     this.table = options.table || 'ci_memory';
-    this.bufferLimit = Math.max(1, options.bufferLimit != null ? Number(options.bufferLimit) : 2000);
+    const rawLimit = options.bufferLimit != null ? Number(options.bufferLimit) : 2000;
+    this.bufferLimit = Math.max(1, Number.isFinite(rawLimit) ? rawLimit : 2000);
     this.buffer = [];
     this._appendChain = Promise.resolve();
   }

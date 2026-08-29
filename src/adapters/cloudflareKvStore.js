@@ -37,7 +37,8 @@ class CloudflareKvStore {
       );
     }
     this.kv = kvNamespace;
-    this.bufferLimit = Math.max(1, Number(options.bufferLimit) || 2000);
+    const rawLimit = options.bufferLimit != null ? Number(options.bufferLimit) : 2000;
+    this.bufferLimit = Math.max(1, Number.isFinite(rawLimit) ? rawLimit : 2000);
     this.buffer = [];
     this._writeChain = Promise.resolve();
   }
@@ -55,13 +56,19 @@ class CloudflareKvStore {
     }
 
     this._writeChain = this._writeChain
-      .then(() => {
+      .then(async () => {
         const key = `ci_memory:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
         const value = JSON.stringify(record);
         const recordedAt = new Date().toISOString();
-        return this.kv
-          .put(key, value, { metadata: { recordedAt } })
-          .then(() => this._updateIndex(key));
+        await this.kv.put(key, value, { metadata: { recordedAt } });
+        try {
+          await this._updateIndex(key);
+        } catch (indexErr) {
+          if (typeof this.kv.delete === 'function') {
+            try { await this.kv.delete(key); } catch { /* best-effort rollback */ }
+          }
+          throw indexErr;
+        }
       })
       .catch((err) => {
         const idx = this.buffer.lastIndexOf(record);
@@ -113,16 +120,29 @@ class CloudflareKvStore {
   }
 
   async _updateIndex(newKey) {
-    let index = [];
+    let raw;
     try {
-      const raw = await this.kv.get(INDEX_KEY, { type: 'json' });
-      index = Array.isArray(raw) ? raw : [];
-    } catch {
-      index = [];
+      raw = await this.kv.get(INDEX_KEY, { type: 'json' });
+    } catch (err) {
+      throw new Error(`CloudflareKvStore: index read failed, aborting update: ${err.message}`);
     }
+    let index = Array.isArray(raw) ? raw : [];
     index.unshift(newKey);
-    if (index.length > this.bufferLimit) index = index.slice(0, this.bufferLimit);
+    let evicted = [];
+    if (index.length > this.bufferLimit) {
+      evicted = index.slice(this.bufferLimit);
+      index = index.slice(0, this.bufferLimit);
+    }
     await this.kv.put(INDEX_KEY, JSON.stringify(index));
+    if (evicted.length > 0 && typeof this.kv.delete === 'function') {
+      await Promise.all(
+        evicted.map((k) =>
+          this.kv.delete(k).catch((err) => {
+            console.error('CloudflareKvStore: evicted key deletion failed:', k, err.message);
+          })
+        )
+      );
+    }
   }
 }
 

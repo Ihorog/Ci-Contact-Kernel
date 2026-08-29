@@ -346,7 +346,7 @@
     >
       <img
         id="ci-logo-img"
-        src="/ci-mark-dark.png"
+        src="/ci-logo.png"
         alt="Ci+ логотип"
         onerror="this.hidden=true; document.getElementById('ci-logo-missing').hidden=false;"
       >
@@ -461,7 +461,7 @@
 
     /* ── state machine ── */
     const STATES = ['спокій','помітив','слухає','розуміє','виконує','перевіряє','підтверджено'];
-    const STATE_MAP = { rest:'спокій', noticed:'помітив', listening:'слухає', understanding:'розуміє', running:'виконує', verifying:'перевіряє', confirmed:'підтверджено', error:'не виконує' };
+    const STATE_MAP = { rest:'спокій', noticed:'помітив', listening:'слухає', understanding:'розуміє', running:'виконує', verifying:'перевіряє', confirmed:'підтверджено', error:'помилка', critical:'критично' };
     let currentState = 'спокій';
 
     function setState(key) {

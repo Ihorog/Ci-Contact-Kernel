@@ -388,6 +388,9 @@ test('binary PNG file is quarantined with metadata retained, content not invente
   assert.equal(rec.media_type, 'image/png');
   // No hallucinated content — claims_count 0 for binary
   assert.equal(result.claims_count, 0);
+  // Correct quarantine reason for fetched binary content
+  const qList = getQuarantine().list(result.ingest_id);
+  assert.ok(qList.some((q) => q.reason === QUARANTINE_REASON.BINARY_UNSUPPORTED));
 });
 
 // ── pipeline — malicious/prompt injection treated as data ─────────────────────

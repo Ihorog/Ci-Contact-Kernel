@@ -170,8 +170,8 @@ async function ingestCigrafinItem(sourceItem, context = {}) {
   // ── Quarantine binary/unsupported before parsing ──────────────────────────
   if (content === null || isBinaryMedia(mediaType)) {
     const reason = content === null
-      ? QUARANTINE_REASON.BINARY_UNSUPPORTED
-      : QUARANTINE_REASON.SIZE_EXCEEDED;
+      ? QUARANTINE_REASON.SIZE_EXCEEDED
+      : QUARANTINE_REASON.BINARY_UNSUPPORTED;
     _updateStatus(record, INGEST_STATUS.QUARANTINED);
     const qr = _quarantine.add(record, reason, `media_type=${mediaType}`);
     _dedupe.record(identity, record.ingest_id);

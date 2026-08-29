@@ -35,6 +35,12 @@ const DEFAULT_MAX_BYTES = 512 * 1024; // 512 KiB
  * @returns {Promise<any>}
  */
 function githubApiGet(path, env = {}) {
+  // Guard: path must begin with '/' and contain only safe URL characters.
+  // This prevents SSRF by ensuring the concatenated URL always targets
+  // GITHUB_API_BASE and cannot be redirected by a crafted path value.
+  if (typeof path !== 'string' || !path.startsWith('/') || /[\s#?]/.test(path)) {
+    return Promise.reject(new Error(`CIGRAFIN_ERR_INVALID_API_PATH: ${String(path).slice(0, 80)}`));
+  }
   return new Promise((resolve, reject) => {
     const token = env.CIGRAFIN_GITHUB_TOKEN;
     const headers = {
@@ -88,8 +94,10 @@ function githubApiGet(path, env = {}) {
  */
 async function fetchBlobContent(repo, sha, env = {}) {
   const maxBytes = Number(env.CIGRAFIN_MAX_BLOB_BYTES) || DEFAULT_MAX_BYTES;
+  const safeRepo = encodeURIComponent(repo).replace(/%2F/g, '/');
+  const safeSha  = encodeURIComponent(sha);
   // Use the git blobs endpoint to get content + size before fetching
-  const meta = await githubApiGet(`/repos/${repo}/git/blobs/${sha}`, env);
+  const meta = await githubApiGet(`/repos/${safeRepo}/git/blobs/${safeSha}`, env);
   if (meta.size > maxBytes) return null;
 
   if (meta.encoding === 'base64' && meta.content) {
@@ -108,7 +116,9 @@ async function fetchBlobContent(repo, sha, env = {}) {
  * @returns {Promise<string>}
  */
 async function getRefSha(repo, ref, env = {}) {
-  const data = await githubApiGet(`/repos/${repo}/git/ref/heads/${ref}`, env);
+  const safeRepo = encodeURIComponent(repo).replace(/%2F/g, '/');
+  const safeRef  = encodeURIComponent(ref);
+  const data = await githubApiGet(`/repos/${safeRepo}/git/refs/heads/${safeRef}`, env);
   return data.object.sha;
 }
 
@@ -121,8 +131,10 @@ async function getRefSha(repo, ref, env = {}) {
  * @returns {Promise<Array<{path,blob_sha,size_bytes}>>}
  */
 async function flattenTree(repo, treeSha, env = {}) {
+  const safeRepo = encodeURIComponent(repo).replace(/%2F/g, '/');
+  const safeSha  = encodeURIComponent(treeSha);
   const data = await githubApiGet(
-    `/repos/${repo}/git/trees/${treeSha}?recursive=1`,
+    `/repos/${safeRepo}/git/trees/${safeSha}?recursive=1`,
     env,
   );
   return (data.tree || [])
@@ -149,7 +161,9 @@ async function pollCigrafinItems(env = {}) {
   const prefix  = env.CIGRAFIN_SOURCE_PATH ?? 'Cigrafin';
 
   const commitSha = await getRefSha(repo, ref, env);
-  const commitData = await githubApiGet(`/repos/${repo}/git/commits/${commitSha}`, env);
+  const safeRepo  = encodeURIComponent(repo).replace(/%2F/g, '/');
+  const safeCsha  = encodeURIComponent(commitSha);
+  const commitData = await githubApiGet(`/repos/${safeRepo}/git/commits/${safeCsha}`, env);
   const treeSha = commitData.tree.sha;
 
   const blobs = await flattenTree(repo, treeSha, env);
@@ -195,7 +209,9 @@ async function buildItemsFromWebhook(payload, env = {}) {
   const blobsBySha  = new Map();
 
   if (commitSha) {
-    const commitData = await githubApiGet(`/repos/${repo}/git/commits/${commitSha}`, env);
+    const safeRepo2 = encodeURIComponent(repo).replace(/%2F/g, '/');
+    const safeCsha2 = encodeURIComponent(commitSha);
+    const commitData = await githubApiGet(`/repos/${safeRepo2}/git/commits/${safeCsha2}`, env);
     const blobs = await flattenTree(repo, commitData.tree.sha, env);
     for (const b of blobs) blobsBySha.set(b.path, b);
   }

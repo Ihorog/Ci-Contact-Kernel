@@ -1,0 +1,800 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#071019">
+  <title>Ci+ — хмарний контакт</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    :root {
+      --bg: #071019;
+      --surface: #0d1b2a;
+      --border: #1a2d42;
+      --text: #c8ddf0;
+      --text-dim: #5c7a96;
+      --accent: #3a8dde;
+      --critical: #e05050;
+      --important: #e0aa30;
+      --normal: #3a8dde;
+      --confirmed: #3aae6e;
+      --logo-size: 96px;
+    }
+
+    html, body {
+      margin: 0; padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, sans-serif;
+      min-height: 100dvh;
+    }
+
+    /* ── layout ── */
+    .app {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100dvh;
+      padding: 2rem 1rem 4rem;
+      gap: 2rem;
+    }
+
+    /* ── logo ── */
+    #ci-logo-btn {
+      background: none;
+      border: none;
+      padding: 0;
+      cursor: pointer;
+      outline: none;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: var(--logo-size);
+      height: var(--logo-size);
+      border-radius: 50%;
+      transition: filter 0.2s;
+    }
+    #ci-logo-btn:focus-visible {
+      box-shadow: 0 0 0 3px var(--accent);
+    }
+    #ci-logo-btn:hover { filter: drop-shadow(0 0 12px var(--accent)); }
+    #ci-logo-btn.listening { filter: drop-shadow(0 0 18px var(--critical)); animation: pulse 1s infinite alternate; }
+    @keyframes pulse { from { filter: drop-shadow(0 0 10px var(--critical)); } to { filter: drop-shadow(0 0 26px var(--critical)); } }
+
+    #ci-logo-btn img {
+      width: var(--logo-size);
+      height: var(--logo-size);
+      object-fit: contain;
+      display: block;
+    }
+    #ci-logo-btn .logo-missing {
+      width: var(--logo-size);
+      height: var(--logo-size);
+      border: 2px dashed var(--border);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      text-align: center;
+      padding: 0.5rem;
+    }
+
+    /* ── state badge ── */
+    #state-badge {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-dim);
+      padding: 0.2rem 0.7rem;
+      border: 1px solid var(--border);
+      border-radius: 99px;
+    }
+    #state-badge.state-listening { color: var(--accent); border-color: var(--accent); }
+    #state-badge.state-running { color: var(--important); border-color: var(--important); }
+    #state-badge.state-confirmed { color: var(--confirmed); border-color: var(--confirmed); }
+    #state-badge.state-critical { color: var(--critical); border-color: var(--critical); }
+    #state-badge.state-error { color: var(--critical); border-color: var(--critical); }
+
+    /* ── contact panel ── */
+    #contact-panel {
+      width: 100%;
+      max-width: 540px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      display: none;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    #contact-panel.open { display: flex; }
+
+    #contact-panel h2 {
+      margin: 0 0 0.25rem;
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    #signal-input {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 1rem;
+      padding: 0.6rem 0.75rem;
+      resize: vertical;
+      min-height: 72px;
+      outline: none;
+    }
+    #signal-input:focus { border-color: var(--accent); }
+
+    .row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+
+    select, button {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 0.4rem 0.8rem;
+      font-size: 0.875rem;
+      cursor: pointer;
+    }
+    select { appearance: auto; }
+
+    button.primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+      font-weight: 600;
+    }
+    button.primary:hover { opacity: 0.85; }
+    button.primary:disabled { opacity: 0.4; cursor: default; }
+    button.danger { color: var(--critical); border-color: var(--critical); }
+
+    /* file input */
+    #file-input { display: none; }
+    .file-label {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 0.4rem 0.8rem;
+      font-size: 0.875rem;
+      cursor: pointer;
+      user-select: none;
+    }
+    .file-label:hover { border-color: var(--accent); }
+    #file-name { font-size: 0.8rem; color: var(--text-dim); }
+
+    /* voice */
+    #voice-btn { position: relative; }
+    #voice-btn.active { color: var(--critical); border-color: var(--critical); }
+
+    /* ── critical hold banner ── */
+    #critical-banner {
+      display: none;
+      background: #1a0808;
+      border: 1px solid var(--critical);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      color: var(--critical);
+      font-size: 0.9rem;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    #critical-banner.visible { display: flex; }
+    #critical-banner strong { font-weight: 700; }
+    #critical-banner .confirm-row { display: flex; gap: 0.5rem; }
+
+    /* ── result ── */
+    #result-panel {
+      width: 100%;
+      max-width: 540px;
+      display: none;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    #result-panel.visible { display: flex; }
+
+    .result-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      font-size: 0.85rem;
+    }
+    .result-card h3 { margin: 0 0 0.4rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); }
+    .result-card pre { margin: 0; white-space: pre-wrap; word-break: break-all; font-family: ui-monospace, monospace; font-size: 0.8rem; }
+
+    /* ── signal log ── */
+    #log-section {
+      width: 100%;
+      max-width: 540px;
+    }
+    #log-section summary {
+      cursor: pointer;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-dim);
+      padding: 0.3rem 0;
+    }
+    #log-list {
+      margin-top: 0.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      max-height: 280px;
+      overflow-y: auto;
+    }
+    .log-entry {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.4rem 0.75rem;
+      font-size: 0.8rem;
+      display: flex;
+      gap: 0.5rem;
+      align-items: flex-start;
+    }
+    .log-entry .sev { font-weight: 700; min-width: 70px; }
+    .sev.normal { color: var(--normal); }
+    .sev.important { color: var(--important); }
+    .sev.critical { color: var(--critical); }
+    .log-entry .log-text { flex: 1; word-break: break-word; }
+    .log-entry .log-state { color: var(--text-dim); font-size: 0.75rem; white-space: nowrap; }
+
+    /* ── settings ── */
+    #settings-section {
+      width: 100%;
+      max-width: 540px;
+    }
+    #settings-section summary {
+      cursor: pointer;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-dim);
+      padding: 0.3rem 0;
+    }
+    .settings-grid {
+      margin-top: 0.5rem;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.5rem;
+    }
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.4rem 0.75rem;
+      font-size: 0.82rem;
+      gap: 0.5rem;
+    }
+    .setting-row label { cursor: pointer; flex: 1; }
+    input[type=checkbox] { accent-color: var(--accent); }
+
+    /* ── channels status ── */
+    #channels-section {
+      width: 100%;
+      max-width: 540px;
+    }
+    #channels-section summary {
+      cursor: pointer;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-dim);
+      padding: 0.3rem 0;
+    }
+    .channels-list {
+      margin-top: 0.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+    .channel-row {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.35rem 0.75rem;
+      font-size: 0.82rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .channel-row .ch-status {
+      font-size: 0.75rem;
+    }
+    .ch-status.connected { color: var(--confirmed); }
+    .ch-status.disconnected { color: var(--text-dim); }
+
+    /* ── error ── */
+    #error-msg {
+      color: var(--critical);
+      font-size: 0.85rem;
+      display: none;
+    }
+    #error-msg.visible { display: block; }
+
+    /* ── mobile ── */
+    @media (max-width: 480px) {
+      :root { --logo-size: 72px; }
+      .app { padding: 1.5rem 0.75rem 3rem; }
+      .settings-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app" role="main">
+
+    <!-- Logo: single click = text contact, double click = voice contact -->
+    <button
+      id="ci-logo-btn"
+      aria-label="Ci+ — натисніть для текстового контакту, подвійний клік для голосового"
+      title="Одинарний клік — текстовий контакт · Подвійний клік — голосовий контакт"
+    >
+      <img
+        id="ci-logo-img"
+        src="/assets/ci-logo.png"
+        alt="Ci+ логотип"
+        onerror="this.src='/ci-mark-dark.png'; this.onerror=function(){this.hidden=true; document.getElementById('ci-logo-missing').hidden=false;};"
+      >
+      <span id="ci-logo-missing" class="logo-missing" hidden>ci-logo.png<br>не підключено</span>
+    </button>
+
+    <div id="state-badge" role="status" aria-live="polite">спокій</div>
+
+    <!-- Text contact panel -->
+    <section id="contact-panel" aria-label="Текстовий контакт">
+      <h2>Ci+ контакт</h2>
+
+      <textarea
+        id="signal-input"
+        placeholder="Введіть повідомлення або команду…"
+        aria-label="Текст сигналу"
+      ></textarea>
+
+      <div class="row">
+        <label for="severity-select" style="font-size:0.82rem; color:var(--text-dim)">Рівень:</label>
+        <select id="severity-select" aria-label="Рівень важливості">
+          <option value="normal">normal</option>
+          <option value="important">important</option>
+          <option value="critical">critical</option>
+        </select>
+
+        <label class="file-label" for="file-input" title="Прикріпити файл">📎 Файл</label>
+        <input type="file" id="file-input" aria-label="Прикріпити файл">
+        <span id="file-name"></span>
+      </div>
+
+      <div class="row">
+        <button id="voice-btn" type="button" title="Голосовий контакт (або подвійний клік на логотип)">🎙 Голос</button>
+        <button class="primary" id="send-btn" type="button">Передати сигнал</button>
+        <button id="close-btn" type="button">Закрити</button>
+      </div>
+
+      <div id="error-msg" role="alert"></div>
+    </section>
+
+    <!-- Critical hold banner -->
+    <div id="critical-banner" role="alert" aria-live="assertive">
+      <strong>⚠ Критичний сигнал утримується до підтвердження</strong>
+      <span id="critical-summary"></span>
+      <div class="confirm-row">
+        <button class="danger" id="confirm-btn" type="button">Підтвердити виконання</button>
+        <button id="cancel-critical-btn" type="button">Скасувати</button>
+      </div>
+    </div>
+
+    <!-- Result -->
+    <section id="result-panel" aria-label="Результат сигналу">
+      <div class="result-card">
+        <h3>Стан машини</h3>
+        <pre id="res-state"></pre>
+      </div>
+      <div class="result-card">
+        <h3>Відповідь Ci</h3>
+        <pre id="res-task"></pre>
+      </div>
+    </section>
+
+    <!-- Signal log -->
+    <details id="log-section" open>
+      <summary>Журнал сигналів</summary>
+      <div id="log-list" aria-label="Журнал сигналів"></div>
+    </details>
+
+    <!-- Channels -->
+    <details id="channels-section">
+      <summary>Канали</summary>
+      <div class="channels-list" id="channels-list"></div>
+    </details>
+
+    <!-- Settings -->
+    <details id="settings-section">
+      <summary>Налаштування</summary>
+      <div class="settings-grid">
+        <div class="setting-row">
+          <label for="s-sound">Звук</label>
+          <input type="checkbox" id="s-sound" checked>
+        </div>
+        <div class="setting-row">
+          <label for="s-voice">Голос</label>
+          <input type="checkbox" id="s-voice" checked>
+        </div>
+        <div class="setting-row">
+          <label for="s-initiative">Ініціатива Ci</label>
+          <input type="checkbox" id="s-initiative">
+        </div>
+        <div class="setting-row">
+          <label for="s-privacy">Приватний режим</label>
+          <input type="checkbox" id="s-privacy">
+        </div>
+        <div class="setting-row">
+          <label for="s-confirm">Підтвердження дій</label>
+          <input type="checkbox" id="s-confirm" checked>
+        </div>
+        <div class="setting-row">
+          <label for="s-silence">Тиша (без сповіщень)</label>
+          <input type="checkbox" id="s-silence">
+        </div>
+      </div>
+    </details>
+
+  </main>
+
+  <script>
+    /* ── helpers ── */
+    const $ = (id) => document.getElementById(id);
+    const LOG_KEY = 'ci-plus-signal-log-v1';
+
+    /* ── state machine ── */
+    const STATES = ['спокій','помітив','слухає','розуміє','виконує','перевіряє','підтверджено'];
+    const STATE_MAP = { rest:'спокій', noticed:'помітив', listening:'слухає', understanding:'розуміє', running:'виконує', verifying:'перевіряє', confirmed:'підтверджено', error:'не виконує' };
+    let currentState = 'спокій';
+
+    function setState(key) {
+      currentState = STATE_MAP[key] || key;
+      const badge = $('state-badge');
+      badge.textContent = currentState;
+      badge.className = `state-${key}`;
+    }
+
+    /* ── signal log ── */
+    function loadLog() {
+      try { return JSON.parse(localStorage.getItem(LOG_KEY) || '[]'); }
+      catch { return []; }
+    }
+    function saveLog(entry) {
+      const log = [entry, ...loadLog()].slice(0, 100);
+      localStorage.setItem(LOG_KEY, JSON.stringify(log));
+      renderLog();
+    }
+    function renderLog() {
+      const list = $('log-list');
+      const entries = loadLog();
+      if (!entries.length) {
+        list.innerHTML = '<div style="color:var(--text-dim);font-size:0.8rem;padding:0.3rem">Журнал порожній.</div>';
+        return;
+      }
+      list.innerHTML = entries.map((e) => `
+        <div class="log-entry">
+          <span class="sev ${e.severity}">${e.severity}</span>
+          <span class="log-text">${escHtml(e.text || e.message || '')}</span>
+          <span class="log-state">${escHtml(e.state || '')} · ${formatTime(e.receivedAt)}</span>
+        </div>`).join('');
+    }
+    function escHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    }
+    function formatTime(iso) {
+      if (!iso) return '';
+      try { return new Date(iso).toLocaleString('uk-UA', { timeStyle:'short', dateStyle:'short' }); }
+      catch { return iso; }
+    }
+
+    /* ── channels ── */
+    const CHANNELS = [
+      { name: 'Текстовий контакт', id: 'text', connected: true },
+      { name: 'Голосовий контакт', id: 'voice', connected: typeof (window.SpeechRecognition || window.webkitSpeechRecognition) !== 'undefined' },
+      { name: 'Ci+ API (ядро)', id: 'api', connected: null }, // checked at runtime
+      { name: 'Ci Home', id: 'ci-home', connected: false },
+      { name: 'Orange Pi (фізичний)', id: 'orange-pi', connected: false },
+    ];
+
+    function renderChannels() {
+      $('channels-list').innerHTML = CHANNELS.map((ch) => {
+        const status = ch.connected === null ? 'перевіряється…' : ch.connected ? 'підключено' : 'канал не підключено';
+        const cls = ch.connected === null ? 'disconnected' : ch.connected ? 'connected' : 'disconnected';
+        return `<div class="channel-row"><span>${escHtml(ch.name)}</span><span class="ch-status ${cls}">${status}</span></div>`;
+      }).join('');
+    }
+
+    async function checkApiChannel() {
+      try {
+        const r = await fetch('/ci/status', { signal: AbortSignal.timeout(3000) });
+        const ch = CHANNELS.find((c) => c.id === 'api');
+        if (ch) { ch.connected = r.ok; renderChannels(); }
+      } catch {
+        const ch = CHANNELS.find((c) => c.id === 'api');
+        if (ch) { ch.connected = false; renderChannels(); }
+      }
+    }
+
+    /* update voice channel dynamically */
+    function updateVoiceChannel(connected) {
+      const ch = CHANNELS.find((c) => c.id === 'voice');
+      if (ch) { ch.connected = connected; renderChannels(); }
+    }
+
+    /* ── speech recognition ── */
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognition = null;
+
+    if (SpeechRecognition) {
+      recognition = new SpeechRecognition();
+      recognition.lang = 'uk-UA';
+      recognition.interimResults = false;
+
+      recognition.addEventListener('start', () => {
+        $('ci-logo-btn').classList.add('listening');
+        $('voice-btn').classList.add('active');
+        setState('listening');
+      });
+      recognition.addEventListener('end', () => {
+        $('ci-logo-btn').classList.remove('listening');
+        $('voice-btn').classList.remove('active');
+        setState('rest');
+      });
+      recognition.addEventListener('result', (e) => {
+        $('signal-input').value = e.results[0][0].transcript;
+        $('signal-input').focus();
+      });
+      recognition.addEventListener('error', (e) => {
+        showError(`Голос: ${e.error}`);
+      });
+    } else {
+      $('voice-btn').disabled = true;
+      $('voice-btn').title = 'канал не підключено';
+    }
+
+    function startVoice() {
+      if (!recognition) { showError('Голосовий канал не підключено у цьому браузері.'); return; }
+      if (!$('s-voice').checked) { showError('Голос вимкнено в налаштуваннях.'); return; }
+      openPanel();
+      recognition.start();
+    }
+
+    /* ── logo click/dblclick ── */
+    let clickTimer = null;
+
+    $('ci-logo-btn').addEventListener('click', () => {
+      if (clickTimer) {
+        clearTimeout(clickTimer);
+        clickTimer = null;
+        startVoice();
+      } else {
+        clickTimer = setTimeout(() => {
+          clickTimer = null;
+          openPanel();
+        }, 260);
+      }
+    });
+
+    /* ── panel ── */
+    function openPanel() {
+      const panel = $('contact-panel');
+      panel.classList.add('open');
+      setState('noticed');
+      $('signal-input').focus();
+    }
+    function closePanel() {
+      $('contact-panel').classList.remove('open');
+      setState('rest');
+    }
+    $('close-btn').addEventListener('click', closePanel);
+
+    /* ── file ── */
+    let attachedFile = null;
+    $('file-input').addEventListener('change', (e) => {
+      attachedFile = e.target.files?.[0] || null;
+      $('file-name').textContent = attachedFile ? attachedFile.name : '';
+    });
+
+    /* ── error ── */
+    function showError(msg) {
+      const el = $('error-msg');
+      el.textContent = msg;
+      el.classList.add('visible');
+    }
+    function clearError() {
+      $('error-msg').classList.remove('visible');
+    }
+
+    /* ── critical hold ── */
+    let criticalTask = null;
+
+    function holdCritical(task, text) {
+      criticalTask = task;
+      $('critical-summary').textContent = text;
+      $('critical-banner').classList.add('visible');
+    }
+    function releaseCritical() {
+      criticalTask = null;
+      $('critical-banner').classList.remove('visible');
+    }
+
+    $('confirm-btn').addEventListener('click', async () => {
+      if (!criticalTask) return;
+      const taskId = criticalTask.id;
+      const cpId = criticalTask.checkpointId;
+      releaseCritical();
+      if (cpId) {
+        try {
+          await fetch(`/ci/task/${encodeURIComponent(taskId)}/approve`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ checkpointId: cpId, actor: 'user', reason: 'confirmed via ui' })
+          });
+        } catch { /* best-effort */ }
+      }
+      logEntry({ signalId: taskId, severity: 'critical', text: '[підтверджено критичний сигнал]', state: 'підтверджено', receivedAt: new Date().toISOString() });
+    });
+    $('cancel-critical-btn').addEventListener('click', () => {
+      releaseCritical();
+      setState('rest');
+    });
+
+    /* ── deduplicate secondary signals ── */
+    const recentTexts = new Map(); // text -> timestamp
+    function isDuplicate(text, severity) {
+      if (severity === 'normal') {
+        const last = recentTexts.get(text);
+        if (last && Date.now() - last < 5000) return true;
+      }
+      recentTexts.set(text, Date.now());
+      return false;
+    }
+
+    /* ── signal contract builder ── */
+    function buildContract(text, severity, file) {
+      return {
+        signalId: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        source: file ? 'file' : 'text',
+        receivedAt: new Date().toISOString(),
+        severity,
+        context: { interface: 'ci-cloud-contact' },
+        permission: { allowed: true, requiresConfirmation: severity === 'critical' || $('s-confirm').checked },
+        state: 'noticed',
+        payload: { message: text },
+        evidence: []
+      };
+    }
+
+    /* ── log entry ── */
+    function logEntry(signal) {
+      saveLog({
+        signalId: signal.signalId,
+        severity: signal.severity,
+        text: signal.payload?.message || signal.text || '',
+        state: signal.state,
+        receivedAt: signal.receivedAt
+      });
+    }
+
+    /* ── send signal ── */
+    async function sendSignal() {
+      clearError();
+      const text = $('signal-input').value.trim();
+      if (!text && !attachedFile) { showError('Введіть повідомлення або прикріпіть файл.'); return; }
+      const severity = $('severity-select').value;
+
+      if (isDuplicate(text, severity)) {
+        showError('Повторний другорядний сигнал приглушено.');
+        return;
+      }
+
+      const contract = buildContract(text, severity, attachedFile);
+      logEntry(contract);
+
+      setState('understanding');
+      $('send-btn').disabled = true;
+      $('send-btn').textContent = 'Передаю…';
+      $('result-panel').classList.remove('visible');
+
+      try {
+        const res = await fetch('/ci/signal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: text,
+            source: contract.source,
+            severity,
+            signalId: contract.signalId,
+            context: contract.context
+          }),
+          signal: AbortSignal.timeout(8000)
+        });
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const task = data.task;
+
+        setState('running');
+        showResult(contract, task);
+
+        if (severity === 'critical') {
+          setState('critical');
+          holdCritical(task, text);
+        } else {
+          // poll to settled
+          await settleTask(task);
+          setState('confirmed');
+        }
+
+      } catch (err) {
+        // API unreachable — log locally, do not simulate success
+        const isOffline = err.name === 'TypeError' || err.name === 'AbortError' || err.message.includes('fetch');
+        if (isOffline) {
+          showError('Ci+ API канал не підключено. Сигнал збережено локально.');
+          setState('error');
+        } else {
+          showError(`Помилка: ${err.message}`);
+          setState('error');
+        }
+        // still log locally, updating the entry for this specific signal
+        saveLog({ ...contract, text: contract.payload?.message || '', state: 'не виконує' });
+      } finally {
+        $('send-btn').disabled = false;
+        $('send-btn').textContent = 'Передати сигнал';
+      }
+    }
+
+    function showResult(contract, task) {
+      $('res-state').textContent = JSON.stringify({ state: contract.state, severity: contract.severity, signalId: contract.signalId }, null, 2);
+      $('res-task').textContent = task ? JSON.stringify({ id: task.id, status: task.status, classification: task.classification }, null, 2) : 'канал не підключено';
+      $('result-panel').classList.add('visible');
+    }
+
+    async function settleTask(task) {
+      const transient = new Set(['CREATED','CLASSIFIED','ROUTED','WAITING_PERMISSION','QUEUED','RUNNING','VERIFYING']);
+      for (let i = 0; i < 10 && transient.has(task?.status); i++) {
+        await new Promise((r) => setTimeout(r, 400));
+        try {
+          const d = await fetch(`/ci/task/${encodeURIComponent(task.id)}`, { signal: AbortSignal.timeout(3000) });
+          if (d.ok) task = (await d.json()).task || task;
+        } catch { break; }
+      }
+      return task;
+    }
+
+    $('send-btn').addEventListener('click', sendSignal);
+    $('signal-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) sendSignal();
+    });
+    $('voice-btn').addEventListener('click', startVoice);
+
+    /* ── init ── */
+    renderLog();
+    renderChannels();
+    checkApiChannel();
+
+    /* check if logo loaded */
+    const logoImg = $('ci-logo-img');
+    if (logoImg.complete && logoImg.naturalWidth === 0) {
+      logoImg.hidden = true;
+      $('ci-logo-missing').hidden = false;
+    }
+  </script>
+</body>
+</html>

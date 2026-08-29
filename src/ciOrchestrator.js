@@ -51,7 +51,10 @@ class CiOrchestrator {
     this.maxTasksInMemory = options.maxTasksInMemory || 2000;
     this.queue = [];
     this.activeTaskId = null;
-    this.memoryStore = new MemoryStore(options.memoryFilePath || path.resolve(process.cwd(), 'data/ci-memory.jsonl'));
+    const runtimeMemoryPath = process.env.VERCEL
+      ? path.resolve('/tmp/ci-contact-kernel/ci-memory.jsonl')
+      : path.resolve(process.cwd(), 'data/ci-memory.jsonl');
+    this.memoryStore = new MemoryStore(options.memoryFilePath || runtimeMemoryPath);
     this.checkpointStore = new CheckpointStore();
     this.permissions = {
       localWrite: false,
@@ -609,4 +612,3 @@ class CiOrchestrator {
 }
 
 module.exports = { CiOrchestrator };
-

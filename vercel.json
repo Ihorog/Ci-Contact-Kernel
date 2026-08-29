@@ -3,37 +3,16 @@
   "builds": [
     {
       "src": "src/server.js",
-      "use": "@vercel/node"
+      "use": "@vercel/node",
+      "config": {
+        "includeFiles": ["public/**"]
+      }
     }
   ],
   "routes": [
     {
-      "src": "/ci/(.*)",
-      "dest": "src/server.js"
-    },
-    {
-      "src": "/ciopen/(.*)",
-      "dest": "src/server.js"
-    },
-    {
-      "src": "/assets/(.*)",
-      "dest": "/public/assets/$1"
-    },
-    {
-      "src": "/(.*\\.(png|jpg|jpeg|gif|ico|svg|webp|css|js|woff2?|ttf|otf|eot))",
-      "dest": "/public/$1"
-    },
-    {
-      "src": "/ci-monitor",
-      "dest": "/public/ci-monitor.html"
-    },
-    {
-      "src": "/ci-widget",
-      "dest": "/public/ci-widget.html"
-    },
-    {
       "src": "/(.*)",
-      "dest": "/public/index.html"
+      "dest": "src/server.js"
     }
   ]
 }

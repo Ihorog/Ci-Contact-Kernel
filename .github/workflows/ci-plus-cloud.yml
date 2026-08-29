@@ -1,0 +1,29 @@
+name: ci-plus-cloud
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: Verify cloud contact assets
+        shell: bash
+        run: |
+          test -s public/index.html
+          test -s public/ci-mark-dark.png
+          test "$(wc -c < public/ci-mark-dark.png)" -gt 10000
+          grep -q 'src="/ci-mark-dark.png"' public/index.html
+          grep -q '"src": "src/server.js"' vercel.json

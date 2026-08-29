@@ -171,12 +171,17 @@ function createApp(options = {}) {
   return app;
 }
 
+const app = createApp({ startWorker: require.main === module });
+
 if (require.main === module) {
-  const app = createApp({ startWorker: true });
   const port = Number(process.env.PORT || 3000);
   app.listen(port, () => {
     console.log(`Ci Contact Kernel listening on port ${port}`);
   });
 }
 
-module.exports = { createApp, taskSummary, createSimpleRateLimiter };
+app.createApp = createApp;
+app.taskSummary = taskSummary;
+app.createSimpleRateLimiter = createSimpleRateLimiter;
+
+module.exports = app;

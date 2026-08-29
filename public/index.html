@@ -515,7 +515,7 @@
     function renderChannels() {
       $('channels-list').innerHTML = CHANNELS.map((ch) => {
         const status = ch.connected === null ? 'перевіряється…' : ch.connected ? 'підключено' : 'канал не підключено';
-        const cls = ch.connected ? 'connected' : 'disconnected';
+        const cls = ch.connected === null ? 'disconnected' : ch.connected ? 'connected' : 'disconnected';
         return `<div class="channel-row"><span>${escHtml(ch.name)}</span><span class="ch-status ${cls}">${status}</span></div>`;
       }).join('');
     }
@@ -752,8 +752,8 @@
           showError(`Помилка: ${err.message}`);
           setState('error');
         }
-        // still log locally
-        saveLog({ ...loadLog()[0], state: 'не виконує' });
+        // still log locally, updating the entry for this specific signal
+        saveLog({ ...contract, text: contract.payload?.message || '', state: 'не виконує' });
       } finally {
         $('send-btn').disabled = false;
         $('send-btn').textContent = 'Передати сигнал';

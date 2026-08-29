@@ -54,13 +54,15 @@ class CloudflareKvStore {
       this.buffer = this.buffer.slice(-this.bufferLimit);
     }
 
-    const key = `ci_memory:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
-    const value = JSON.stringify(record);
-    const recordedAt = new Date().toISOString();
-
     this._writeChain = this._writeChain
-      .then(() => this.kv.put(key, value, { metadata: { recordedAt } }))
-      .then(() => this._updateIndex(key))
+      .then(() => {
+        const key = `ci_memory:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+        const value = JSON.stringify(record);
+        const recordedAt = new Date().toISOString();
+        return this.kv
+          .put(key, value, { metadata: { recordedAt } })
+          .then(() => this._updateIndex(key));
+      })
       .catch((err) => {
         const idx = this.buffer.lastIndexOf(record);
         if (idx >= 0) this.buffer.splice(idx, 1);

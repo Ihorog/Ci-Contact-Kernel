@@ -273,7 +273,10 @@ test('SupabaseStore: can be used as CiOrchestrator memoryStore (duck-type)', asy
         },
         select() { return this; },
         order() { return this; },
-        limit(n) { return Promise.resolve({ data: [], error: null }); },
+        limit(n) {
+          calls.push({ type: 'select', table, n });
+          return Promise.resolve({ data: [], error: null });
+        },
       };
     }
     return { _calls: calls, from(table) { return makeBuilder(table); } };

@@ -45,8 +45,7 @@ CREATE TABLE IF NOT EXISTS ci_graph_nodes (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   retired_at TIMESTAMPTZ NULL,
-  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-  UNIQUE (ci_id)
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb
 );
 
 CREATE TABLE IF NOT EXISTS ci_graph_external_ids (

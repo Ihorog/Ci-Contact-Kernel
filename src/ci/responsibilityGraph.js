@@ -28,7 +28,7 @@
 const { ControlPlaneRegistry } = require('./registry');
 const { ControlPlaneObserver } = require('./observer');
 const { ControlPlaneReconciler, RELATIONSHIP_TYPES } = require('./reconciler');
-const { evaluatePolicy, buildApprovalRequest, POLICY_DECISION, AUDIT_EVENT_TYPES: _unused } = require('./policy');
+const { evaluatePolicy, buildApprovalRequest, POLICY_DECISION } = require('./policy');
 const { ControlPlaneAudit, AUDIT_EVENT_TYPES } = require('./audit');
 const { ControlPlaneStatus } = require('./status');
 

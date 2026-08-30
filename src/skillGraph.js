@@ -76,7 +76,7 @@ function updateStepStatus(graph, stepId, status, result) {
 function isGraphComplete(graph) {
   const steps = graph.steps || [];
   if (steps.length === 0) return false;
-  const allTerminal = steps.every((step) => TERMINAL_STATUSES.has(step.status) || step.status === 'COMPLETED');
+  const allTerminal = steps.every((step) => TERMINAL_STATUSES.has(step.status));
   if (!allTerminal) return false;
   if (graph.verificationPassed === false || graph.taskVerificationPassed === false) return false;
   return steps.every((step) => {

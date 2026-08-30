@@ -1,0 +1,104 @@
+{
+  "TRANSPORT_RAW": {
+    "canonical_owner": "DATA/PROVENANCE",
+    "primary_storage": "supabase",
+    "typical_consumers": ["ACTION/EVENTS", "DATA/MEMORY"],
+    "notes": "Raw inbound material is retained for provenance and replay."
+  },
+  "IDENTITY_MASTER": {
+    "canonical_owner": "CORE/IDENTITY_ACCESS",
+    "primary_storage": "supabase",
+    "typical_consumers": ["WORK/SOURCE_CONTROL", "HOME/NETWORK_COMPUTE"],
+    "notes": "Canonical identity records require the strongest verifier controls."
+  },
+  "SEMANTIC_MASTER": {
+    "canonical_owner": "CORE/GRAPH_SEMANTICS",
+    "primary_storage": "supabase",
+    "typical_consumers": ["DATA/KNOWLEDGE", "ACTION/TASKS"],
+    "notes": "Semantic master data defines the canonical graph interpretation."
+  },
+  "ASSERTION": {
+    "canonical_owner": "DATA/KNOWLEDGE",
+    "primary_storage": "supabase",
+    "typical_consumers": ["CORE/GRAPH_SEMANTICS", "ACTION/TASKS"],
+    "notes": "Assertions are preserved atomically and may conflict."
+  },
+  "EVIDENCE_RECORD": {
+    "canonical_owner": "CORE/VERIFICATION",
+    "primary_storage": "supabase",
+    "typical_consumers": ["DATA/KNOWLEDGE", "FIN/PAYMENTS"],
+    "notes": "Evidence is append-oriented and never silently replaced."
+  },
+  "CURRENT_STATE": {
+    "canonical_owner": "ACTION/RESULTS",
+    "primary_storage": "supabase",
+    "typical_consumers": ["HOME/ENERGY", "WORK/OPERATIONS"],
+    "notes": "Current state is the latest accepted non-predictive projection."
+  },
+  "HISTORICAL_RECORD": {
+    "canonical_owner": "DATA/ARCHIVE",
+    "primary_storage": "supabase",
+    "typical_consumers": ["DATA/MEMORY", "CORE/VERIFICATION"],
+    "notes": "Historical records remain queryable for audit and replay."
+  },
+  "TARGET_STATE": {
+    "canonical_owner": "ACTION/TASKS",
+    "primary_storage": "supabase",
+    "typical_consumers": ["WORK/PROJECTS", "HOME/MAINTENANCE"],
+    "notes": "Target state expresses intent and never overwrites ACTUAL state."
+  },
+  "PREDICTED_STATE": {
+    "canonical_owner": "CORE/VERIFICATION",
+    "primary_storage": "supabase",
+    "typical_consumers": ["ACTION/TASKS", "WORK/OPERATIONS"],
+    "notes": "Predictions are derived and must stay distinct from ACTUAL state."
+  },
+  "RELATION_MASTER": {
+    "canonical_owner": "CORE/GRAPH_SEMANTICS",
+    "primary_storage": "supabase",
+    "typical_consumers": ["DATA/KNOWLEDGE", "ACTION/TASKS"],
+    "notes": "Canonical relations are preserved with provenance references."
+  },
+  "EXECUTION_CONTROL": {
+    "canonical_owner": "ACTION/TASKS",
+    "primary_storage": "local_kv",
+    "typical_consumers": ["HOME/NETWORK_COMPUTE", "WORK/OPERATIONS"],
+    "notes": "Execution control requires an explicit executor and approval path."
+  },
+  "RESULT_RECORD": {
+    "canonical_owner": "ACTION/RESULTS",
+    "primary_storage": "supabase",
+    "typical_consumers": ["WORK/PROJECTS", "FIN/PAYMENTS"],
+    "notes": "Result records capture observed execution outcomes."
+  },
+  "AUDIT_PROVENANCE": {
+    "canonical_owner": "CORE/VERIFICATION",
+    "primary_storage": "supabase",
+    "typical_consumers": ["CORE/OBSERVABILITY", "DATA/MEMORY"],
+    "notes": "Audit provenance links ingests, claims, routes, and approvals."
+  },
+  "CONFLICT_RECORD": {
+    "canonical_owner": "CORE/POLICY_GOVERNANCE",
+    "primary_storage": "supabase",
+    "typical_consumers": ["DATA/KNOWLEDGE", "CORE/VERIFICATION"],
+    "notes": "Conflicts remain open until explicit resolution."
+  },
+  "ROUTING_INDEX": {
+    "canonical_owner": "CORE/ORCHESTRATION",
+    "primary_storage": "supabase",
+    "typical_consumers": ["ACTION/TASKS", "WORK/OPERATIONS"],
+    "notes": "Routing index records owner and consumer projections."
+  },
+  "SEARCH_PROJECTION": {
+    "canonical_owner": "DATA/KNOWLEDGE",
+    "primary_storage": "search_index",
+    "typical_consumers": ["DATA/MEMORY", "WORK/SOURCE_CONTROL"],
+    "notes": "Search projections are denormalized read models."
+  },
+  "CACHE": {
+    "canonical_owner": "CORE/OBSERVABILITY",
+    "primary_storage": "local_kv",
+    "typical_consumers": ["ACTION/TASKS", "HOME/NETWORK_COMPUTE"],
+    "notes": "Caches are disposable and never the semantic source of truth."
+  }
+}

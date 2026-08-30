@@ -1,0 +1,358 @@
+{
+  "_schema": "ci-control-plane-inventory-v1",
+  "_generated_at": "2026-08-30",
+  "_description": "Machine-readable inventory of all managed units, existing modules, APIs, adapters, workers and dependency edges in the Ci+ system.",
+
+  "modules": [
+    {
+      "id": "src/ci/registry",
+      "type": "module",
+      "name": "ControlPlaneRegistry",
+      "path": "src/ci/registry.js",
+      "maps_to": "ci-registry",
+      "description": "Canonical metadata inventory for all managed units. Never stores secrets.",
+      "status": "implemented"
+    },
+    {
+      "id": "src/ci/observer",
+      "type": "module",
+      "name": "ControlPlaneObserver",
+      "path": "src/ci/observer.js",
+      "maps_to": "ci-observer",
+      "description": "Collects normalized status observations from adapters.",
+      "status": "implemented"
+    },
+    {
+      "id": "src/ci/reconciler",
+      "type": "module",
+      "name": "ControlPlaneReconciler",
+      "path": "src/ci/reconciler.js",
+      "maps_to": "ci-reconciler",
+      "description": "Desired/observed diff, drift classification, impact propagation.",
+      "status": "implemented"
+    },
+    {
+      "id": "src/ci/policy",
+      "type": "module",
+      "name": "evaluatePolicy / buildApprovalRequest",
+      "path": "src/ci/policy.js",
+      "maps_to": "ci-policy",
+      "description": "Approval and risk gates. All write/sensitive actions require policy evaluation.",
+      "status": "implemented"
+    },
+    {
+      "id": "src/ci/audit",
+      "type": "module",
+      "name": "ControlPlaneAudit",
+      "path": "src/ci/audit.js",
+      "maps_to": "ci-audit",
+      "description": "Immutable append-only action and verification history.",
+      "status": "implemented"
+    },
+    {
+      "id": "src/ci/status",
+      "type": "module",
+      "name": "ControlPlaneStatus",
+      "path": "src/ci/status.js",
+      "maps_to": "ci-status",
+      "description": "Unified health surface aggregated across all registered units.",
+      "status": "implemented"
+    },
+    {
+      "id": "src/ci/responsibilityGraph",
+      "type": "module",
+      "name": "ResponsibilityGraph",
+      "path": "src/ci/responsibilityGraph.js",
+      "maps_to": "ci-integration",
+      "description": "Wires all control-plane modules into the Observe→Reconcile→Gate→Apply loop.",
+      "status": "implemented"
+    },
+    {
+      "id": "src/ci/kernel",
+      "type": "module",
+      "name": "CiKernel",
+      "path": "src/ci/kernel.js",
+      "maps_to": "ci-kernel",
+      "description": "Signal normalization, classification, memory store integration.",
+      "status": "existing"
+    },
+    {
+      "id": "src/ciOrchestrator",
+      "type": "module",
+      "name": "CiOrchestrator",
+      "path": "src/ciOrchestrator.js",
+      "maps_to": "orchestration",
+      "description": "Task lifecycle management with completion contract and multi-branch execution.",
+      "status": "existing"
+    },
+    {
+      "id": "src/completionContract",
+      "type": "module",
+      "name": "CompletionContract",
+      "path": "src/completionContract.js",
+      "maps_to": "completion-contract",
+      "description": "Mechanical COMPLETED gate enforcing required verifier results.",
+      "status": "existing"
+    },
+    {
+      "id": "src/checkpointStore",
+      "type": "module",
+      "name": "CheckpointStore",
+      "path": "src/checkpointStore.js",
+      "maps_to": "checkpoint-resume",
+      "description": "Persistent checkpoint state for tool-level approval and resume.",
+      "status": "existing"
+    },
+    {
+      "id": "src/permissionGate",
+      "type": "module",
+      "name": "PermissionGate",
+      "path": "src/permissionGate.js",
+      "maps_to": "permission-gate",
+      "description": "Task-level permission evaluation and approval checkpoint creation.",
+      "status": "existing"
+    },
+    {
+      "id": "src/resultAggregator",
+      "type": "module",
+      "name": "ResultAggregator",
+      "path": "src/resultAggregator.js",
+      "maps_to": "result-aggregation",
+      "description": "Multi-branch execution result aggregation (all_required, any_success, quorum, best_effort).",
+      "status": "existing"
+    },
+    {
+      "id": "src/router",
+      "type": "module",
+      "name": "routeTask",
+      "path": "src/router.js",
+      "maps_to": "task-router",
+      "description": "Routes tasks to one or more execution centers by classification.",
+      "status": "existing"
+    },
+    {
+      "id": "src/classifier",
+      "type": "module",
+      "name": "classifier",
+      "path": "src/classifier.js",
+      "maps_to": "legacy-classifier",
+      "description": "Legacy task classifier; see src/cigraph/ for canonical Ci Graph classifier.",
+      "status": "existing"
+    },
+    {
+      "id": "src/cigraph",
+      "type": "module",
+      "name": "CiGraph",
+      "path": "src/cigraph/",
+      "maps_to": "ci-graph-canonical",
+      "description": "Canonical multi-axis classifier, registry, temporal/truth/conflict invariants.",
+      "status": "existing"
+    },
+    {
+      "id": "src/cigraph/ingest",
+      "type": "module",
+      "name": "CigrafinIngestion",
+      "path": "src/cigraph/ingest/",
+      "maps_to": "cigrafin-ingestion",
+      "description": "Cigrafin universal intake: parse, dedupe, classify, quarantine pipeline.",
+      "status": "existing"
+    },
+    {
+      "id": "src/memoryStore",
+      "type": "module",
+      "name": "MemoryStore",
+      "path": "src/memoryStore.js",
+      "maps_to": "memory-store",
+      "description": "JSONL-based memory store for facts, tasks, and audit records.",
+      "status": "existing"
+    },
+    {
+      "id": "src/adapters/cloudflareKvStore",
+      "type": "adapter",
+      "name": "CloudflareKvStore",
+      "path": "src/adapters/cloudflareKvStore.js",
+      "maps_to": "cloudflare-adapter",
+      "description": "Cloudflare KV storage adapter for edge-deployed state.",
+      "status": "existing"
+    },
+    {
+      "id": "src/adapters/supabaseStore",
+      "type": "adapter",
+      "name": "SupabaseStore",
+      "path": "src/adapters/supabaseStore.js",
+      "maps_to": "supabase-adapter",
+      "description": "Supabase PostgreSQL storage adapter for durable graph projection.",
+      "status": "existing"
+    },
+    {
+      "id": "src/adapters/githubAdapter",
+      "type": "adapter",
+      "name": "GitHubAdapter",
+      "path": "src/adapters/githubAdapter.js",
+      "maps_to": "github-adapter",
+      "description": "GitHub provider adapter: observe/verify/plan/apply stub.",
+      "status": "implemented"
+    },
+    {
+      "id": "src/adapters/vercelAdapter",
+      "type": "adapter",
+      "name": "VercelAdapter",
+      "path": "src/adapters/vercelAdapter.js",
+      "maps_to": "vercel-adapter",
+      "description": "Vercel provider adapter stub.",
+      "status": "implemented"
+    },
+    {
+      "id": "src/adapters/openaiAdapter",
+      "type": "adapter",
+      "name": "OpenAIAdapter",
+      "path": "src/adapters/openaiAdapter.js",
+      "maps_to": "openai-adapter",
+      "description": "OpenAI enrichment adapter stub. AI output is derived/candidate only.",
+      "status": "implemented"
+    },
+    {
+      "id": "src/adapters/localNodeAdapter",
+      "type": "adapter",
+      "name": "LocalNodeAdapter",
+      "path": "src/adapters/localNodeAdapter.js",
+      "maps_to": "local-node-adapter",
+      "description": "Local node (Orange Pi / NAS / Cihub) adapter stub. Physical actions require real executor.",
+      "status": "implemented"
+    },
+    {
+      "id": "src/server",
+      "type": "api",
+      "name": "Express server",
+      "path": "src/server.js",
+      "maps_to": "api-server",
+      "description": "HTTP API: /ci/contact, /ci/signal, /ci/status, /cigrafin/* routes.",
+      "status": "existing"
+    },
+    {
+      "id": "src/worker",
+      "type": "worker",
+      "name": "Cloudflare Worker",
+      "path": "src/worker.mjs",
+      "maps_to": "cf-worker",
+      "description": "Cloudflare Workers edge runtime entry point.",
+      "status": "existing"
+    }
+  ],
+
+  "managed_units_initial_inventory": [
+    {
+      "name": "Ihorog/Ci-Contact-Kernel",
+      "type": "service",
+      "provider": "github",
+      "environment": "production",
+      "auth_method": "token",
+      "credential_ref": "env:GITHUB_TOKEN",
+      "scopes": ["repo", "admin"],
+      "observed_status": "healthy",
+      "desired_status": "active",
+      "approval_class": "high_risk",
+      "source_of_truth": "github"
+    },
+    {
+      "name": "ci-contact-kernel",
+      "type": "service",
+      "provider": "vercel",
+      "environment": "production",
+      "auth_method": "token",
+      "credential_ref": "env:VERCEL_TOKEN",
+      "scopes": ["deploy"],
+      "observed_status": "unknown",
+      "desired_status": "active",
+      "approval_class": "high_risk",
+      "source_of_truth": "vercel"
+    },
+    {
+      "name": "ci-moment",
+      "type": "service",
+      "provider": "vercel",
+      "environment": "production",
+      "auth_method": "token",
+      "credential_ref": "env:VERCEL_TOKEN",
+      "scopes": ["deploy"],
+      "observed_status": "unknown",
+      "desired_status": "active",
+      "approval_class": "high_risk",
+      "source_of_truth": "vercel"
+    },
+    {
+      "name": "ci-moment-supabase",
+      "type": "service",
+      "provider": "supabase",
+      "environment": "production",
+      "auth_method": "key_ref",
+      "credential_ref": "env:SUPABASE_SERVICE_ROLE_KEY",
+      "observed_status": "healthy",
+      "desired_status": "active",
+      "approval_class": "high_risk",
+      "source_of_truth": "supabase"
+    },
+    {
+      "name": "ci-gitapi-supabase",
+      "type": "service",
+      "provider": "supabase",
+      "environment": "production",
+      "auth_method": "key_ref",
+      "credential_ref": "env:SUPABASE_SERVICE_ROLE_KEY",
+      "observed_status": "healthy",
+      "desired_status": "active",
+      "approval_class": "high_risk",
+      "source_of_truth": "supabase"
+    },
+    {
+      "name": "Cihub",
+      "type": "node",
+      "provider": "local",
+      "environment": "production",
+      "auth_method": "none",
+      "observed_status": "unknown",
+      "desired_status": "active",
+      "approval_class": "critical",
+      "source_of_truth": "local"
+    },
+    {
+      "name": "openai-platform",
+      "type": "service",
+      "provider": "openai",
+      "environment": "production",
+      "auth_method": "key_ref",
+      "credential_ref": "env:OPENAI_API_KEY",
+      "observed_status": "unknown",
+      "desired_status": "active",
+      "approval_class": "high_risk",
+      "source_of_truth": "openai"
+    }
+  ],
+
+  "dependency_edges": [
+    { "from": "src/ci/responsibilityGraph", "to": "src/ci/registry", "relation": "depends_on" },
+    { "from": "src/ci/responsibilityGraph", "to": "src/ci/observer", "relation": "depends_on" },
+    { "from": "src/ci/responsibilityGraph", "to": "src/ci/reconciler", "relation": "depends_on" },
+    { "from": "src/ci/responsibilityGraph", "to": "src/ci/policy", "relation": "depends_on" },
+    { "from": "src/ci/responsibilityGraph", "to": "src/ci/audit", "relation": "depends_on" },
+    { "from": "src/ci/observer", "to": "src/adapters/githubAdapter", "relation": "consumes" },
+    { "from": "src/ci/observer", "to": "src/adapters/vercelAdapter", "relation": "consumes" },
+    { "from": "src/ci/observer", "to": "src/adapters/openaiAdapter", "relation": "consumes" },
+    { "from": "src/ci/observer", "to": "src/adapters/localNodeAdapter", "relation": "consumes" },
+    { "from": "src/cigraph/ingest", "to": "src/cigraph", "relation": "depends_on" },
+    { "from": "src/ciOrchestrator", "to": "src/completionContract", "relation": "depends_on" },
+    { "from": "src/ciOrchestrator", "to": "src/permissionGate", "relation": "depends_on" },
+    { "from": "src/ciOrchestrator", "to": "src/router", "relation": "depends_on" },
+    { "from": "src/ciOrchestrator", "to": "src/resultAggregator", "relation": "depends_on" },
+    { "from": "src/server", "to": "src/ci/kernel", "relation": "depends_on" },
+    { "from": "src/server", "to": "src/cigraph/ingest", "relation": "depends_on" }
+  ],
+
+  "verification_status_definitions": {
+    "VERIFIED": "Source declaration, dependent observation, and independent Ci+ verification all agree.",
+    "DRIFT": "Desired state does not match observed state.",
+    "DEGRADED": "Unit is reachable but reporting partial/reduced health.",
+    "UNVERIFIED": "No verification has been completed or last verification failed.",
+    "CONFLICT": "Contradictory claims exist and have not been resolved."
+  }
+}

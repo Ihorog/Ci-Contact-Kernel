@@ -28,6 +28,7 @@ const { extractClaims }                                                    = req
 const { QuarantineStore, QUARANTINE_REASON }                               = require('../src/cigraph/ingest/quarantine');
 const { IngestCheckpointStore }                                            = require('../src/cigraph/ingest/ingestCheckpoint');
 const { ingestCigrafinItem, getIngestRecord, listIngestRecords, getQuarantine } = require('../src/cigraph/ingest/pipeline');
+const { buildItemsFromWebhook } = require('../src/cigraph/ingest/githubCigrafinAdapter');
 
 // ── sourceAdapter ──────────────────────────────────────────────────────────────
 
@@ -119,6 +120,17 @@ test('detectMediaType detects PNG by magic bytes', () => {
   const pngMagic = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00]);
   const item = { path: 'image', media_type: null };
   assert.equal(detectMediaType(item, pngMagic), 'image/png');
+});
+
+test('detectMediaType prefers magic bytes over text extension', () => {
+  const pngMagic = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00]);
+  const item = { path: 'renamed.txt', media_type: null };
+  assert.equal(detectMediaType(item, pngMagic), 'image/png');
+});
+
+test('detectMediaType rejects invalid utf8 bytes in fallback', () => {
+  const item = { path: 'blob', media_type: null };
+  assert.equal(detectMediaType(item, Buffer.from([0xff, 0x00, 0x41])), 'application/octet-stream');
 });
 
 test('isTextMedia and isBinaryMedia are complementary', () => {
@@ -252,6 +264,21 @@ test('IngestCheckpointStore.isSeen returns true for seen commit', () => {
   cs.save('repo', 'main', 'sha1', 1);
   assert.equal(cs.isSeen('repo', 'main', 'sha1'), true);
   assert.equal(cs.isSeen('repo', 'main', 'sha2'), false);
+});
+
+test('buildItemsFromWebhook collects touched paths across all commits', async () => {
+  const payload = {
+    ref: 'refs/heads/main',
+    commits: [
+      { added: ['Cigrafin/a.txt'], modified: [], removed: [] },
+      { added: [], modified: ['Cigrafin/b.txt'], removed: ['Cigrafin/c.txt'] },
+    ],
+  };
+  const items = await buildItemsFromWebhook(payload, {});
+  const byPath = new Map(items.map((item) => [item.path, item]));
+  assert.equal(byPath.get('Cigrafin/a.txt')?.deleted, false);
+  assert.equal(byPath.get('Cigrafin/b.txt')?.deleted, false);
+  assert.equal(byPath.get('Cigrafin/c.txt')?.deleted, true);
 });
 
 // ── pipeline — first discovery ─────────────────────────────────────────────────
@@ -439,7 +466,7 @@ test('prompt-injection content in file is treated as data, not executed', async 
 
 // ── pipeline — fetch failure ───────────────────────────────────────────────────
 
-test('source fetch failure quarantines item and does not advance checkpoint', async () => {
+test('source fetch failure is marked failed and quarantined for retry', async () => {
   const item = createSourceItem({
     source_repo: 'https://github.com/Ihorog/ci-memory',
     source_ref:  'main',
@@ -448,24 +475,41 @@ test('source fetch failure quarantines item and does not advance checkpoint', as
     source_type: SOURCE_TYPE.GITHUB,
   });
   const result = await ingestCigrafinItem(item, {});
-  assert.equal(result.outcome, 'quarantined');
+  assert.equal(result.outcome, 'failed');
+  assert.equal(result.ingest_status, INGEST_STATUS.FAILED);
   const qList = getQuarantine().list(result.ingest_id);
   assert.ok(qList.some((q) => q.reason === QUARANTINE_REASON.FETCH_FAILED));
 });
 
 // ── pipeline — null fetch (size exceeded) ─────────────────────────────────────
 
-test('item with null fetch (no content available) is quarantined as binary unsupported', async () => {
+test('item with null fetch and unknown size is quarantined as content unavailable', async () => {
+  const item = createSourceItem({
+    source_repo: 'https://github.com/Ihorog/ci-memory',
+    source_ref:  'main',
+    path:        `Cigrafin/missing-${Date.now()}.bin`,
+    fetch:       null,  // no fetcher → no content
+    source_type: SOURCE_TYPE.GITHUB,
+  });
+  const result = await ingestCigrafinItem(item, {});
+  assert.equal(result.outcome, 'quarantined');
+  const qList = getQuarantine().list(result.ingest_id);
+  assert.ok(qList.some((q) => q.reason === QUARANTINE_REASON.CONTENT_UNAVAILABLE));
+});
+
+test('item with null fetch and oversize metadata is quarantined as size exceeded', async () => {
   const item = createSourceItem({
     source_repo: 'https://github.com/Ihorog/ci-memory',
     source_ref:  'main',
     path:        `Cigrafin/large-${Date.now()}.bin`,
-    fetch:       null,  // no fetcher → no content
+    fetch:       null,
     size_bytes:  2_000_000,
     source_type: SOURCE_TYPE.GITHUB,
   });
   const result = await ingestCigrafinItem(item, {});
   assert.equal(result.outcome, 'quarantined');
+  const qList = getQuarantine().list(result.ingest_id);
+  assert.ok(qList.some((q) => q.reason === QUARANTINE_REASON.SIZE_EXCEEDED));
 });
 
 // ── Server routes smoke test ──────────────────────────────────────────────────
@@ -493,4 +537,35 @@ test('POST /cigrafin/reprocess/:id returns 404 for unknown id', async () => {
     .post('/cigrafin/reprocess/nonexistent-id')
     .set('x-ci-operator-id', 'test-operator');
   assert.equal(res.status, 404);
+});
+
+test('POST /cigrafin/reprocess/:id requires operator header', async () => {
+  const supertest = require('supertest');
+  const app = require('../src/server');
+  const res = await supertest(app).post('/cigrafin/reprocess/nonexistent-id');
+  assert.equal(res.status, 403);
+});
+
+test('GET /cigrafin/ingest/:id requires operator header', async () => {
+  const supertest = require('supertest');
+  const app = require('../src/server');
+  const res = await supertest(app).get('/cigrafin/ingest/nonexistent-id');
+  assert.equal(res.status, 403);
+});
+
+test('GET /cigrafin/quarantine requires operator header', async () => {
+  const supertest = require('supertest');
+  const app = require('../src/server');
+  const res = await supertest(app).get('/cigrafin/quarantine');
+  assert.equal(res.status, 403);
+});
+
+test('POST /cigrafin/webhook rejects missing signature', async () => {
+  const supertest = require('supertest');
+  const app = require('../src/server');
+  process.env.CIGRAFIN_WEBHOOK_SECRET = 'test-secret';
+  const res = await supertest(app)
+    .post('/cigrafin/webhook')
+    .send({ repository: { full_name: 'Ihorog/ci-memory' }, ref: 'refs/heads/main', commits: [] });
+  assert.equal(res.status, 403);
 });

@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('path');
+const crypto = require('crypto');
 const { CiOrchestrator } = require('./ciOrchestrator');
 
 const ciopen = {
@@ -71,12 +72,50 @@ function taskSummary(task) {
   };
 }
 
+function readOperatorId(req) {
+  const raw = req.headers['x-ci-operator-id'];
+  if (Array.isArray(raw)) return raw[0] || '';
+  return typeof raw === 'string' ? raw.trim() : '';
+}
+
+function sanitizeIngestRecord(record) {
+  return {
+    ingest_id: record.ingest_id,
+    source_repo: record.source_repo,
+    source_ref: record.source_ref,
+    path: record.path,
+    blob_sha: record.blob_sha,
+    content_hash: record.content_hash,
+    media_type: record.media_type,
+    size_bytes: record.size_bytes,
+    source_type: record.source_type,
+    ingest_status: record.ingest_status,
+    received_at: record.received_at,
+    updated_at: record.updated_at,
+    deleted: record.deleted,
+    classification_runs_count: Array.isArray(record.classification_runs) ? record.classification_runs.length : 0,
+  };
+}
+
+function verifyWebhookSignature(secret, rawBody, signatureHeader) {
+  if (!secret || !rawBody || !signatureHeader || typeof signatureHeader !== 'string') return false;
+  const expected = `sha256=${crypto.createHmac('sha256', secret).update(rawBody).digest('hex')}`;
+  const a = Buffer.from(expected, 'utf8');
+  const b = Buffer.from(signatureHeader, 'utf8');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
 function createApp(options = {}) {
   const app = express();
   const orchestrator = options.orchestrator || new CiOrchestrator(options);
   const ciRateLimiter = createSimpleRateLimiter(options.rateLimit || {});
 
-  app.use(express.json({ limit: '1mb' }));
+  app.use(express.json({
+    limit: '1mb',
+    verify: (req, _res, buf) => {
+      req.rawBody = Buffer.from(buf);
+    },
+  }));
   app.use(express.static(path.resolve(process.cwd(), 'public')));
   app.use('/ci', ciRateLimiter);
   app.use('/ciopen', ciRateLimiter);
@@ -173,6 +212,7 @@ function createApp(options = {}) {
     getQuarantine,
   } = require('./cigraph/ingest/pipeline');
   const { buildItemsFromWebhook } = require('./cigraph/ingest/githubCigrafinAdapter');
+  app.use('/cigrafin', ciRateLimiter);
 
   // Read-only intake status
   app.get('/cigrafin/status', ciRateLimiter, (_req, res) => {
@@ -189,18 +229,23 @@ function createApp(options = {}) {
   });
 
   app.get('/cigrafin/ingest/:id', ciRateLimiter, (req, res) => {
+    const operatorId = readOperatorId(req);
+    if (!operatorId) return res.status(403).json({ error: 'x-ci-operator-id header required' });
     const record = getIngestRecord(req.params.id);
     if (!record) return res.status(404).json({ error: 'not_found' });
-    return res.json(record);
+    return res.json(sanitizeIngestRecord(record));
   });
 
   app.get('/cigrafin/quarantine', ciRateLimiter, (req, res) => {
+    const operatorId = readOperatorId(req);
+    if (!operatorId) return res.status(403).json({ error: 'x-ci-operator-id header required' });
     res.json({ items: getQuarantine().list() });
   });
 
   // Manual reprocess by ingest_id (requires operator intent header)
   app.post('/cigrafin/reprocess/:id', ciRateLimiter, async (req, res) => {
-    const operatorId = req.headers['x-ci-operator-id'] || 'unknown';
+    const operatorId = readOperatorId(req);
+    if (!operatorId) return res.status(403).json({ error: 'x-ci-operator-id header required' });
     try {
       const result = await reprocessIngestItem(req.params.id, { operator: operatorId });
       res.json(result);
@@ -213,7 +258,7 @@ function createApp(options = {}) {
 
   // Manual scan trigger (requires operator intent header — not automatic approval)
   app.post('/cigrafin/scan', ciRateLimiter, async (req, res) => {
-    const operatorId = req.headers['x-ci-operator-id'];
+    const operatorId = readOperatorId(req);
     if (!operatorId) return res.status(403).json({ error: 'x-ci-operator-id header required' });
     try {
       const summary = await runCigrafinScan(process.env, { operator: operatorId });
@@ -226,6 +271,23 @@ function createApp(options = {}) {
   // Push/webhook event from source repository
   app.post('/cigrafin/webhook', ciRateLimiter, async (req, res) => {
     const payload = req.body || {};
+    const webhookSecret = process.env.CIGRAFIN_WEBHOOK_SECRET;
+    const signature = req.headers['x-hub-signature-256'];
+    if (!verifyWebhookSignature(webhookSecret, req.rawBody, Array.isArray(signature) ? signature[0] : signature)) {
+      return res.status(403).json({ error: 'invalid_webhook_signature' });
+    }
+
+    const expectedRepo = process.env.CIGRAFIN_SOURCE_REPO ?? 'Ihorog/ci-memory';
+    const payloadRepo = payload?.repository?.full_name;
+    if (payloadRepo !== expectedRepo) {
+      return res.status(403).json({ error: 'repository_mismatch' });
+    }
+
+    const expectedRef = `refs/heads/${process.env.CIGRAFIN_SOURCE_REF ?? 'main'}`;
+    if (payload.ref && payload.ref !== expectedRef) {
+      return res.status(403).json({ error: 'ref_mismatch' });
+    }
+
     try {
       const items = await buildItemsFromWebhook(payload, process.env);
       const results = [];

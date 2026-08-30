@@ -11,10 +11,44 @@
  *   source_repo + source_ref  → { commit_sha, processed_at, items_seen }
  */
 
+const fs = require('fs');
+const path = require('path');
+
 class IngestCheckpointStore {
-  constructor() {
+  constructor(options = {}) {
     /** @type {Map<string, object>} */
     this._checkpoints = new Map();
+    this._filePath = options.filePath || null;
+    this._writeChain = Promise.resolve();
+    this._load();
+  }
+
+  _load() {
+    if (!this._filePath) return;
+    try {
+      const raw = fs.readFileSync(this._filePath, 'utf8');
+      if (!raw.trim()) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed?.checkpoints)) {
+        this._checkpoints = new Map(parsed.checkpoints
+          .filter((cp) => cp && cp.source_repo && cp.source_ref)
+          .map((cp) => [this._key(cp.source_repo, cp.source_ref), cp]));
+      }
+    } catch {
+      // Ignore load failures and keep empty store.
+    }
+  }
+
+  _persist() {
+    if (!this._filePath) return;
+    const dir = path.dirname(this._filePath);
+    fs.mkdirSync(dir, { recursive: true });
+    const snapshot = JSON.stringify({ checkpoints: Array.from(this._checkpoints.values()) });
+    const tempPath = `${this._filePath}.tmp`;
+    this._writeChain = this._writeChain
+      .then(() => fs.promises.writeFile(tempPath, snapshot, 'utf8'))
+      .then(() => fs.promises.rename(tempPath, this._filePath))
+      .catch(() => {});
   }
 
   _key(source_repo, source_ref) {
@@ -30,16 +64,18 @@ class IngestCheckpointStore {
    * @param {number} items_seen     total blobs observed in this scan
    * @returns {object}
    */
-  save(source_repo, source_ref, commit_sha, items_seen = 0) {
+  save(source_repo, source_ref, commit_sha, items_seen = 0, inventory = {}) {
     const key = this._key(source_repo, source_ref);
     const checkpoint = {
       source_repo,
       source_ref,
       commit_sha,
       items_seen,
+      inventory,
       processed_at: new Date().toISOString(),
     };
     this._checkpoints.set(key, checkpoint);
+    this._persist();
     return checkpoint;
   }
 

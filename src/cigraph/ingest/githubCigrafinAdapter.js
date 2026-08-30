@@ -137,6 +137,9 @@ async function flattenTree(repo, treeSha, env = {}) {
     `/repos/${safeRepo}/git/trees/${safeSha}?recursive=1`,
     env,
   );
+  if (data?.truncated) {
+    throw new Error(`CIGRAFIN_ERR_TRUNCATED_TREE: repo=${repo} tree=${treeSha}`);
+  }
   return (data.tree || [])
     .filter((entry) => entry.type === 'blob')
     .map((entry) => ({
@@ -155,7 +158,7 @@ async function flattenTree(repo, treeSha, env = {}) {
  * @param {object} env  process.env or equivalent config object
  * @returns {Promise<Array<object>>}  array of SourceItem
  */
-async function pollCigrafinItems(env = {}) {
+async function pollCigrafinItems(env = {}, options = {}) {
   const repo    = env.CIGRAFIN_SOURCE_REPO ?? 'Ihorog/ci-memory';
   const ref     = env.CIGRAFIN_SOURCE_REF  ?? 'main';
   const prefix  = env.CIGRAFIN_SOURCE_PATH ?? 'Cigrafin';
@@ -169,7 +172,7 @@ async function pollCigrafinItems(env = {}) {
   const blobs = await flattenTree(repo, treeSha, env);
   const filtered = blobs.filter((b) => b.path.startsWith(`${prefix}/`) || b.path === prefix);
 
-  return filtered.map((blob) => {
+  const items = filtered.map((blob) => {
     const maxBytes = Number(env.CIGRAFIN_MAX_BLOB_BYTES) || DEFAULT_MAX_BYTES;
     return createSourceItem({
       source_repo:  `https://github.com/${repo}`,
@@ -185,6 +188,29 @@ async function pollCigrafinItems(env = {}) {
       raw_metadata: { commit_sha: commitSha, repo, ref },
     });
   });
+
+  const previousInventory = options.previousInventory && typeof options.previousInventory === 'object'
+    ? options.previousInventory
+    : {};
+  const currentPaths = new Set(filtered.map((blob) => blob.path));
+
+  for (const oldPath of Object.keys(previousInventory)) {
+    if (!currentPaths.has(oldPath) && (oldPath.startsWith(`${prefix}/`) || oldPath === prefix)) {
+      items.push(createSourceItem({
+        source_repo:  `https://github.com/${repo}`,
+        source_ref:   ref,
+        path:         oldPath,
+        blob_sha:     null,
+        size_bytes:   null,
+        source_type:  SOURCE_TYPE.GITHUB,
+        deleted:      true,
+        fetch:        null,
+        raw_metadata: { commit_sha: commitSha, repo, ref },
+      }));
+    }
+  }
+
+  return items;
 }
 
 /**
@@ -200,13 +226,20 @@ async function buildItemsFromWebhook(payload, env = {}) {
   const ref    = payload.ref ? payload.ref.replace('refs/heads/', '') : (env.CIGRAFIN_SOURCE_REF ?? 'main');
   const prefix = env.CIGRAFIN_SOURCE_PATH ?? 'Cigrafin';
 
-  const touchedPaths = new Set();
-  const commitList = Array.isArray(payload.commits) && payload.commits.length > 0
+  const touches = new Map();
+  const commits = Array.isArray(payload.commits) && payload.commits.length > 0
     ? payload.commits
-    : [payload.head_commit ?? {}];
-  for (const commit of commitList) {
-    for (const path of [...(commit.added ?? []), ...(commit.modified ?? []), ...(commit.removed ?? [])]) {
-      if (path.startsWith(`${prefix}/`)) touchedPaths.add(path);
+    : [payload.head_commit || {}];
+
+  for (const commit of commits) {
+    for (const path of (commit.added ?? [])) {
+      if (path.startsWith(`${prefix}/`) || path === prefix) touches.set(path, 'added');
+    }
+    for (const path of (commit.modified ?? [])) {
+      if (path.startsWith(`${prefix}/`) || path === prefix) touches.set(path, 'modified');
+    }
+    for (const path of (commit.removed ?? [])) {
+      if (path.startsWith(`${prefix}/`) || path === prefix) touches.set(path, 'removed');
     }
   }
 
@@ -224,18 +257,20 @@ async function buildItemsFromWebhook(payload, env = {}) {
 
   const items = [];
 
-  for (const path of touchedPaths) {
-    const meta = blobsBySha.get(path) ?? null;
+  for (const touchedPath of touches.keys()) {
+    const meta = blobsBySha.get(touchedPath);
+    const touchKind = touches.get(touchedPath);
+    const isDeleted = meta ? false : touchKind === 'removed';
     const maxBytes = Number(env.CIGRAFIN_MAX_BLOB_BYTES) || DEFAULT_MAX_BYTES;
     items.push(createSourceItem({
       source_repo:  `https://github.com/${repo}`,
       source_ref:   ref,
-      path,
+      path:         touchedPath,
       blob_sha:     meta?.blob_sha ?? null,
       size_bytes:   meta?.size_bytes ?? null,
       source_type:  SOURCE_TYPE.GITHUB,
-      deleted:      !meta,
-      fetch: meta?.blob_sha && (meta.size_bytes === null || meta.size_bytes <= maxBytes)
+      deleted:      isDeleted,
+      fetch: !isDeleted && meta?.blob_sha && (meta.size_bytes === null || meta.size_bytes <= maxBytes)
         ? async () => fetchBlobContent(repo, meta.blob_sha, env)
         : null,
       raw_metadata: { commit_sha: commitSha, repo, ref },

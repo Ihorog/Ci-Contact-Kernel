@@ -31,6 +31,8 @@
  */
 
 const crypto  = require('crypto');
+const path = require('path');
+const fs = require('fs');
 
 const { validateSourceItem, INGEST_STATUS } = require('./sourceAdapter');
 const { computeContentHash, DedupStore }    = require('./dedupe');
@@ -39,15 +41,20 @@ const { parseContent }                      = require('./parserRegistry');
 const { extractClaims }                     = require('./claimExtractor');
 const { QuarantineStore, QUARANTINE_REASON }= require('./quarantine');
 const { IngestCheckpointStore }             = require('./ingestCheckpoint');
-const { pollCigrafinItems }                 = require('./githubCigrafinAdapter');
+const { pollCigrafinItems, fetchBlobContent } = require('./githubCigrafinAdapter');
 const { classifyCiGraph }                   = require('../classify');
 const { CLASSIFIER_VERSION }               = require('../registry');
 
 // ── Shared in-process state (swap for persistent adapters in production) ──────
+const RUNTIME_DIR = process.env.VERCEL
+  ? path.resolve('/tmp/ci-contact-kernel')
+  : path.resolve(process.cwd(), 'data');
+const INGEST_DIR = path.join(RUNTIME_DIR, 'cigrafin');
+fs.mkdirSync(INGEST_DIR, { recursive: true });
 
-const _dedupe     = new DedupStore();
-const _quarantine = new QuarantineStore();
-const _checkpoint = new IngestCheckpointStore();
+const _dedupe     = new DedupStore({ filePath: path.join(INGEST_DIR, 'dedupe.json') });
+const _quarantine = new QuarantineStore({ filePath: path.join(INGEST_DIR, 'quarantine.json') });
+const _checkpoint = new IngestCheckpointStore({ filePath: path.join(INGEST_DIR, 'checkpoint.json') });
 
 /** @type {Map<string, object>}  ingest_id → ci_graph_ingest record */
 const _ingestRecords = new Map();
@@ -55,13 +62,50 @@ const _ingestRecords = new Map();
 /** @type {Map<string, Array<object>>}  ingest_id → classification runs */
 const _classificationRuns = new Map();
 
+/** @type {Map<string, Array<object>>} ingest_id → canonical routed records */
+const _routedCanonicalRecords = new Map();
+
+const INGEST_RECORDS_FILE = path.join(INGEST_DIR, 'ingest-records.json');
+const CLASSIFICATION_RUNS_FILE = path.join(INGEST_DIR, 'classification-runs.json');
+const ROUTED_FILE = path.join(INGEST_DIR, 'routed-records.json');
+
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
 function _now() { return new Date().toISOString(); }
 
-function _createIngestRecord(item, contentHash, status) {
+function _loadMapFromFile(filePath, map, valueGuard = () => true) {
+  try {
+    const raw = fs.readFileSync(filePath, 'utf8');
+    if (!raw.trim()) return;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed?.entries)) return;
+    for (const [key, value] of parsed.entries) {
+      if (typeof key === 'string' && valueGuard(value)) map.set(key, value);
+    }
+  } catch {
+    // Keep runtime state if no persisted state exists.
+  }
+}
+
+const _persistChains = new Map();
+
+function _persistMapToFile(filePath, map) {
+  const tempPath = `${filePath}.tmp`;
+  const chain = _persistChains.get(filePath) || Promise.resolve();
+  const next = chain
+    .then(() => fs.promises.writeFile(tempPath, JSON.stringify({ entries: Array.from(map.entries()) }), 'utf8'))
+    .then(() => fs.promises.rename(tempPath, filePath))
+    .catch(() => {});
+  _persistChains.set(filePath, next);
+}
+
+_loadMapFromFile(INGEST_RECORDS_FILE, _ingestRecords, (value) => value && typeof value === 'object');
+_loadMapFromFile(CLASSIFICATION_RUNS_FILE, _classificationRuns, (value) => Array.isArray(value));
+_loadMapFromFile(ROUTED_FILE, _routedCanonicalRecords, (value) => Array.isArray(value));
+
+function _createIngestRecord(item, contentHash, status, ingestId = null) {
   return {
-    ingest_id:    crypto.randomUUID(),
+    ingest_id:    ingestId || crypto.randomUUID(),
     source_repo:  item.source_repo,
     source_ref:   item.source_ref,
     path:         item.path,
@@ -89,22 +133,31 @@ function _updateStatus(record, status) {
  * returned as an error string.
  *
  * @param {object} item  SourceItem
- * @returns {Promise<{content: Buffer|null, error: string|null}>}
+ * @returns {Promise<{content: Buffer|null, error: string|null, sizeExceeded: boolean}>}
  */
 async function _safeFetch(item) {
   if (typeof item.fetch !== 'function') {
-    return { content: null, error: null };
+    return { content: null, error: null, sizeExceeded: false };
   }
   try {
     const result = await item.fetch();
-    if (result == null) return { content: null, error: null };
-    return { content: Buffer.isBuffer(result) ? result : Buffer.from(result), error: null };
+    if (result == null) return { content: null, error: null, sizeExceeded: false };
+    const buffer = Buffer.isBuffer(result) ? result : Buffer.from(result);
+    const maxBytes = Number(process.env.CIGRAFIN_MAX_BLOB_BYTES) || (512 * 1024);
+    if (buffer.length > maxBytes) {
+      return {
+        content: null,
+        error: `CIGRAFIN_ERR_SIZE_EXCEEDED: bytes=${buffer.length} limit=${maxBytes}`,
+        sizeExceeded: true,
+      };
+    }
+    return { content: buffer, error: null, sizeExceeded: false };
   } catch (err) {
     // Sanitize error message before logging — never include tokens/secrets
     const safe = String(err.message)
       .replace(/(?:token|secret|password|key|auth)\S*/gi, '[REDACTED]')
       .slice(0, 300);
-    return { content: null, error: `CIGRAFIN_ERR_FETCH: ${safe}` };
+    return { content: null, error: `CIGRAFIN_ERR_FETCH: ${safe}`, sizeExceeded: false };
   }
 }
 
@@ -125,19 +178,21 @@ async function ingestCigrafinItem(sourceItem, context = {}) {
   // (already in sourceItem)
 
   // ── 2. Fetch content ──────────────────────────────────────────────────────
-  const { content, error: fetchError } = await _safeFetch(sourceItem);
+  const { content, error: fetchError, sizeExceeded } = await _safeFetch(sourceItem);
 
   // ── 3. Compute content hash ───────────────────────────────────────────────
   const contentHash = computeContentHash(content);
 
   // ── 4. Create ingest record ───────────────────────────────────────────────
   const status  = contentHash ? INGEST_STATUS.HASHED : INGEST_STATUS.RECEIVED;
-  let record  = _createIngestRecord(sourceItem, contentHash, status);
+  let record  = _createIngestRecord(sourceItem, contentHash, status, context.reuse_ingest_id || null);
   _ingestRecords.set(record.ingest_id, record);
+  _persistMapToFile(INGEST_RECORDS_FILE, _ingestRecords);
 
   // ── Handle deleted source ─────────────────────────────────────────────────
   if (sourceItem.deleted) {
     _updateStatus(record, INGEST_STATUS.DELETED);
+    _persistMapToFile(INGEST_RECORDS_FILE, _ingestRecords);
     return _buildResult(record, [], startedAt, 'source_deleted');
   }
 
@@ -154,41 +209,53 @@ async function ingestCigrafinItem(sourceItem, context = {}) {
     const existingRuns = _classificationRuns.get(existingIngestId) ?? [];
     const alreadyClassifiedWithCurrentVersion = existingRuns
       .some((run) => run?.classifier_version === CLASSIFIER_VERSION);
+    const existingRecord = _ingestRecords.get(existingIngestId);
 
     if (!alreadyClassifiedWithCurrentVersion) {
-      const existingRecord = _ingestRecords.get(existingIngestId);
       if (existingRecord) {
         _ingestRecords.delete(record.ingest_id);
         record = existingRecord;
         _updateStatus(record, status);
+        _persistMapToFile(INGEST_RECORDS_FILE, _ingestRecords);
       } else {
         _updateStatus(record, INGEST_STATUS.RESOLVED);
+        _persistMapToFile(INGEST_RECORDS_FILE, _ingestRecords);
         return _buildResult(record, [], startedAt, 'duplicate', { existingIngestId });
       }
     } else {
-      _updateStatus(record, INGEST_STATUS.RESOLVED);
+      _ingestRecords.delete(record.ingest_id);
+      _persistMapToFile(INGEST_RECORDS_FILE, _ingestRecords);
+      if (existingRecord) {
+        return _buildResult(existingRecord, [], startedAt, 'duplicate', { existingIngestId });
+      }
       return _buildResult(record, [], startedAt, 'duplicate', { existingIngestId });
     }
   }
 
   // ── Handle fetch failure ──────────────────────────────────────────────────
   if (fetchError) {
-    _updateStatus(record, INGEST_STATUS.QUARANTINED);
+    _updateStatus(record, INGEST_STATUS.FAILED);
+    _persistMapToFile(INGEST_RECORDS_FILE, _ingestRecords);
     const qr = _quarantine.add(record, QUARANTINE_REASON.FETCH_FAILED, fetchError);
-    return _buildResult(record, [], startedAt, 'quarantined', { quarantine_id: qr.quarantine_id });
+    return _buildResult(record, [], startedAt, 'failed', { quarantine_id: qr.quarantine_id });
   }
 
   // ── 5. Detect media type ──────────────────────────────────────────────────
   const mediaType = detectMediaType(sourceItem, content);
   record.media_type = mediaType;
   _updateStatus(record, INGEST_STATUS.DETECTED);
+  _persistMapToFile(INGEST_RECORDS_FILE, _ingestRecords);
 
   // ── Quarantine binary/unsupported before parsing ──────────────────────────
   if (content === null || isBinaryMedia(mediaType)) {
+    const maxBytes = Number(process.env.CIGRAFIN_MAX_BLOB_BYTES) || (512 * 1024);
     const reason = content === null
-      ? QUARANTINE_REASON.SIZE_EXCEEDED
+      ? (sizeExceeded || ((sourceItem.size_bytes ?? 0) > maxBytes)
+          ? QUARANTINE_REASON.SIZE_EXCEEDED
+          : QUARANTINE_REASON.CONTENT_UNAVAILABLE)
       : QUARANTINE_REASON.BINARY_UNSUPPORTED;
     _updateStatus(record, INGEST_STATUS.QUARANTINED);
+    _persistMapToFile(INGEST_RECORDS_FILE, _ingestRecords);
     const qr = _quarantine.add(record, reason, `media_type=${mediaType}`);
     _dedupe.record(identity, record.ingest_id);
     return _buildResult(record, [], startedAt, 'quarantined', { quarantine_id: qr.quarantine_id });
@@ -197,12 +264,14 @@ async function ingestCigrafinItem(sourceItem, context = {}) {
   // ── 6. Parse ──────────────────────────────────────────────────────────────
   const parseResult = parseContent(mediaType, content);
   _updateStatus(record, INGEST_STATUS.PARSED);
+  _persistMapToFile(INGEST_RECORDS_FILE, _ingestRecords);
 
   if (!parseResult.parsed) {
     const reason = parseResult.error?.startsWith('CIGRAFIN_ERR_PENDING_PARSER')
       ? QUARANTINE_REASON.PENDING_PARSER
       : QUARANTINE_REASON.PARSE_ERROR;
     _updateStatus(record, INGEST_STATUS.QUARANTINED);
+    _persistMapToFile(INGEST_RECORDS_FILE, _ingestRecords);
     const qr = _quarantine.add(record, reason, parseResult.error ?? '');
     _dedupe.record(identity, record.ingest_id);
     return _buildResult(record, [], startedAt, 'quarantined', { quarantine_id: qr.quarantine_id });
@@ -211,14 +280,18 @@ async function ingestCigrafinItem(sourceItem, context = {}) {
   // ── 7. Extract candidate claims ───────────────────────────────────────────
   const provenance = {
     ingest_id:   record.ingest_id,
+    source_type: record.source_type === 'github' ? 'repo' : record.source_type,
     source_repo: record.source_repo,
     source_ref:  record.source_ref,
-    path:        record.path,
-    blob_sha:    record.blob_sha,
-    content_hash: record.content_hash,
+    _extra: {
+      path: record.path,
+      blob_sha: record.blob_sha,
+      content_hash: record.content_hash,
+    },
   };
   const claims = extractClaims(parseResult, provenance);
   _updateStatus(record, INGEST_STATUS.CLAIMS_EXTRACTED);
+  _persistMapToFile(INGEST_RECORDS_FILE, _ingestRecords);
 
   // ── 8–10. Classify each claim via canonical classifier ────────────────────
   const classificationRun = {
@@ -250,10 +323,28 @@ async function ingestCigrafinItem(sourceItem, context = {}) {
       candidates:       classResult.candidates      ?? [],
       unresolved:       classResult.unresolved       ?? [],
       reasons:          classResult.reasons           ?? [],
+      conflicts:        classResult.conflicts         ?? [],
     });
 
     if (classResult.unresolved?.length) {
       classificationRun.unresolved.push(...classResult.unresolved);
+    }
+    if (classResult.conflicts?.length) {
+      classificationRun.conflicts.push(...classResult.conflicts);
+    }
+
+    const candidateByAxis = new Map();
+    for (const candidate of classResult.candidates ?? []) {
+      if (!candidate?.axis || typeof candidate.score !== 'number') continue;
+      const list = candidateByAxis.get(candidate.axis) ?? [];
+      list.push(candidate);
+      candidateByAxis.set(candidate.axis, list);
+    }
+    for (const [axis, candidates] of candidateByAxis.entries()) {
+      const sorted = candidates.slice().sort((a, b) => b.score - a.score);
+      if (sorted.length > 1 && sorted[0].score === sorted[1].score) {
+        classificationRun.conflicts.push(`ambiguous_${axis}`);
+      }
     }
   }
 
@@ -262,23 +353,44 @@ async function ingestCigrafinItem(sourceItem, context = {}) {
     ...(_classificationRuns.get(record.ingest_id) ?? []),
     classificationRun,
   ]);
+  _persistMapToFile(CLASSIFICATION_RUNS_FILE, _classificationRuns);
   record.classification_runs = _classificationRuns.get(record.ingest_id);
   _updateStatus(record, INGEST_STATUS.CLASSIFIED);
+  _persistMapToFile(INGEST_RECORDS_FILE, _ingestRecords);
 
   // ── 11. Detect unresolved / conflicts ────────────────────────────────────
   const hasUnresolved = classificationRun.unresolved.length > 0;
+  const hasConflicts = classificationRun.conflicts.length > 0;
 
-  if (hasUnresolved) {
+  if (hasUnresolved || hasConflicts) {
     _updateStatus(record, INGEST_STATUS.QUARANTINED);
-    const qr = _quarantine.add(record, QUARANTINE_REASON.CLASSIFICATION_UNKNOWN,
-      `unresolved: ${classificationRun.unresolved.slice(0, 3).join(', ')}`);
+    _persistMapToFile(INGEST_RECORDS_FILE, _ingestRecords);
+    const reason = hasConflicts ? QUARANTINE_REASON.CONFLICT_DETECTED : QUARANTINE_REASON.CLASSIFICATION_UNKNOWN;
+    const detail = hasConflicts
+      ? `conflicts: ${classificationRun.conflicts.slice(0, 3).join(', ')}`
+      : `unresolved: ${classificationRun.unresolved.slice(0, 3).join(', ')}`;
+    const qr = _quarantine.add(record, reason, detail);
     _dedupe.record(identity, record.ingest_id);
     return _buildResult(record, classificationRun.claims, startedAt, 'quarantined',
       { quarantine_id: qr.quarantine_id });
   }
 
   // ── 12–13. Route and mark resolved ───────────────────────────────────────
+  const routedCanonical = classificationRun.claims
+    .map((entry) => entry.canonical_record)
+    .filter(Boolean);
+  if (routedCanonical.length !== classificationRun.claims.length) {
+    _updateStatus(record, INGEST_STATUS.QUARANTINED);
+    _persistMapToFile(INGEST_RECORDS_FILE, _ingestRecords);
+    const qr = _quarantine.add(record, QUARANTINE_REASON.UNRESOLVED_IDENTITY, 'missing canonical_record');
+    _dedupe.record(identity, record.ingest_id);
+    return _buildResult(record, classificationRun.claims, startedAt, 'quarantined', { quarantine_id: qr.quarantine_id });
+  }
+
+  _routedCanonicalRecords.set(record.ingest_id, routedCanonical);
+  _persistMapToFile(ROUTED_FILE, _routedCanonicalRecords);
   _updateStatus(record, INGEST_STATUS.ROUTED);
+  _persistMapToFile(INGEST_RECORDS_FILE, _ingestRecords);
   _dedupe.record(identity, record.ingest_id);
 
   return _buildResult(record, classificationRun.claims, startedAt, 'routed');
@@ -310,7 +422,13 @@ async function runCigrafinScan(env = {}, context = {}) {
 
   let items;
   try {
-    items = await pollCigrafinItems(env);
+    const repoUrl = `https://github.com/${env.CIGRAFIN_SOURCE_REPO ?? 'Ihorog/ci-memory'}`;
+    const ref = env.CIGRAFIN_SOURCE_REF ?? 'main';
+    const priorCheckpoint = _checkpoint.get(repoUrl, ref);
+    const previousInventory = priorCheckpoint?.inventory && typeof priorCheckpoint.inventory === 'object'
+      ? priorCheckpoint.inventory
+      : {};
+    items = await pollCigrafinItems(env, { previousInventory });
   } catch (err) {
     const safe = String(err.message).replace(/\S*(?:token|secret|key)\S*/gi, '[REDACTED]').slice(0, 300);
     summary.errors.push(`CIGRAFIN_ERR_POLL: ${safe}`);
@@ -330,6 +448,7 @@ async function runCigrafinScan(env = {}, context = {}) {
         case 'duplicate':   summary.unchanged++;   break;
         case 'routed':      summary.routed++;      summary.new_items++; break;
         case 'quarantined': summary.quarantined++; summary.new_items++; break;
+        case 'failed':      summary.failed++;      break;
         case 'source_deleted': /* counted separately */ break;
         default:            summary.new_items++;
       }
@@ -346,7 +465,11 @@ async function runCigrafinScan(env = {}, context = {}) {
     const ref     = env.CIGRAFIN_SOURCE_REF ?? 'main';
     const commitSha = items[0]?.raw_metadata?.commit_sha ?? null;
     if (commitSha) {
-      _checkpoint.save(repoUrl, ref, commitSha, summary.discovered);
+      const inventory = {};
+      for (const item of items) {
+        if (!item.deleted) inventory[item.path] = item.blob_sha ?? null;
+      }
+      _checkpoint.save(repoUrl, ref, commitSha, summary.discovered, inventory);
     }
   }
 
@@ -378,7 +501,11 @@ async function reprocessIngestItem(ingest_id, context = {}) {
     content_hash: record.content_hash,
   });
 
-  // Rebuild a synthetic SourceItem from the stored record (content not re-fetched)
+  const repoSlug = String(record.source_repo || '').replace(/^https:\/\/github\.com\//, '');
+  const canRefetchGithubBlob = record.source_type === 'github' && record.blob_sha && repoSlug.includes('/');
+  const maxBytes = Number(process.env.CIGRAFIN_MAX_BLOB_BYTES) || (512 * 1024);
+
+  // Rebuild a synthetic SourceItem from the stored record.
   const { createSourceItem } = require('./sourceAdapter');
   const syntheticItem = createSourceItem({
     source_repo:  record.source_repo,
@@ -389,11 +516,18 @@ async function reprocessIngestItem(ingest_id, context = {}) {
     size_bytes:   record.size_bytes,
     source_type:  record.source_type,
     deleted:      record.deleted,
-    fetch:        null, // content not available without re-fetch
+    fetch: canRefetchGithubBlob && (record.size_bytes == null || record.size_bytes <= maxBytes)
+      ? async () => fetchBlobContent(repoSlug, record.blob_sha, process.env)
+      : null,
     raw_metadata: record.raw_metadata,
   });
 
-  return ingestCigrafinItem(syntheticItem, { ...context, reprocess: true, original_ingest_id: ingest_id });
+  return ingestCigrafinItem(syntheticItem, {
+    ...context,
+    reprocess: true,
+    original_ingest_id: ingest_id,
+    reuse_ingest_id: ingest_id,
+  });
 }
 
 // ── Status accessors ──────────────────────────────────────────────────────────

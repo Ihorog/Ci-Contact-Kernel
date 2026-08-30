@@ -9,6 +9,8 @@
  */
 
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
 const QUARANTINE_REASON = Object.freeze({
   PENDING_PARSER:      'PENDING_PARSER',
@@ -17,15 +19,47 @@ const QUARANTINE_REASON = Object.freeze({
   CONFLICT_DETECTED:   'CONFLICT_DETECTED',
   FETCH_FAILED:        'FETCH_FAILED',
   SIZE_EXCEEDED:       'SIZE_EXCEEDED',
+  CONTENT_UNAVAILABLE: 'CONTENT_UNAVAILABLE',
   BINARY_UNSUPPORTED:  'BINARY_UNSUPPORTED',
   UNRESOLVED_IDENTITY: 'UNRESOLVED_IDENTITY',
   PIPELINE_ERROR:      'PIPELINE_ERROR',
 });
 
 class QuarantineStore {
-  constructor() {
+  constructor(options = {}) {
     /** @type {Map<string, object>} quarantine_id → record */
     this._records = new Map();
+    this._filePath = options.filePath || null;
+    this._writeChain = Promise.resolve();
+    this._load();
+  }
+
+  _load() {
+    if (!this._filePath) return;
+    try {
+      const raw = fs.readFileSync(this._filePath, 'utf8');
+      if (!raw.trim()) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed?.records)) {
+        this._records = new Map(parsed.records
+          .filter((r) => r && typeof r === 'object' && r.quarantine_id)
+          .map((r) => [r.quarantine_id, r]));
+      }
+    } catch {
+      // Ignore corrupt/missing state.
+    }
+  }
+
+  _persist() {
+    if (!this._filePath) return;
+    const dir = path.dirname(this._filePath);
+    fs.mkdirSync(dir, { recursive: true });
+    const snapshot = JSON.stringify({ records: Array.from(this._records.values()) });
+    const tempPath = `${this._filePath}.tmp`;
+    this._writeChain = this._writeChain
+      .then(() => fs.promises.writeFile(tempPath, snapshot, 'utf8'))
+      .then(() => fs.promises.rename(tempPath, this._filePath))
+      .catch(() => {});
   }
 
   /**
@@ -39,7 +73,8 @@ class QuarantineStore {
   add(ingestRecord, reason, detail = '') {
     // Sanitize: strip any potential secrets / large payloads from detail
     const safeDetail = String(detail)
-      .replace(/\b(?:authorization|token|secret|password|key|auth)\b\s*[:=]\s*[^\r\n,;]*/gi, '[REDACTED]')
+      .replace(/(?:authorization|proxy-authorization)\s*:\s*[^\r\n]*/gi, '[REDACTED]')
+      .replace(/\b(?:token|secret|password|api[_-]?key|access[_-]?key|auth)\b\s*[:=]\s*[^\s,;]+/gi, '[REDACTED]')
       .replace(/(?:token|secret|password|key|auth)[^\s]*/gi, '[REDACTED]')
       .slice(0, 500);
 
@@ -60,6 +95,7 @@ class QuarantineStore {
     };
 
     this._records.set(record.quarantine_id, record);
+    this._persist();
     return record;
   }
 
@@ -76,6 +112,7 @@ class QuarantineStore {
     rec.resolved    = true;
     rec.resolved_at = new Date().toISOString();
     rec.resolved_by = resolved_by;
+    this._persist();
     return rec;
   }
 

@@ -11,6 +11,8 @@
  */
 
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
 /**
  * Compute a SHA-256 hex digest of the given Buffer or string.
@@ -48,9 +50,38 @@ function buildDedupKey(identity) {
  * The store maps dedup key → ingest_id of the first (canonical) ingest record.
  */
 class DedupStore {
-  constructor() {
+  constructor(options = {}) {
     /** @type {Map<string, string>} */
     this._seen = new Map();
+    this._filePath = options.filePath || null;
+    this._writeChain = Promise.resolve();
+    this._load();
+  }
+
+  _load() {
+    if (!this._filePath) return;
+    try {
+      const raw = fs.readFileSync(this._filePath, 'utf8');
+      if (!raw.trim()) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed?.entries)) {
+        this._seen = new Map(parsed.entries.filter((e) => Array.isArray(e) && e.length === 2));
+      }
+    } catch {
+      // Ignore load errors and keep empty store.
+    }
+  }
+
+  _persist() {
+    if (!this._filePath) return;
+    const dir = path.dirname(this._filePath);
+    fs.mkdirSync(dir, { recursive: true });
+    const snapshot = JSON.stringify({ entries: Array.from(this._seen.entries()) });
+    const tempPath = `${this._filePath}.tmp`;
+    this._writeChain = this._writeChain
+      .then(() => fs.promises.writeFile(tempPath, snapshot, 'utf8'))
+      .then(() => fs.promises.rename(tempPath, this._filePath))
+      .catch(() => {});
   }
 
   /**
@@ -74,6 +105,7 @@ class DedupStore {
   record(identity, ingest_id) {
     const key = buildDedupKey(identity);
     this._seen.set(key, ingest_id);
+    this._persist();
   }
 
   /**
@@ -83,6 +115,7 @@ class DedupStore {
    */
   forget(identity) {
     this._seen.delete(buildDedupKey(identity));
+    this._persist();
   }
 
   /** @returns {number} */

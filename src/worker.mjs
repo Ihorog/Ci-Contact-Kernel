@@ -457,9 +457,29 @@ async function handleApi(request, env) {
   return json({ error: "Ci API route not found" }, 404);
 }
 
+async function proxyCigrafin(request, env) {
+  const base = env?.CIGRAFIN_NODE_BASE_URL;
+  if (!base) {
+    return json({
+      error: "Cigrafin routes require node-server routing",
+      hint: "Set CIGRAFIN_NODE_BASE_URL so /cigrafin/* is forwarded to the Node server.",
+    }, 503);
+  }
+  const upstreamUrl = new URL(new URL(request.url).pathname + new URL(request.url).search, base);
+  const response = await fetch(upstreamUrl.toString(), request);
+  return response;
+}
+
 export default {
   async fetch(request, env = {}) {
     const pathname = new URL(request.url).pathname;
+    if (pathname === "/cigrafin" || pathname.startsWith("/cigrafin/")) {
+      try {
+        return await proxyCigrafin(request, env);
+      } catch (error) {
+        return json({ error: "Cigrafin proxy failed" }, 502);
+      }
+    }
     if (pathname.startsWith("/ci/") || pathname.startsWith("/ciopen/")) {
       try {
         return await handleApi(request, env);

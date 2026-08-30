@@ -5,9 +5,9 @@
  *
  * Does NOT rely on external libraries.  Detection priority:
  *   1. Caller-supplied media_type (trust adapter when known).
- *   2. File extension heuristic from path.
- *   3. Magic-byte sniff of the first bytes of content.
- *   4. UTF-8 text fallback.
+ *   2. Magic-byte sniff of content when available.
+ *   3. File extension heuristic from path.
+ *   4. Strict UTF-8 text fallback.
  */
 
 // ── Extension map ─────────────────────────────────────────────────────────────
@@ -51,6 +51,24 @@ const MAGIC = [
   { prefix: Buffer.from([0x1f, 0x8b]),                       type: 'application/gzip'  },  // gzip
 ];
 
+function _isStrictUtf8Text(buffer) {
+  if (!Buffer.isBuffer(buffer)) return false;
+  const sample = buffer.slice(0, 4096);
+  if (sample.length === 0) return true;
+  for (const byte of sample) {
+    const isAllowedControl = byte === 0x09 || byte === 0x0a || byte === 0x0d;
+    if (byte < 0x20 && !isAllowedControl) return false;
+    if (byte === 0x7f) return false;
+  }
+  try {
+    const decoder = new TextDecoder('utf-8', { fatal: true });
+    decoder.decode(sample);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Detect the media type of a source item.
  *
@@ -62,23 +80,26 @@ function detectMediaType(item, content) {
   // 1. Trust adapter
   if (item.media_type) return item.media_type;
 
-  // 2. Extension
-  const ext = (item.path.match(/(\.[^./]+)$/) ?? [])[1]?.toLowerCase();
-  if (ext && EXT_MAP[ext]) return EXT_MAP[ext];
-
-  // 3. Magic bytes
+  // 2. Magic bytes
   if (Buffer.isBuffer(content) && content.length >= 2) {
     for (const m of MAGIC) {
       if (content.slice(0, m.prefix.length).equals(m.prefix)) return m.type;
     }
   }
 
+  // 3. Extension
+  const ext = (item.path.match(/(\.[^./]+)$/) ?? [])[1]?.toLowerCase();
+  if (ext && EXT_MAP[ext]) {
+    const fromExt = EXT_MAP[ext];
+    if (Buffer.isBuffer(content) && fromExt.startsWith('text/') && !_isStrictUtf8Text(content)) {
+      return 'application/octet-stream';
+    }
+    return fromExt;
+  }
+
   // 4. UTF-8 text fallback
   if (Buffer.isBuffer(content)) {
-    // If all bytes are printable ASCII / typical UTF-8 range, treat as text
-    const sample = content.slice(0, 512);
-    const hasNullByte = sample.includes(0x00);
-    if (!hasNullByte) return 'text/plain';
+    if (_isStrictUtf8Text(content)) return 'text/plain';
     return 'application/octet-stream';
   }
 

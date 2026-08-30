@@ -221,9 +221,10 @@ test('QuarantineStore.add persists record with reason', () => {
 test('QuarantineStore.add sanitizes secret-like detail', () => {
   const qs = new QuarantineStore();
   const ir = { ingest_id: 'ig-2', source_repo: 'r', source_ref: 'main', path: 'x' };
-  const qr = qs.add(ir, QUARANTINE_REASON.FETCH_FAILED, 'token=abc123 secret=xyz');
+  const qr = qs.add(ir, QUARANTINE_REASON.FETCH_FAILED, 'Authorization: ****** token=abc123 secret=xyz');
   assert.ok(!qr.detail.includes('abc123'));
   assert.ok(!qr.detail.includes('xyz'));
+  assert.ok(!qr.detail.includes('******'));
 });
 
 test('QuarantineStore.resolve marks record resolved', () => {

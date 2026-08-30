@@ -39,6 +39,7 @@ class QuarantineStore {
   add(ingestRecord, reason, detail = '') {
     // Sanitize: strip any potential secrets / large payloads from detail
     const safeDetail = String(detail)
+      .replace(/\b(?:authorization|token|secret|password|key|auth)\b\s*[:=]\s*[^\r\n,;]*/gi, '[REDACTED]')
       .replace(/(?:token|secret|password|key|auth)[^\s]*/gi, '[REDACTED]')
       .slice(0, 500);
 

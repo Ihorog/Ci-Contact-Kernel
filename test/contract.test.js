@@ -5,9 +5,10 @@ const fs = require('node:fs');
 const request = require('supertest');
 const { createApp } = require('../src/server');
 
-const tempMemory = path.join(__dirname, 'tmp-contract-memory.jsonl');
+const tempMemory = path.join('/tmp', 'ci-contact-kernel-tests', 'tmp-contract-memory.jsonl');
 
 test.beforeEach(() => {
+  fs.mkdirSync(path.dirname(tempMemory), { recursive: true });
   if (fs.existsSync(tempMemory)) fs.unlinkSync(tempMemory);
 });
 

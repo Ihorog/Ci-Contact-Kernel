@@ -50,7 +50,14 @@ function normalizeProvenance(raw = {}, context = {}) {
     transform_chain: Array.isArray(prov.transform_chain)
       ? [...prov.transform_chain]
       : (Array.isArray(raw.transform_chain) ? [...raw.transform_chain] : []),
-    _extra: raw && raw._extra && typeof raw._extra === 'object' ? { ...raw._extra } : {},
+    _extra: {
+      ...(prov && prov._extra && typeof prov._extra === 'object' ? { ...prov._extra } : {}),
+      ...(raw && raw._extra && typeof raw._extra === 'object' ? { ...raw._extra } : {}),
+      ...(prov.source_repo ? { source_repo: prov.source_repo } : {}),
+      ...(prov.path ? { path: prov.path } : {}),
+      ...(prov.blob_sha ? { blob_sha: prov.blob_sha } : {}),
+      ...(prov.content_hash ? { content_hash: prov.content_hash } : {}),
+    },
   };
 }
 
@@ -60,6 +67,9 @@ function normalizeProvenance(raw = {}, context = {}) {
  * @returns {string}
  */
 function resolveSourceType(value) {
+  if (typeof value === 'string' && value.toLowerCase() === 'github') {
+    return SOURCE_TYPE.REPO;
+  }
   if (typeof value === 'string' && VALID_SOURCE_TYPES.has(value.toLowerCase())) {
     return value.toLowerCase();
   }

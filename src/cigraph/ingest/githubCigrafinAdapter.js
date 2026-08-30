@@ -38,7 +38,7 @@ function githubApiGet(path, env = {}) {
   // Guard: path must begin with '/' and contain only safe URL characters.
   // This prevents SSRF by ensuring the concatenated URL always targets
   // GITHUB_API_BASE and cannot be redirected by a crafted path value.
-  if (typeof path !== 'string' || !path.startsWith('/') || /[\s#?]/.test(path)) {
+  if (typeof path !== 'string' || !path.startsWith('/') || /[\s#]/.test(path)) {
     return Promise.reject(new Error(`CIGRAFIN_ERR_INVALID_API_PATH: ${String(path).slice(0, 80)}`));
   }
   return new Promise((resolve, reject) => {

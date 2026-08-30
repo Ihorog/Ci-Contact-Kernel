@@ -200,9 +200,15 @@ async function buildItemsFromWebhook(payload, env = {}) {
   const ref    = payload.ref ? payload.ref.replace('refs/heads/', '') : (env.CIGRAFIN_SOURCE_REF ?? 'main');
   const prefix = env.CIGRAFIN_SOURCE_PATH ?? 'Cigrafin';
 
-  const added    = (payload.head_commit?.added    ?? []).filter((p) => p.startsWith(`${prefix}/`));
-  const modified = (payload.head_commit?.modified ?? []).filter((p) => p.startsWith(`${prefix}/`));
-  const removed  = (payload.head_commit?.removed  ?? []).filter((p) => p.startsWith(`${prefix}/`));
+  const touchedPaths = new Set();
+  const commitList = Array.isArray(payload.commits) && payload.commits.length > 0
+    ? payload.commits
+    : [payload.head_commit ?? {}];
+  for (const commit of commitList) {
+    for (const path of [...(commit.added ?? []), ...(commit.modified ?? []), ...(commit.removed ?? [])]) {
+      if (path.startsWith(`${prefix}/`)) touchedPaths.add(path);
+    }
+  }
 
   // Resolve blob SHAs for added/modified via the tree
   const commitSha   = payload.after ?? payload.head_commit?.id ?? null;
@@ -218,34 +224,20 @@ async function buildItemsFromWebhook(payload, env = {}) {
 
   const items = [];
 
-  for (const path of [...added, ...modified]) {
-    const meta = blobsBySha.get(path) ?? { path, blob_sha: null, size_bytes: null };
+  for (const path of touchedPaths) {
+    const meta = blobsBySha.get(path) ?? null;
     const maxBytes = Number(env.CIGRAFIN_MAX_BLOB_BYTES) || DEFAULT_MAX_BYTES;
     items.push(createSourceItem({
       source_repo:  `https://github.com/${repo}`,
       source_ref:   ref,
       path,
-      blob_sha:     meta.blob_sha,
-      size_bytes:   meta.size_bytes,
+      blob_sha:     meta?.blob_sha ?? null,
+      size_bytes:   meta?.size_bytes ?? null,
       source_type:  SOURCE_TYPE.GITHUB,
-      deleted:      false,
-      fetch: meta.blob_sha && (meta.size_bytes === null || meta.size_bytes <= maxBytes)
+      deleted:      !meta,
+      fetch: meta?.blob_sha && (meta.size_bytes === null || meta.size_bytes <= maxBytes)
         ? async () => fetchBlobContent(repo, meta.blob_sha, env)
         : null,
-      raw_metadata: { commit_sha: commitSha, repo, ref },
-    }));
-  }
-
-  for (const path of removed) {
-    items.push(createSourceItem({
-      source_repo:  `https://github.com/${repo}`,
-      source_ref:   ref,
-      path,
-      blob_sha:     null,
-      size_bytes:   null,
-      source_type:  SOURCE_TYPE.GITHUB,
-      deleted:      true,
-      fetch:        null,
       raw_metadata: { commit_sha: commitSha, repo, ref },
     }));
   }

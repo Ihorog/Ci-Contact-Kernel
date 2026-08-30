@@ -132,7 +132,7 @@ async function ingestCigrafinItem(sourceItem, context = {}) {
 
   // ── 4. Create ingest record ───────────────────────────────────────────────
   const status  = contentHash ? INGEST_STATUS.HASHED : INGEST_STATUS.RECEIVED;
-  const record  = _createIngestRecord(sourceItem, contentHash, status);
+  let record  = _createIngestRecord(sourceItem, contentHash, status);
   _ingestRecords.set(record.ingest_id, record);
 
   // ── Handle deleted source ─────────────────────────────────────────────────
@@ -151,8 +151,24 @@ async function ingestCigrafinItem(sourceItem, context = {}) {
   };
   const { duplicate, existingIngestId } = _dedupe.check(identity);
   if (duplicate) {
-    _updateStatus(record, INGEST_STATUS.RESOLVED);
-    return _buildResult(record, [], startedAt, 'duplicate', { existingIngestId });
+    const existingRuns = _classificationRuns.get(existingIngestId) ?? [];
+    const alreadyClassifiedWithCurrentVersion = existingRuns
+      .some((run) => run?.classifier_version === CLASSIFIER_VERSION);
+
+    if (!alreadyClassifiedWithCurrentVersion) {
+      const existingRecord = _ingestRecords.get(existingIngestId);
+      if (existingRecord) {
+        _ingestRecords.delete(record.ingest_id);
+        record = existingRecord;
+        _updateStatus(record, status);
+      } else {
+        _updateStatus(record, INGEST_STATUS.RESOLVED);
+        return _buildResult(record, [], startedAt, 'duplicate', { existingIngestId });
+      }
+    } else {
+      _updateStatus(record, INGEST_STATUS.RESOLVED);
+      return _buildResult(record, [], startedAt, 'duplicate', { existingIngestId });
+    }
   }
 
   // ── Handle fetch failure ──────────────────────────────────────────────────

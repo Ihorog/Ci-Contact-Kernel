@@ -319,6 +319,30 @@ test('changed file (new content_hash) gets a new ingest record', async () => {
   assert.notEqual(v2.outcome, 'duplicate');
 });
 
+test('unchanged re-scan reruns classification when classifier version differs', async () => {
+  const content = Buffer.from('Classifier version rerun test content.');
+  const path = `Cigrafin/classifier-rerun-${Date.now()}.txt`;
+  const makeItem = () => createSourceItem({
+    source_repo: 'https://github.com/Ihorog/ci-memory',
+    source_ref: 'main',
+    path,
+    blob_sha: 'classifier-rerun-sha',
+    fetch: async () => content,
+    source_type: SOURCE_TYPE.GITHUB,
+  });
+
+  const first = await ingestCigrafinItem(makeItem(), {});
+  const firstRecord = getIngestRecord(first.ingest_id);
+  firstRecord.classification_runs[0].classifier_version = 'older-classifier-version';
+
+  const second = await ingestCigrafinItem(makeItem(), {});
+  const secondRecord = getIngestRecord(first.ingest_id);
+
+  assert.notEqual(second.outcome, 'duplicate');
+  assert.equal(second.ingest_id, first.ingest_id);
+  assert.equal(secondRecord.classification_runs.length, 2);
+});
+
 // ── pipeline — rename/delete handling ─────────────────────────────────────────
 
 test('deleted source file produces DELETED status, history retained', async () => {

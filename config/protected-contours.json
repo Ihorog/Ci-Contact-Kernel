@@ -1,0 +1,38 @@
+{
+  "version": "1.0",
+  "authority": {
+    "control_plane_repo": "Ihorog/Ci-Contact-Kernel",
+    "consumer_repo": "Ihorog/cimeika-unified",
+    "consumer_role": "product_aggregator_consumer",
+    "rule": "cimeika-unified must not become a competing execution or control authority"
+  },
+  "protected_contours": [
+    "package-lock.json",
+    "src/keeneticMcpGateway.js",
+    "src/keeneticWorkerGateway.mjs",
+    "src/cigraph/routing/connectorRegistry.js",
+    "src/server.js",
+    "src/worker.mjs",
+    "test/keenetic.mcp.test.js",
+    "docs/ci/CI_KEENETIC_MCP.md",
+    "docs/ci/CI_CONTROL_PLANE_INVENTORY.json",
+    "supabase/migrations/20260831_ci_exec_coordinator.sql"
+  ],
+  "invariants": [
+    {
+      "path": "src/cigraph/routing/connectorRegistry.js",
+      "contains": "keenetic"
+    },
+    {
+      "path": "src/server.js",
+      "contains": "keeneticMcpGateway"
+    },
+    {
+      "path": "src/server.js",
+      "contains": "/mcp/keenetic"
+    }
+  ],
+  "destructive_change_threshold_deleted_lines": 1000,
+  "approval_label": "ci-approved-destructive-change",
+  "public_baseline": "docs/ci/CI_ORANGE_OPERATIONAL_BASELINE.md"
+}

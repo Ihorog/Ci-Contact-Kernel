@@ -13,9 +13,19 @@ function safeEqual(a, b) {
   return diff === 0;
 }
 
-function readBearer(value) {
-  const match = typeof value === "string" ? value.match(/^Bearer\s+(.+)$/i) : null;
-  return match ? match[1].trim() : "";
+export function readBearer(value) {
+  if (typeof value !== "string") return "";
+  const scheme = "bearer";
+  if (value.length <= scheme.length || value.slice(0, scheme.length).toLowerCase() !== scheme) {
+    return "";
+  }
+
+  let tokenStart = scheme.length;
+  const separator = value[tokenStart];
+  if (separator !== " " && separator !== "\t") return "";
+  while (value[tokenStart] === " " || value[tokenStart] === "\t") tokenStart += 1;
+
+  return value.slice(tokenStart).trim();
 }
 
 export function resolveKeeneticWorkerConfig(env = {}) {

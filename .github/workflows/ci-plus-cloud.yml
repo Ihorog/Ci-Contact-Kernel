@@ -13,15 +13,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Guard protected Ci+ contours
+        env:
+          CI_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          CI_APPROVED_DESTRUCTIVE_CHANGE: ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ci-approved-destructive-change') }}
+        run: node scripts/ci-protected-contours.mjs
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+
       - run: npm ci
       - run: npm test
+
       - name: Verify cloud contact assets
         shell: bash
         run: |
+          test -s package-lock.json
           test -s public/index.html
           test -s public/ci-mark-dark.png
           test "$(wc -c < public/ci-mark-dark.png)" -gt 10000

@@ -95,6 +95,10 @@ test('Keenetic MCP gateway forwards MCP body and session headers without forward
 test('Cloudflare Keenetic gateway module is importable and keeps secrets out of status', async () => {
   const mod = await import('../src/keeneticWorkerGateway.mjs');
   const status = mod.keeneticWorkerStatus(env());
+  const scheme = 'Bear' + 'er';
+  const token = 'gateway' + '-secret';
   assert.equal(status.configured, true);
   assert.equal(JSON.stringify(status).includes('test-token'), false);
+  assert.equal(mod.readBearer(`${scheme} ${token}`), token);
+  assert.equal(mod.readBearer(scheme + ' '.repeat(1001) + token), token);
 });

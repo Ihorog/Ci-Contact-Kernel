@@ -1,5 +1,3 @@
-import { keeneticWorkerStatus, proxyKeeneticWorker } from "./keeneticWorkerGateway.mjs";
-
 const TASK_INDEX_KEY = "ci_tasks:__index";
 const TASK_KEY_PREFIX = "ci_task:";
 const MAX_TASKS = 200;
@@ -394,14 +392,9 @@ async function handleApi(request, env) {
       taskCount,
       storage: kv ? "cloudflare-kv" : "isolate-memory",
       durableStorage: Boolean(kv),
-      knownModules: ["classifier", "router", "permission-gate", "verification", "keenetic-mcp"],
+      knownModules: ["classifier", "router", "permission-gate", "verification"],
       timestamp: new Date().toISOString(),
     });
-  }
-
-  if (pathname === "/ci/keenetic/status") {
-    if (request.method !== "GET") return methodNotAllowed("GET, OPTIONS");
-    return json(keeneticWorkerStatus(env));
   }
 
   if (pathname === "/ci/signal" || pathname === "/ci/task" || pathname === "/ci/command") {
@@ -480,11 +473,6 @@ async function proxyCigrafin(request, env) {
 export default {
   async fetch(request, env = {}) {
     const pathname = new URL(request.url).pathname;
-
-    if (pathname === "/mcp/keenetic" || pathname === "/mcp/keenetic/") {
-      return proxyKeeneticWorker(request, env);
-    }
-
     if (pathname === "/cigrafin" || pathname.startsWith("/cigrafin/")) {
       try {
         return await proxyCigrafin(request, env);

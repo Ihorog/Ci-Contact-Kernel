@@ -27,14 +27,6 @@ const CONNECTORS = Object.freeze({
     capabilities: ['tunnel_metadata', 'edge_config', 'kv_storage'],
     trust_level: 'executor'
   },
-  keenetic: {
-    name: 'keenetic',
-    role: 'Home internet-center connector through the vendor MCP service.',
-    semantic_ownership: [{ scope: SCOPE.HOME, domain: DOMAIN.NETWORK_COMPUTE }],
-    write_authority: 'Can change cloud or router state only within the active MCP token scope and after the calling policy authorizes the requested device action.',
-    capabilities: ['network_observability', 'client_inventory', 'wifi_control', 'device_management', 'router_commands'],
-    trust_level: 'executor'
-  },
   openai: {
     name: 'openai',
     role: 'LLM enrichment connector for extraction and semantic hints.',

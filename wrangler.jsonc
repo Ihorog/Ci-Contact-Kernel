@@ -11,7 +11,8 @@
     "binding": "ASSETS",
     "run_worker_first": [
       "/ci/*",
-      "/ciopen/*"
+      "/ciopen/*",
+      "/mcp/*"
     ]
   },
   "observability": {

@@ -1,6 +1,0 @@
-{
-  "name": "Ci Genesis Engine & Contact Kernel",
-  "description": "The Living Ethereal Interface and Intent Interpretation Core for the Ci Ecosystem, managing the 4-layer temporal Ci Graph, Ci Moment artifact, and Action Bridge.",
-  "requestFramePermissions": ["microphone"],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

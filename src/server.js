@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
 const { CiOrchestrator } = require('./ciOrchestrator');
+const { proxyKeeneticMcp, statusKeeneticConfig } = require('./keeneticMcpGateway');
 
 const ciopen = {
   detectContext(signal = {}) {
@@ -109,6 +110,7 @@ function createApp(options = {}) {
   const app = express();
   const orchestrator = options.orchestrator || new CiOrchestrator(options);
   const ciRateLimiter = createSimpleRateLimiter(options.rateLimit || {});
+  const runtimeEnv = options.env || process.env;
 
   app.use(express.json({
     limit: '1mb',
@@ -119,6 +121,7 @@ function createApp(options = {}) {
   app.use(express.static(path.resolve(process.cwd(), 'public')));
   app.use('/ci', ciRateLimiter);
   app.use('/ciopen', ciRateLimiter);
+  app.use('/mcp/keenetic', ciRateLimiter);
 
   app.post('/ci/signal', (req, res) => {
     const payload = req.body || {};
@@ -181,6 +184,10 @@ function createApp(options = {}) {
     res.json(orchestrator.status());
   });
 
+  app.get('/ci/keenetic/status', (_req, res) => {
+    res.json(statusKeeneticConfig(runtimeEnv));
+  });
+
   app.get('/ci/memory', (req, res) => {
     const limit = Math.min(Math.max(1, Number(req.query.limit) || 100), 200);
     res.json({ records: orchestrator.recentMemory(limit) });
@@ -193,6 +200,22 @@ function createApp(options = {}) {
       command: req.body?.command || null
     }, 'ci.command', true);
     res.status(202).json({ task: taskSummary(task) });
+  });
+
+  app.all('/mcp/keenetic', async (req, res) => {
+    if (req.method === 'OPTIONS') {
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'authorization, content-type, mcp-session-id, last-event-id',
+        'Cache-Control': 'no-store',
+      });
+      return res.status(204).end();
+    }
+    return proxyKeeneticMcp(req, res, {
+      env: runtimeEnv,
+      fetchImpl: options.fetchImpl || globalThis.fetch,
+    });
   });
 
   app.post('/ciopen/webhook', (req, res) => {

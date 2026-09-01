@@ -16,8 +16,17 @@ function constantTimeEqual(a, b) {
 
 function readBearer(value) {
   if (typeof value !== 'string') return '';
-  const match = value.match(/^Bearer\s+(.+)$/i);
-  return match ? match[1].trim() : '';
+  const scheme = 'bearer';
+  if (value.length <= scheme.length || value.slice(0, scheme.length).toLowerCase() !== scheme) {
+    return '';
+  }
+
+  let tokenStart = scheme.length;
+  const separator = value[tokenStart];
+  if (separator !== ' ' && separator !== '\t') return '';
+  while (value[tokenStart] === ' ' || value[tokenStart] === '\t') tokenStart += 1;
+
+  return value.slice(tokenStart).trim();
 }
 
 function resolveKeeneticConfig(env = process.env) {

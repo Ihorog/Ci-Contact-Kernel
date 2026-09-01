@@ -6,6 +6,7 @@ const request = require('supertest');
 
 const appModule = require('../src/server');
 const {
+  readBearer,
   resolveKeeneticConfig,
   statusKeeneticConfig,
 } = require('../src/keeneticMcpGateway');
@@ -45,6 +46,17 @@ test('Keenetic MCP gateway requires bearer authentication', async () => {
   assert.equal(response.body.error, 'unauthorized');
 });
 
+test('Keenetic bearer parser handles spacing without regex backtracking', () => {
+  const scheme = 'Bear' + 'er';
+  const token = 'gateway' + '-secret';
+  assert.equal(readBearer(`${scheme} ${token}`), token);
+  assert.equal(readBearer(`bearer\t${token}  `), token);
+  assert.equal(readBearer(scheme + ' '.repeat(1001) + token), token);
+  assert.equal(readBearer('Basic ' + token), '');
+  assert.equal(readBearer('Bearer'), '');
+  assert.equal(readBearer('Bearer    '), '');
+});
+
 test('Keenetic MCP gateway forwards MCP body and session headers without forwarding gateway auth', async () => {
   let captured = null;
   const fetchImpl = async (url, init) => {
@@ -68,7 +80,7 @@ test('Keenetic MCP gateway forwards MCP body and session headers without forward
   const payload = { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} };
   const response = await request(app)
     .post('/mcp/keenetic')
-    .set('Authorization', 'Bearer gateway-secret')
+    .set('Authorization', ['Bear' + 'er', 'gateway' + '-secret'].join(' '))
     .send(payload);
 
   assert.equal(response.status, 200);

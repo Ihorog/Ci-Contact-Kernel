@@ -8,6 +8,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.PixelFormat;
+import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.VibrationEffect;
@@ -28,6 +29,7 @@ public final class CiOverlayService extends Service {
     private static final String CHANNEL_ID = "ci_active_point";
     private static final int NOTIFICATION_ID = 7;
     private static final String PREFS = "ci_point";
+    private static final String CHATGPT_PACKAGE = "com.openai.chatgpt";
 
     private WindowManager windowManager;
     private ImageView ciView;
@@ -192,9 +194,6 @@ public final class CiOverlayService extends Service {
     }
 
     private void performCiClick() {
-        boolean nextState = !prefs.getBoolean("state", false);
-        prefs.edit().putBoolean("state", nextState).apply();
-
         vibrate();
         ciView.animate()
                 .alpha(0.38f)
@@ -210,10 +209,25 @@ public final class CiOverlayService extends Service {
                 .start();
 
         Intent event = new Intent(ACTION_CI_CLICK);
-        event.putExtra("state", nextState);
         event.putExtra("timestamp", System.currentTimeMillis());
         event.putExtra("source", "ci-active-point");
+        event.putExtra("action", "invoke-gpt");
         sendBroadcast(event);
+
+        launchChatGpt();
+    }
+
+    private void launchChatGpt() {
+        Intent launch = getPackageManager().getLaunchIntentForPackage(CHATGPT_PACKAGE);
+        if (launch != null) {
+            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(launch);
+            return;
+        }
+
+        Intent web = new Intent(Intent.ACTION_VIEW, Uri.parse("https://chatgpt.com/"));
+        web.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(web);
     }
 
     private void hideCi() {

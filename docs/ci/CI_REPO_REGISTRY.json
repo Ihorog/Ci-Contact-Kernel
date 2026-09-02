@@ -1,18 +1,38 @@
 {
   "_schema": "ci-repo-registry-v1",
-  "_generated_at": "2026-09-02T12:00:00.000Z",
-  "_description": "Canonical machine-readable inventory of all Ihorog repositories for Ci Code autonomous control loop.",
+  "_integrity": {
+    "algorithm": "sha256",
+    "hash": "a81e4f8f65e2e5f72c7f16c1f3ac01f3873613d335946b4ba302fe3efed06035",
+    "source": "RepoRegistry.updateVerification",
+    "updated_at": "2026-09-02T19:46:14.510Z"
+  },
   "repositories": [
     {
       "repository_id": "Ihorog/Ci-Contact-Kernel",
       "role": "CONTROL",
       "status": "ACTIVE",
       "default_branch": "main",
-      "capabilities": ["control_plane", "signal_normalization", "cigraph_classification", "orchestration", "digest_generation"],
-      "required_checks": ["ci/verify", "test", "security-review"],
+      "capabilities": [
+        "control_plane",
+        "signal_normalization",
+        "cigraph_classification",
+        "orchestration",
+        "digest_generation"
+      ],
+      "required_checks": [
+        "ci/verify",
+        "test",
+        "security-review"
+      ],
       "risk_class": "R2",
-      "dependencies": ["Ihorog/cimeika-workflows", "Ihorog/ci-memory"],
-      "deployment_targets": ["vercel", "cloudflare-workers"],
+      "dependencies": [
+        "Ihorog/cimeika-workflows",
+        "Ihorog/ci-memory"
+      ],
+      "deployment_targets": [
+        "vercel",
+        "cloudflare-workers"
+      ],
       "maintainer_policy": {
         "auto_merge_r1": true,
         "auto_rebase": true,
@@ -22,22 +42,40 @@
       },
       "notification_policy": {
         "mode": "digest",
-        "immediate_triggers": ["security_incident", "secret_exposure", "production_outage", "r3_authorization", "finance_legal_risk", "unrecoverable_blocker"]
+        "immediate_triggers": [
+          "security_incident",
+          "secret_exposure",
+          "production_outage",
+          "r3_authorization",
+          "finance_legal_risk",
+          "unrecoverable_blocker"
+        ]
       },
-      "last_verified_sha": "d7486e246a4e2ef5b4515560ca914fae57ae4bd9",
-      "last_verified_at": "2026-09-02T11:57:10.000Z",
-      "known_external_gates": ["EXTERNAL_GATE_NOTIFICATION_SETTINGS", "EXTERNAL_GATE_CROSS_REPO_PERMISSIONS"]
+      "last_verified_sha": "abcdef1234567",
+      "last_verified_at": "2026-09-02T19:46:14.510Z",
+      "known_external_gates": [
+        "EXTERNAL_GATE_NOTIFICATION_SETTINGS",
+        "EXTERNAL_GATE_CROSS_REPO_PERMISSIONS"
+      ]
     },
     {
       "repository_id": "Ihorog/cimeika-workflows",
       "role": "INFRA",
       "status": "ACTIVE",
       "default_branch": "main",
-      "capabilities": ["reusable_workflows", "ci_actions_templates"],
-      "required_checks": ["lint", "validate-workflows"],
+      "capabilities": [
+        "reusable_workflows",
+        "ci_actions_templates"
+      ],
+      "required_checks": [
+        "lint",
+        "validate-workflows"
+      ],
       "risk_class": "R1",
       "dependencies": [],
-      "deployment_targets": ["github-actions"],
+      "deployment_targets": [
+        "github-actions"
+      ],
       "maintainer_policy": {
         "auto_merge_r1": true,
         "auto_rebase": true,
@@ -46,22 +84,34 @@
       },
       "notification_policy": {
         "mode": "digest",
-        "immediate_triggers": ["security_incident", "unrecoverable_blocker"]
+        "immediate_triggers": [
+          "security_incident",
+          "unrecoverable_blocker"
+        ]
       },
       "last_verified_sha": "2c9081e285a210d196420131abcf89b1",
       "last_verified_at": "2026-08-30T10:00:00.000Z",
-      "known_external_gates": ["EXTERNAL_GATE_CROSS_REPO_PERMISSIONS"]
+      "known_external_gates": [
+        "EXTERNAL_GATE_CROSS_REPO_PERMISSIONS"
+      ]
     },
     {
       "repository_id": "Ihorog/ci-memory",
       "role": "LIBRARY",
       "status": "ACTIVE",
       "default_branch": "main",
-      "capabilities": ["shared_memory", "context_vector_store"],
-      "required_checks": ["verify"],
+      "capabilities": [
+        "shared_memory",
+        "context_vector_store"
+      ],
+      "required_checks": [
+        "verify"
+      ],
       "risk_class": "R1",
       "dependencies": [],
-      "deployment_targets": ["none"],
+      "deployment_targets": [
+        "none"
+      ],
       "maintainer_policy": {
         "auto_merge_r1": true,
         "auto_rebase": true,
@@ -69,7 +119,9 @@
       },
       "notification_policy": {
         "mode": "digest",
-        "immediate_triggers": ["security_incident"]
+        "immediate_triggers": [
+          "security_incident"
+        ]
       },
       "last_verified_sha": "8f391b1a4185458ab92e31940a",
       "last_verified_at": "2026-08-28T19:56:51.000Z",
@@ -80,11 +132,22 @@
       "role": "PRODUCT",
       "status": "ACTIVE",
       "default_branch": "master",
-      "capabilities": ["frontend_ui", "moment_display"],
-      "required_checks": ["build", "test"],
+      "capabilities": [
+        "frontend_ui",
+        "moment_display"
+      ],
+      "required_checks": [
+        "build",
+        "test"
+      ],
       "risk_class": "R2",
-      "dependencies": ["Ihorog/cimeika-backend", "Ihorog/Ci-Contact-Kernel"],
-      "deployment_targets": ["vercel"],
+      "dependencies": [
+        "Ihorog/cimeika-backend",
+        "Ihorog/Ci-Contact-Kernel"
+      ],
+      "deployment_targets": [
+        "vercel"
+      ],
       "maintainer_policy": {
         "auto_merge_r1": true,
         "require_human_r2": true,
@@ -92,7 +155,10 @@
       },
       "notification_policy": {
         "mode": "digest",
-        "immediate_triggers": ["production_outage", "security_incident"]
+        "immediate_triggers": [
+          "production_outage",
+          "security_incident"
+        ]
       },
       "last_verified_sha": "55a129d380b095d8205f",
       "last_verified_at": "2026-06-03T13:44:30.000Z",
@@ -103,11 +169,21 @@
       "role": "PRODUCT",
       "status": "ACTIVE",
       "default_branch": "main",
-      "capabilities": ["cloudflare_worker_agents", "hono_api"],
-      "required_checks": ["typecheck", "test"],
+      "capabilities": [
+        "cloudflare_worker_agents",
+        "hono_api"
+      ],
+      "required_checks": [
+        "typecheck",
+        "test"
+      ],
       "risk_class": "R2",
-      "dependencies": ["Ihorog/cimeika-sdk"],
-      "deployment_targets": ["cloudflare-workers"],
+      "dependencies": [
+        "Ihorog/cimeika-sdk"
+      ],
+      "deployment_targets": [
+        "cloudflare-workers"
+      ],
       "maintainer_policy": {
         "auto_merge_r1": true,
         "require_human_r2": true,
@@ -115,7 +191,10 @@
       },
       "notification_policy": {
         "mode": "digest",
-        "immediate_triggers": ["production_outage", "security_incident"]
+        "immediate_triggers": [
+          "production_outage",
+          "security_incident"
+        ]
       },
       "last_verified_sha": "01af334e2c",
       "last_verified_at": "2026-05-02T16:41:02.000Z",
@@ -126,18 +205,29 @@
       "role": "PRODUCT",
       "status": "ACTIVE",
       "default_branch": "main",
-      "capabilities": ["unified_python_orchestrator"],
-      "required_checks": ["pytest", "lint"],
+      "capabilities": [
+        "unified_python_orchestrator"
+      ],
+      "required_checks": [
+        "pytest",
+        "lint"
+      ],
       "risk_class": "R2",
-      "dependencies": ["Ihorog/cimeika-core-api"],
-      "deployment_targets": ["none"],
+      "dependencies": [
+        "Ihorog/cimeika-core-api"
+      ],
+      "deployment_targets": [
+        "none"
+      ],
       "maintainer_policy": {
         "auto_merge_r1": true,
         "require_human_r2": true
       },
       "notification_policy": {
         "mode": "digest",
-        "immediate_triggers": ["security_incident"]
+        "immediate_triggers": [
+          "security_incident"
+        ]
       },
       "last_verified_sha": "771a2c90",
       "last_verified_at": "2026-09-01T11:53:42.000Z",
@@ -148,17 +238,25 @@
       "role": "LIBRARY",
       "status": "MAINTAINED",
       "default_branch": "main",
-      "capabilities": ["core_python_api"],
-      "required_checks": ["pytest"],
+      "capabilities": [
+        "core_python_api"
+      ],
+      "required_checks": [
+        "pytest"
+      ],
       "risk_class": "R1",
       "dependencies": [],
-      "deployment_targets": ["none"],
+      "deployment_targets": [
+        "none"
+      ],
       "maintainer_policy": {
         "auto_merge_r1": true
       },
       "notification_policy": {
         "mode": "digest",
-        "immediate_triggers": ["security_incident"]
+        "immediate_triggers": [
+          "security_incident"
+        ]
       },
       "last_verified_sha": "3490bfac",
       "last_verified_at": "2025-12-16T03:20:13.000Z",
@@ -169,17 +267,26 @@
       "role": "LIBRARY",
       "status": "ACTIVE",
       "default_branch": "main",
-      "capabilities": ["typescript_sdk_client"],
-      "required_checks": ["build", "test"],
+      "capabilities": [
+        "typescript_sdk_client"
+      ],
+      "required_checks": [
+        "build",
+        "test"
+      ],
       "risk_class": "R1",
       "dependencies": [],
-      "deployment_targets": ["npm"],
+      "deployment_targets": [
+        "npm"
+      ],
       "maintainer_policy": {
         "auto_merge_r1": true
       },
       "notification_policy": {
         "mode": "digest",
-        "immediate_triggers": ["security_incident"]
+        "immediate_triggers": [
+          "security_incident"
+        ]
       },
       "last_verified_sha": "d0901eef",
       "last_verified_at": "2025-12-12T21:22:01.000Z",
@@ -190,17 +297,23 @@
       "role": "PRODUCT",
       "status": "MAINTAINED",
       "default_branch": "main",
-      "capabilities": ["web_client_html"],
+      "capabilities": [
+        "web_client_html"
+      ],
       "required_checks": [],
       "risk_class": "R1",
       "dependencies": [],
-      "deployment_targets": ["github-pages"],
+      "deployment_targets": [
+        "github-pages"
+      ],
       "maintainer_policy": {
         "auto_merge_r1": true
       },
       "notification_policy": {
         "mode": "digest",
-        "immediate_triggers": ["security_incident"]
+        "immediate_triggers": [
+          "security_incident"
+        ]
       },
       "last_verified_sha": "b5591c01",
       "last_verified_at": "2026-01-25T14:54:13.000Z",
@@ -211,18 +324,29 @@
       "role": "ADAPTER",
       "status": "ACTIVE",
       "default_branch": "main",
-      "capabilities": ["keenetic_copilot_adapter", "home_assistant"],
-      "required_checks": ["pytest"],
+      "capabilities": [
+        "keenetic_copilot_adapter",
+        "home_assistant"
+      ],
+      "required_checks": [
+        "pytest"
+      ],
       "risk_class": "R2",
-      "dependencies": ["Ihorog/Ci-Contact-Kernel"],
-      "deployment_targets": ["none"],
+      "dependencies": [
+        "Ihorog/Ci-Contact-Kernel"
+      ],
+      "deployment_targets": [
+        "none"
+      ],
       "maintainer_policy": {
         "auto_merge_r1": true,
         "require_human_r2": true
       },
       "notification_policy": {
         "mode": "digest",
-        "immediate_triggers": ["security_incident"]
+        "immediate_triggers": [
+          "security_incident"
+        ]
       },
       "last_verified_sha": "ef889100",
       "last_verified_at": "2026-08-31T05:16:54.000Z",
@@ -233,11 +357,17 @@
       "role": "DOCS",
       "status": "ACTIVE",
       "default_branch": "main",
-      "capabilities": ["cimeika_documentation"],
-      "required_checks": ["mkdocs-build"],
+      "capabilities": [
+        "cimeika_documentation"
+      ],
+      "required_checks": [
+        "mkdocs-build"
+      ],
       "risk_class": "R0",
       "dependencies": [],
-      "deployment_targets": ["github-pages"],
+      "deployment_targets": [
+        "github-pages"
+      ],
       "maintainer_policy": {
         "auto_merge_r1": true
       },
@@ -254,11 +384,15 @@
       "role": "LIBRARY",
       "status": "ACTIVE",
       "default_branch": "main",
-      "capabilities": ["media_asset_storage"],
+      "capabilities": [
+        "media_asset_storage"
+      ],
       "required_checks": [],
       "risk_class": "R1",
       "dependencies": [],
-      "deployment_targets": ["none"],
+      "deployment_targets": [
+        "none"
+      ],
       "maintainer_policy": {
         "auto_merge_r1": true
       },
@@ -275,11 +409,15 @@
       "role": "EXPERIMENT",
       "status": "EXPERIMENTAL",
       "default_branch": "main",
-      "capabilities": ["ai_gallery_experimental"],
+      "capabilities": [
+        "ai_gallery_experimental"
+      ],
       "required_checks": [],
       "risk_class": "R1",
       "dependencies": [],
-      "deployment_targets": ["none"],
+      "deployment_targets": [
+        "none"
+      ],
       "maintainer_policy": {
         "auto_merge_r1": true
       },
@@ -296,17 +434,26 @@
       "role": "PRODUCT",
       "status": "ACTIVE",
       "default_branch": "main",
-      "capabilities": ["wedding_app_nextjs"],
-      "required_checks": ["build", "typecheck"],
+      "capabilities": [
+        "wedding_app_nextjs"
+      ],
+      "required_checks": [
+        "build",
+        "typecheck"
+      ],
       "risk_class": "R1",
       "dependencies": [],
-      "deployment_targets": ["vercel"],
+      "deployment_targets": [
+        "vercel"
+      ],
       "maintainer_policy": {
         "auto_merge_r1": true
       },
       "notification_policy": {
         "mode": "digest",
-        "immediate_triggers": ["production_outage"]
+        "immediate_triggers": [
+          "production_outage"
+        ]
       },
       "last_verified_sha": "c8841029",
       "last_verified_at": "2026-05-04T12:24:48.000Z",
@@ -317,11 +464,15 @@
       "role": "DOCS",
       "status": "MAINTAINED",
       "default_branch": "main",
-      "capabilities": ["github_skills_pages"],
+      "capabilities": [
+        "github_skills_pages"
+      ],
       "required_checks": [],
       "risk_class": "R0",
       "dependencies": [],
-      "deployment_targets": ["github-pages"],
+      "deployment_targets": [
+        "github-pages"
+      ],
       "maintainer_policy": {
         "auto_merge_r1": true
       },
@@ -338,11 +489,15 @@
       "role": "HISTORICAL",
       "status": "HISTORICAL",
       "default_branch": "main",
-      "capabilities": ["historical_go_structure"],
+      "capabilities": [
+        "historical_go_structure"
+      ],
       "required_checks": [],
       "risk_class": "R0",
       "dependencies": [],
-      "deployment_targets": ["none"],
+      "deployment_targets": [
+        "none"
+      ],
       "maintainer_policy": {
         "auto_merge_r1": false
       },
@@ -359,11 +514,15 @@
       "role": "EXPERIMENT",
       "status": "EXPERIMENTAL",
       "default_branch": "copilot-workspace",
-      "capabilities": ["experimental_python"],
+      "capabilities": [
+        "experimental_python"
+      ],
       "required_checks": [],
       "risk_class": "R1",
       "dependencies": [],
-      "deployment_targets": ["none"],
+      "deployment_targets": [
+        "none"
+      ],
       "maintainer_policy": {
         "auto_merge_r1": true
       },
@@ -380,11 +539,15 @@
       "role": "PRODUCT",
       "status": "MAINTAINED",
       "default_branch": "main",
-      "capabilities": ["python_radar_analytics"],
+      "capabilities": [
+        "python_radar_analytics"
+      ],
       "required_checks": [],
       "risk_class": "R1",
       "dependencies": [],
-      "deployment_targets": ["none"],
+      "deployment_targets": [
+        "none"
+      ],
       "maintainer_policy": {
         "auto_merge_r1": true
       },
@@ -401,11 +564,15 @@
       "role": "HISTORICAL",
       "status": "HISTORICAL",
       "default_branch": "main",
-      "capabilities": ["historical_workflow_scripts"],
+      "capabilities": [
+        "historical_workflow_scripts"
+      ],
       "required_checks": [],
       "risk_class": "R0",
       "dependencies": [],
-      "deployment_targets": ["none"],
+      "deployment_targets": [
+        "none"
+      ],
       "maintainer_policy": {
         "auto_merge_r1": false
       },

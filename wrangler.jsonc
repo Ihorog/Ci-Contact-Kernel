@@ -15,6 +15,20 @@
       "/mcp/*"
     ]
   },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "VODYANYI_STATE",
+        "class_name": "VodyanyiState"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "vodyanyi-v1",
+      "new_sqlite_classes": ["VodyanyiState"]
+    }
+  ],
   "observability": {
     "enabled": true
   }

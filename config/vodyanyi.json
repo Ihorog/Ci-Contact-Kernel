@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "coordinate": "HOME.WATER.VODYANYI",
+  "name": "Водяний",
+  "position": "drinking_water",
+  "recognizableMarkers": [
+    "Водяний",
+    "вода",
+    "питна вода",
+    "крапля",
+    "drop",
+    "nfc:home.water.vodyanyi"
+  ],
+  "channels": [
+    "nfc",
+    "ui.drop",
+    "ui.button",
+    "voice",
+    "conversation"
+  ],
+  "gestureContract": {
+    "oneClick": "execute_standard",
+    "twoClicks": "change_conditions"
+  },
+  "standardProcedure": {
+    "quantity": 2,
+    "bottleLiters": 18.9,
+    "stockThresholdFullBottles": 1,
+    "freshQuoteRequired": true,
+    "maxQuoteAgeSeconds": 300,
+    "idempotencyRequired": true,
+    "deliveryEvidenceRequired": true
+  },
+  "notificationPolicy": {
+    "regularReports": false,
+    "manualStockCountRequests": false,
+    "notifyOnly": [
+      "external_authorization_required",
+      "critical_state_conflict",
+      "execution_failure"
+    ]
+  }
+}

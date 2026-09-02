@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { CiOrchestrator } = require('./ciOrchestrator');
 const { proxyKeeneticMcp, statusKeeneticConfig } = require('./keeneticMcpGateway');
+const { createMemoryStore, createVodyanyiService } = require('./vodyanyi');
 
 const ciopen = {
   detectContext(signal = {}) {
@@ -111,6 +112,11 @@ function createApp(options = {}) {
   const orchestrator = options.orchestrator || new CiOrchestrator(options);
   const ciRateLimiter = createSimpleRateLimiter(options.rateLimit || {});
   const runtimeEnv = options.env || process.env;
+  const vodyanyi = options.vodyanyiService || createVodyanyiService({
+    env: runtimeEnv,
+    fetchImpl: options.fetchImpl || globalThis.fetch,
+    store: options.vodyanyiStore || createMemoryStore(),
+  });
 
   app.use(express.json({
     limit: '1mb',
@@ -182,6 +188,22 @@ function createApp(options = {}) {
 
   app.get('/ci/status', (req, res) => {
     res.json(orchestrator.status());
+  });
+
+  app.get('/ci/vodyanyi/status', async (_req, res) => {
+    const result = await vodyanyi.status();
+    res.json(result);
+  });
+
+  app.post('/ci/vodyanyi/signal', async (req, res) => {
+    const rawSecret = req.headers['x-ci-vodyanyi-token'];
+    const triggerSecret = Array.isArray(rawSecret) ? rawSecret[0] : rawSecret;
+    const result = await vodyanyi.handle(req.body || {}, {
+      triggerSecret: typeof triggerSecret === 'string' ? triggerSecret : '',
+      actor: readOperatorId(req) || 'registered-operator',
+      source: req.body?.source || 'ci.vodyanyi.api',
+    });
+    return res.status(result.httpStatus || (result.ok ? 200 : 400)).json(result);
   });
 
   app.get('/ci/keenetic/status', (_req, res) => {
@@ -329,6 +351,7 @@ function createApp(options = {}) {
 
   if (options.startWorker) orchestrator.startWorker(options.workerIntervalMs);
   app.locals.ciOrchestrator = orchestrator;
+  app.locals.vodyanyi = vodyanyi;
   return app;
 }
 

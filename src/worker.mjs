@@ -1,4 +1,9 @@
 import { keeneticWorkerStatus, proxyKeeneticWorker } from "./keeneticWorkerGateway.mjs";
+import vodyanyiCore from "./vodyanyi.js";
+
+const {
+  createVodyanyiService,
+} = vodyanyiCore;
 
 const TASK_INDEX_KEY = "ci_tasks:__index";
 const TASK_KEY_PREFIX = "ci_task:";
@@ -6,6 +11,7 @@ const MAX_TASKS = 200;
 const TASK_TTL_SECONDS = 60 * 60 * 24 * 7;
 
 const tasks = new Map();
+const vodyanyiState = new Map();
 
 const CLASSIFICATIONS = new Set([
   "fact",
@@ -191,6 +197,94 @@ function kvBinding(env) {
   return binding && typeof binding.get === "function" && typeof binding.put === "function"
     ? binding
     : null;
+}
+
+function vodyanyiStore(env) {
+  const kv = env?.CI_VODYANYI_KV || kvBinding(env);
+  if (kv) {
+    return {
+      async get(key) {
+        return kv.get(key, { type: "json" });
+      },
+      async put(key, value) {
+        await kv.put(key, JSON.stringify(value));
+      },
+    };
+  }
+
+  return {
+    async get(key) {
+      const raw = vodyanyiState.get(key);
+      return raw ? JSON.parse(raw) : null;
+    },
+    async put(key, value) {
+      vodyanyiState.set(key, JSON.stringify(value));
+    },
+  };
+}
+
+function createWorkerVodyanyi(env) {
+  return createVodyanyiService({
+    env,
+    fetchImpl: globalThis.fetch,
+    store: vodyanyiStore(env),
+  });
+}
+
+function hasVodyanyiDurableObject(env) {
+  return Boolean(
+    env?.VODYANYI_STATE
+    && typeof env.VODYANYI_STATE.idFromName === "function"
+    && typeof env.VODYANYI_STATE.get === "function"
+  );
+}
+
+function vodyanyiDurableStore(ctx) {
+  return {
+    async get(key) {
+      return (await ctx.storage.get(key)) || null;
+    },
+    async put(key, value) {
+      await ctx.storage.put(key, value);
+    },
+  };
+}
+
+export class VodyanyiState {
+  constructor(ctx, env) {
+    this.ctx = ctx;
+    this.env = env;
+  }
+
+  async fetch(request) {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const pathname = new URL(request.url).pathname;
+      const service = createVodyanyiService({
+        env: this.env,
+        fetchImpl: globalThis.fetch,
+        store: vodyanyiDurableStore(this.ctx),
+      });
+
+      if (pathname === "/ci/vodyanyi/status") {
+        if (request.method !== "GET") return methodNotAllowed("GET, OPTIONS");
+        const result = await service.status();
+        return json({ ...result, storage: "durable-object" });
+      }
+
+      if (pathname === "/ci/vodyanyi/signal") {
+        if (request.method !== "POST") return methodNotAllowed("POST, OPTIONS");
+        const payload = await readJson(request);
+        const result = await service.handle(payload, {
+          triggerSecret: request.headers.get("x-ci-vodyanyi-token") || "",
+          actor: request.headers.get("x-ci-operator-id") || "registered-operator",
+          source: payload.source || "ci.vodyanyi.worker",
+        });
+        return json({ ...result, storage: "durable-object" }, result.httpStatus || (result.ok ? 200 : 400));
+      }
+
+      return json({ error: "Vodyanyi route not found" }, 404);
+    });
+  }
 }
 
 async function readIndex(kv) {
@@ -394,7 +488,7 @@ async function handleApi(request, env) {
       taskCount,
       storage: kv ? "cloudflare-kv" : "isolate-memory",
       durableStorage: Boolean(kv),
-      knownModules: ["classifier", "router", "permission-gate", "verification", "keenetic-mcp"],
+      knownModules: ["classifier", "router", "permission-gate", "verification", "vodyanyi", "keenetic-mcp"],
       timestamp: new Date().toISOString(),
     });
   }
@@ -402,6 +496,22 @@ async function handleApi(request, env) {
   if (pathname === "/ci/keenetic/status") {
     if (request.method !== "GET") return methodNotAllowed("GET, OPTIONS");
     return json(keeneticWorkerStatus(env));
+  }
+
+  if (pathname === "/ci/vodyanyi/status") {
+    if (request.method !== "GET") return methodNotAllowed("GET, OPTIONS");
+    return json(await createWorkerVodyanyi(env).status());
+  }
+
+  if (pathname === "/ci/vodyanyi/signal") {
+    if (request.method !== "POST") return methodNotAllowed("POST, OPTIONS");
+    const payload = await readJson(request);
+    const result = await createWorkerVodyanyi(env).handle(payload, {
+      triggerSecret: request.headers.get("x-ci-vodyanyi-token") || "",
+      actor: request.headers.get("x-ci-operator-id") || "registered-operator",
+      source: payload.source || "ci.vodyanyi.worker",
+    });
+    return json(result, result.httpStatus || (result.ok ? 200 : 400));
   }
 
   if (pathname === "/ci/signal" || pathname === "/ci/task" || pathname === "/ci/command") {
@@ -480,6 +590,11 @@ async function proxyCigrafin(request, env) {
 export default {
   async fetch(request, env = {}) {
     const pathname = new URL(request.url).pathname;
+
+    if (pathname.startsWith("/ci/vodyanyi/") && hasVodyanyiDurableObject(env)) {
+      const id = env.VODYANYI_STATE.idFromName("HOME.WATER.VODYANYI");
+      return env.VODYANYI_STATE.get(id).fetch(request);
+    }
 
     if (pathname === "/mcp/keenetic" || pathname === "/mcp/keenetic/") {
       return proxyKeeneticWorker(request, env);

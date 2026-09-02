@@ -2,6 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const request = require('supertest');
 
 const { RepoRegistry } = require('../src/ci/repoRegistry');
@@ -20,6 +21,24 @@ const { MaintainerLoop } = require('../src/ci/maintainerLoop');
 const { OperationsDigest, KNOWN_EXTERNAL_GATES } = require('../src/ci/operationsDigest');
 const { createKernel } = require('../src/ci/kernel');
 const app = require('../src/server');
+
+function approvedRunOptions(loop, payload, options = {}) {
+  const intake = loop.eventIntake.intake(payload);
+  const sha = crypto.randomUUID().replaceAll('-', '');
+  const riskClass = loop.repoRegistry.get(payload.repository.full_name)?.risk_class || 'R2';
+  return {
+    ...options,
+    authority: loop.approve(intake.correlation_id, {
+      repository_id: payload.repository.full_name,
+      risk_class: riskClass
+    }),
+    observed_execution: {
+      sha,
+      verified: true,
+      evidence_refs: [{ ref: 'test/verified', sha }]
+    }
+  };
+}
 
 test('RepoRegistry: inventories all 19 Ihorog repositories with required fields', () => {
   const registry = new RepoRegistry();
@@ -71,7 +90,12 @@ test('Contracts: CiCoordinate, CiCapability, CiContact, CiCompletion', () => {
   // CiCompletion
   const completion = new CiCompletion();
   const task = completion.createTaskContract({ id: 'task-1' });
-  const verif = completion.verifyTask(task, { status: 'SUCCESS' }, { final_sha: 'abc1234', evidence_refs: ['test'] });
+  const verif = completion.verifyTask(task, { status: 'SUCCESS' }, {
+    final_sha: 'abc1234',
+    observed: true,
+    verified: true,
+    evidence_refs: [{ ref: 'test/verified', sha: 'abc1234' }]
+  });
   assert.equal(verif.canComplete, true);
 });
 
@@ -92,7 +116,7 @@ test('MaintainerLoop: Negative Test 1 & 2 - Duplicate event and retry are idempo
   const loop = new MaintainerLoop();
   const payload = { repository: { full_name: 'Ihorog/Ci-Contact-Kernel' }, pull_request: { number: 100 }, title: 'Refactor core' };
 
-  const res1 = await loop.run(payload);
+  const res1 = await loop.run(payload, approvedRunOptions(loop, payload));
   assert.equal(res1.status, 'COMPLETED');
   assert.ok(res1.final_sha);
 
@@ -115,14 +139,14 @@ test('MaintainerLoop: Negative Test 4 - Policy/schema change invalidates fast pa
   const loop = new MaintainerLoop();
   const payload1 = { repository: { full_name: 'Ihorog/Ci-Contact-Kernel' }, pull_request: { number: 101 }, title: 'Fast path test' };
 
-  const run1 = await loop.run(payload1);
+  const run1 = await loop.run(payload1, approvedRunOptions(loop, payload1));
   assert.equal(run1.status, 'COMPLETED');
 
   // Change policy version which invalidates fast path cache
   loop.currentPolicyVersion = 'v2.0.0';
 
   const payload2 = { repository: { full_name: 'Ihorog/Ci-Contact-Kernel' }, pull_request: { number: 102 }, title: 'Fast path test' };
-  const run2 = await loop.run(payload2);
+  const run2 = await loop.run(payload2, approvedRunOptions(loop, payload2));
   assert.equal(run2.status, 'COMPLETED');
   assert.equal(run2.used_fast_path, false);
 });
@@ -142,10 +166,10 @@ test('MaintainerLoop: Negative Test 6 - Failing dependency bulkhead does not blo
   const payloadA = { repository: { full_name: 'Ihorog/ci-moment' }, pull_request: { number: 1 }, title: 'A' };
   const payloadB = { repository: { full_name: 'Ihorog/cimeika-backend' }, pull_request: { number: 2 }, title: 'B' };
 
-  const resA = await loop.run(payloadA, { simulateTestFailure: true });
+  const resA = await loop.run(payloadA, approvedRunOptions(loop, payloadA, { simulateTestFailure: true }));
   assert.equal(resA.status, 'VERIFICATION_FAILED');
 
-  const resB = await loop.run(payloadB);
+  const resB = await loop.run(payloadB, approvedRunOptions(loop, payloadB));
   assert.equal(resB.status, 'COMPLETED');
 });
 
@@ -153,12 +177,12 @@ test('MaintainerLoop: Negative Test 7 - Unresolved review or merge conflict bloc
   const loop = new MaintainerLoop();
   const payload1 = { repository: { full_name: 'Ihorog/ci-moment' }, pull_request: { number: 3 }, title: 'PR review blocked' };
 
-  const res1 = await loop.run(payload1, { hasUnresolvedReview: true });
+  const res1 = await loop.run(payload1, approvedRunOptions(loop, payload1, { hasUnresolvedReview: true }));
   assert.equal(res1.status, 'MERGE_BLOCKED');
   assert.ok(res1.reason.includes('Unresolved review'));
 
   const payload2 = { repository: { full_name: 'Ihorog/ci-moment' }, pull_request: { number: 4 }, title: 'PR conflict blocked' };
-  const res2 = await loop.run(payload2, { hasMergeConflict: true });
+  const res2 = await loop.run(payload2, approvedRunOptions(loop, payload2, { hasMergeConflict: true }));
   assert.equal(res2.status, 'MERGE_BLOCKED');
   assert.ok(res2.reason.includes('Merge conflict'));
 });
@@ -167,7 +191,7 @@ test('MaintainerLoop: Negative Test 8 - AI proposal does not become code without
   const loop = new MaintainerLoop();
   const payload = { repository: { full_name: 'Ihorog/Ci-Contact-Kernel' }, pull_request: { number: 5 }, title: 'Copilot AI Proposal' };
 
-  const res = await loop.run(payload, { aiProposalUnverified: true });
+  const res = await loop.run(payload, approvedRunOptions(loop, payload, { aiProposalUnverified: true }));
   assert.equal(res.status, 'MERGE_BLOCKED');
   assert.ok(res.reason.includes('AI proposal has not passed mechanical verification'));
 });
@@ -176,7 +200,10 @@ test('MaintainerLoop: Negative Test 9 - Self-modified instruction with regressio
   const loop = new MaintainerLoop();
   const payload = { repository: { full_name: 'Ihorog/Ci-Contact-Kernel' }, issue: { number: 20 }, is_self_modified: true, title: 'Self-modified instruction update' };
 
-  const res = await loop.run(payload, { isSelfModifiedInstruction: true, simulateTestFailure: true });
+  const res = await loop.run(payload, approvedRunOptions(loop, payload, {
+    isSelfModifiedInstruction: true,
+    simulateTestFailure: true
+  }));
   assert.equal(res.status, 'ROLLED_BACK');
   assert.equal(res.rollback, true);
   assert.ok(res.reason.includes('Self-modified instruction introduced regression'));
@@ -186,7 +213,7 @@ test('MaintainerLoop: Negative Test 10 - Kernel failure is isolated without corr
   const loop = new MaintainerLoop();
   const payload = { repository: { full_name: 'Ihorog/Ci-Contact-Kernel' }, simulate_kernel_error: true, title: 'Error handling' };
 
-  const res = await loop.run(payload);
+  const res = await loop.run(payload, approvedRunOptions(loop, payload));
   assert.equal(res.status, 'FAILED');
   assert.ok(res.error.includes('Kernel failure isolated'));
 });
@@ -195,7 +222,7 @@ test('MaintainerLoop: Negative Test 11 - Repeated maintainer run is idempotent',
   const loop = new MaintainerLoop();
   const payload = { repository: { full_name: 'Ihorog/Ci-Contact-Kernel' }, pull_request: { number: 99 }, title: 'Idempotency test' };
 
-  const run1 = await loop.run(payload);
+  const run1 = await loop.run(payload, approvedRunOptions(loop, payload));
   assert.equal(run1.status, 'COMPLETED');
 
   const run2 = await loop.run(payload);
@@ -226,7 +253,8 @@ test('OperationsDigest: Consolidates notifications into single Digest and filter
 });
 
 test('HTTP API: /ci/registry/repos, /ci/maintainer/intake, /ci/maintainer/run, /ci/digest', async () => {
-  const server = app.createApp();
+  const token = 'ci-test-token';
+  const server = app.createApp({ env: { CI_MAINTAINER_TOKEN: token } });
 
   // GET /ci/registry/repos
   const repoRes = await request(server).get('/ci/registry/repos');
@@ -236,6 +264,7 @@ test('HTTP API: /ci/registry/repos, /ci/maintainer/intake, /ci/maintainer/run, /
   // POST /ci/maintainer/intake
   const intakeRes = await request(server)
     .post('/ci/maintainer/intake')
+    .set('x-ci-maintainer-token', token)
     .send({ repository: { full_name: 'Ihorog/Ci-Contact-Kernel' }, issue: { number: 100 }, title: 'API Intake Test' });
   assert.equal(intakeRes.status, 201);
   assert.equal(intakeRes.body.duplicate, false);
@@ -243,9 +272,11 @@ test('HTTP API: /ci/registry/repos, /ci/maintainer/intake, /ci/maintainer/run, /
   // POST /ci/maintainer/run
   const runRes = await request(server)
     .post('/ci/maintainer/run')
+    .set('x-ci-maintainer-token', token)
     .send({ repository: { full_name: 'Ihorog/Ci-Contact-Kernel' }, pull_request: { number: 200 }, title: 'API Run Test' });
   assert.equal(runRes.status, 200);
-  assert.equal(runRes.body.result.status, 'COMPLETED');
+  assert.equal(runRes.body.result.status, 'BLOCKED');
+  assert.match(runRes.body.result.reason, /requires repository policy or user approval/);
 
   // GET /ci/digest
   const digestRes = await request(server).get('/ci/digest');

@@ -108,6 +108,16 @@ function verifyWebhookSignature(secret, rawBody, signatureHeader) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+function maintainerAuth(req, env) {
+  const configured = typeof env.CI_MAINTAINER_TOKEN === 'string' ? env.CI_MAINTAINER_TOKEN : '';
+  if (!configured) return false;
+  const raw = req.headers.authorization || req.headers['x-ci-maintainer-token'] || '';
+  const presented = String(raw).replace(/^Bearer\s+/i, '');
+  const a = Buffer.from(configured);
+  const b = Buffer.from(presented);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
 function createApp(options = {}) {
   const app = express();
   const orchestrator = options.orchestrator || new CiOrchestrator(options);
@@ -232,13 +242,17 @@ function createApp(options = {}) {
   });
 
   app.post('/ci/maintainer/intake', (req, res) => {
+    if (!maintainerAuth(req, runtimeEnv)) return res.status(401).json({ error: 'Maintainer authentication required.' });
     const result = kernel.eventIntake.intake(req.body || {});
     res.status(result.duplicate ? 200 : 201).json(result);
   });
 
   app.post('/ci/maintainer/run', async (req, res) => {
+    if (!maintainerAuth(req, runtimeEnv)) return res.status(401).json({ error: 'Maintainer authentication required.' });
     const payload = req.body || {};
-    const result = await kernel.maintainerLoop.run(payload, payload.options || {});
+    // Authority is never accepted from request data; it must be attached by the
+    // authenticated server-side checkpoint/ledger boundary.
+    const result = await kernel.maintainerLoop.run(payload, {});
     kernel.operationsDigest.processEvent(result);
     res.json({ result });
   });

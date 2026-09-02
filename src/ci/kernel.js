@@ -267,11 +267,21 @@ class MemoryStore {
   }
 }
 
+const { RepoRegistry } = require('./repoRegistry');
+const { EventIntake } = require('./eventIntake');
+const { MaintainerLoop } = require('./maintainerLoop');
+const { OperationsDigest } = require('./operationsDigest');
+const contracts = require('./contracts');
+
 function createKernel(options = {}) {
   const centers = createExecutionCenters();
   const memoryStore = new MemoryStore(
     options.memoryFilePath || path.join(process.cwd(), 'data', 'ci-memory.jsonl')
   );
+  const repoRegistry = options.repoRegistry || new RepoRegistry();
+  const eventIntake = options.eventIntake || new EventIntake({ repoRegistry });
+  const maintainerLoop = options.maintainerLoop || new MaintainerLoop({ repoRegistry, eventIntake });
+  const operationsDigest = options.operationsDigest || new OperationsDigest();
 
   async function handleSignal(input, source = 'signal') {
     const signal = normalizeSignal(input, source);
@@ -342,11 +352,18 @@ function createKernel(options = {}) {
 
   return {
     handleSignal,
+    repoRegistry,
+    eventIntake,
+    maintainerLoop,
+    operationsDigest,
+    contracts,
     async getStatus() {
       return {
         status: 'ok',
         executionCenters: EXECUTION_CENTERS,
-        memoryRecords: (await memoryStore.readAll()).length
+        memoryRecords: (await memoryStore.readAll()).length,
+        inventoriedRepositories: repoRegistry.list().length,
+        digestSummary: operationsDigest.generateDigestSummary()
       };
     },
     async getMemory(limit) {
@@ -361,5 +378,10 @@ module.exports = {
   classifySignal,
   routeNode,
   evaluatePermission,
-  verifyResult
+  verifyResult,
+  RepoRegistry,
+  EventIntake,
+  MaintainerLoop,
+  OperationsDigest,
+  contracts
 };

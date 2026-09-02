@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const { CiOrchestrator } = require('./ciOrchestrator');
 const { proxyKeeneticMcp, statusKeeneticConfig } = require('./keeneticMcpGateway');
 const { createMemoryStore, createVodyanyiService } = require('./vodyanyi');
+const { createKernel } = require('./ci/kernel');
 
 const ciopen = {
   detectContext(signal = {}) {
@@ -110,6 +111,7 @@ function verifyWebhookSignature(secret, rawBody, signatureHeader) {
 function createApp(options = {}) {
   const app = express();
   const orchestrator = options.orchestrator || new CiOrchestrator(options);
+  const kernel = options.kernel || createKernel(options);
   const ciRateLimiter = createSimpleRateLimiter(options.rateLimit || {});
   const runtimeEnv = options.env || process.env;
   const vodyanyi = options.vodyanyiService || createVodyanyiService({
@@ -222,6 +224,27 @@ function createApp(options = {}) {
       command: req.body?.command || null
     }, 'ci.command', true);
     res.status(202).json({ task: taskSummary(task) });
+  });
+
+  // ── Maintainer Loop & Repo Registry routes ────────────────────────────────
+  app.get('/ci/registry/repos', (_req, res) => {
+    res.json({ repositories: kernel.repoRegistry.list() });
+  });
+
+  app.post('/ci/maintainer/intake', (req, res) => {
+    const result = kernel.eventIntake.intake(req.body || {});
+    res.status(result.duplicate ? 200 : 201).json(result);
+  });
+
+  app.post('/ci/maintainer/run', async (req, res) => {
+    const payload = req.body || {};
+    const result = await kernel.maintainerLoop.run(payload, payload.options || {});
+    kernel.operationsDigest.processEvent(result);
+    res.json({ result });
+  });
+
+  app.get('/ci/digest', (_req, res) => {
+    res.json(kernel.operationsDigest.generateDigestSummary());
   });
 
   app.all('/mcp/keenetic', async (req, res) => {
@@ -352,6 +375,7 @@ function createApp(options = {}) {
   if (options.startWorker) orchestrator.startWorker(options.workerIntervalMs);
   app.locals.ciOrchestrator = orchestrator;
   app.locals.vodyanyi = vodyanyi;
+  app.locals.kernel = kernel;
   return app;
 }
 

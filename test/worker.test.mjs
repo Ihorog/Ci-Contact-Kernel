@@ -90,3 +90,33 @@ test("invalid JSON is rejected", async () => {
   assert.equal(response.status, 400);
   assert.equal(body.error, "Request body must be valid JSON");
 });
+
+test("GET /ci/vodyanyi/status exposes the registered water coordinate", async () => {
+  const response = await worker.fetch(
+    new Request("https://example.test/ci/vodyanyi/status"),
+    makeEnv(),
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.coordinate, "HOME.WATER.VODYANYI");
+  assert.equal(body.name, "Водяний");
+  assert.equal(body.readiness.readyForOneClick, false);
+});
+
+test("Cloudflare route maps two clicks to condition agreement without an external write", async () => {
+  const env = { ...makeEnv(), VODYANYI_TRIGGER_SECRET: "test-one-click-secret" };
+  const response = await worker.fetch(new Request("https://example.test/ci/vodyanyi/signal", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-ci-vodyanyi-token": "test-one-click-secret",
+    },
+    body: JSON.stringify({ marker: "крапля", clicks: 2, source: "ui.drop" }),
+  }), env);
+  const body = await response.json();
+
+  assert.equal(response.status, 202);
+  assert.equal(body.outcome, "WAITING_CONDITIONS");
+  assert.equal(body.coordinate, "HOME.WATER.VODYANYI");
+});

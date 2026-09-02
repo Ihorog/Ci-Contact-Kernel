@@ -9,6 +9,7 @@ Lightweight Ci contact kernel foundation with:
 - API endpoints for signal/task intake and status
 - Single-icon Ci+ contact widget
 - Minimal orchestration monitor at `/ci/monitor`
+- Registered one-click water executor `Водяний` at `HOME.WATER.VODYANYI`
 
 ## Run
 
@@ -36,3 +37,7 @@ The widget starts as one transparent Ci icon. Activating it opens the signal sur
 - `GET /ci/memory`
 - `POST /ci/command`
 - `POST /ciopen/webhook`
+- `GET /ci/vodyanyi/status`
+- `POST /ci/vodyanyi/signal`
+
+See [`docs/VODYANYI.md`](docs/VODYANYI.md) for the NFC/UI/voice one-click contract, delivery confirmation and executor adapter contract.

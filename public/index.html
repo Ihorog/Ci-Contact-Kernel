@@ -100,6 +100,111 @@
     #state-badge.state-critical { color: var(--critical); border-color: var(--critical); }
     #state-badge.state-error { color: var(--critical); border-color: var(--critical); }
 
+    /* ── Водяний: one coordinate, one visible drop ── */
+    #vodyanyi-shell {
+      position: fixed;
+      right: max(18px, env(safe-area-inset-right));
+      bottom: max(22px, env(safe-area-inset-bottom));
+      z-index: 20;
+      display: grid;
+      place-items: center;
+      width: 72px;
+      height: 84px;
+    }
+    #vodyanyi-drop {
+      position: relative;
+      width: 58px;
+      height: 68px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: rgba(94, 194, 238, 0.16);
+      filter: drop-shadow(0 5px 10px rgba(0, 0, 0, 0.28));
+      transition: color 220ms ease, filter 220ms ease, transform 160ms ease;
+    }
+    #vodyanyi-drop:focus-visible { outline: 2px solid #73d6ff; outline-offset: 5px; }
+    #vodyanyi-drop:hover { color: rgba(94, 194, 238, 0.36); transform: translateY(-1px); }
+    #vodyanyi-drop svg { width: 100%; height: 100%; overflow: visible; }
+    #vodyanyi-drop .water-body {
+      fill: currentColor;
+      stroke: rgba(160, 230, 255, 0.64);
+      stroke-width: 1.2;
+    }
+    #vodyanyi-drop .water-shine { fill: rgba(255, 255, 255, 0.68); opacity: 0.42; }
+    #vodyanyi-shell.water-active #vodyanyi-drop {
+      color: rgba(47, 174, 229, 0.92);
+      animation: vodyanyi-beacon 1.45s ease-in-out infinite;
+    }
+    #vodyanyi-shell.water-failed #vodyanyi-drop {
+      color: rgba(224, 80, 80, 0.78);
+      animation: vodyanyi-failed-beacon 1.8s ease-in-out infinite;
+    }
+    #vodyanyi-shell.water-delivered #vodyanyi-drop {
+      color: rgba(58, 174, 110, 0.44);
+      animation: none;
+    }
+    @keyframes vodyanyi-beacon {
+      0%, 100% {
+        color: rgba(47, 174, 229, 0.24);
+        filter: drop-shadow(0 5px 8px rgba(12, 75, 110, 0.18));
+      }
+      52% {
+        color: rgba(54, 190, 242, 0.98);
+        filter: drop-shadow(0 0 16px rgba(91, 211, 255, 0.72));
+      }
+    }
+    @keyframes vodyanyi-failed-beacon {
+      0%, 100% {
+        color: rgba(224, 80, 80, 0.28);
+        filter: drop-shadow(0 4px 8px rgba(120, 20, 20, 0.2));
+      }
+      52% {
+        color: rgba(234, 92, 92, 0.92);
+        filter: drop-shadow(0 0 14px rgba(230, 84, 84, 0.55));
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #vodyanyi-shell.water-active #vodyanyi-drop,
+      #vodyanyi-shell.water-failed #vodyanyi-drop { animation: none; }
+    }
+    #vodyanyi-confirm {
+      display: none;
+      position: absolute;
+      right: 0;
+      top: 0;
+      width: 26px;
+      height: 26px;
+      padding: 0;
+      border-radius: 50%;
+      border: 1px solid rgba(160, 230, 255, 0.74);
+      background: #0b7faf;
+      color: #fff;
+      font-size: 18px;
+      line-height: 24px;
+      font-weight: 700;
+      box-shadow: 0 3px 10px rgba(0,0,0,.35);
+    }
+    #vodyanyi-shell.water-can-confirm #vodyanyi-confirm { display: block; }
+    #vodyanyi-summary {
+      display: none;
+      position: absolute;
+      right: 66px;
+      bottom: 5px;
+      min-width: 210px;
+      max-width: min(300px, calc(100vw - 110px));
+      padding: .65rem .75rem;
+      border: 1px solid rgba(100, 195, 235, .42);
+      border-radius: 10px;
+      background: rgba(7, 16, 25, .94);
+      box-shadow: 0 10px 28px rgba(0,0,0,.4);
+      color: var(--text);
+      font-size: .8rem;
+      line-height: 1.45;
+      backdrop-filter: blur(12px);
+    }
+    #vodyanyi-summary.visible { display: block; }
+    #vodyanyi-summary strong { display: block; color: #74d5ff; margin-bottom: .25rem; }
+
     /* ── contact panel ── */
     #contact-panel {
       width: 100%;
@@ -355,6 +460,23 @@
 
     <div id="state-badge" role="status" aria-live="polite">спокій</div>
 
+    <aside id="vodyanyi-shell" aria-label="Водяний">
+      <button
+        id="vodyanyi-drop"
+        type="button"
+        aria-label="Водяний: один клік — стандартна дія або стан, два — змінити умови"
+        title="Водяний · 1 клік — виконати/стан · 2 — інші умови"
+      >
+        <svg viewBox="0 0 64 76" aria-hidden="true">
+          <path class="water-body" d="M32 2C26 14 9 32 9 48c0 13 10.3 24 23 24s23-11 23-24C55 32 38 14 32 2Z"/>
+          <path class="water-shine" d="M24 22c-5 8-9 15-9 23 0 5 2 9 5 12-1-12 5-25 12-37-3 0-5 .4-8 2Z"/>
+          <ellipse class="water-shine" cx="41" cy="54" rx="6" ry="3" opacity=".28"/>
+        </svg>
+      </button>
+      <button id="vodyanyi-confirm" type="button" aria-label="Підтвердити: воду привезли" title="Воду привезли">+</button>
+      <div id="vodyanyi-summary" role="status" aria-live="polite"></div>
+    </aside>
+
     <!-- Text contact panel -->
     <section id="contact-panel" aria-label="Текстовий контакт">
       <h2>Ci+ контакт</h2>
@@ -458,6 +580,11 @@
     /* ── helpers ── */
     const $ = (id) => document.getElementById(id);
     const LOG_KEY = 'ci-plus-signal-log-v1';
+    const VODYANYI_COORDINATE = 'HOME.WATER.VODYANYI';
+    const VODYANYI_TOKEN_KEY = 'ci-vodyanyi-trigger-token-v1';
+    const VODYANYI_ACTIVE = new Set(['AUTHORIZED', 'QUOTED', 'SUBMITTED', 'CONFIRMED', 'IN_TRANSIT']);
+    let vodyanyiSnapshot = null;
+    let vodyanyiClickTimer = null;
 
     /* ── state machine ── */
     const STATES = ['спокій','помітив','слухає','розуміє','виконує','перевіряє','підтверджено'];
@@ -558,8 +685,10 @@
         setState('rest');
       });
       recognition.addEventListener('result', (e) => {
-        $('signal-input').value = e.results[0][0].transcript;
+        const transcript = e.results[0][0].transcript;
+        $('signal-input').value = transcript;
         $('signal-input').focus();
+        routeVodyanyiConversation(transcript);
       });
       recognition.addEventListener('error', (e) => {
         showError(`Голос: ${e.error}`);
@@ -604,6 +733,172 @@
       setState('rest');
     }
     $('close-btn').addEventListener('click', closePanel);
+
+    /* ── Водяний ── */
+    function vodyanyiToken() {
+      return localStorage.getItem(VODYANYI_TOKEN_KEY) || '';
+    }
+
+    function vodyanyiSignalId() {
+      return crypto.randomUUID ? crypto.randomUUID() : `water-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
+
+    async function vodyanyiRequest(payload) {
+      const token = vodyanyiToken();
+      const response = await fetch('/ci/vodyanyi/signal', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'x-ci-vodyanyi-token': token } : {}),
+          'x-ci-operator-id': 'registered-ui-operator'
+        },
+        body: JSON.stringify({
+          coordinate: VODYANYI_COORDINATE,
+          signalId: vodyanyiSignalId(),
+          ...payload
+        }),
+        signal: AbortSignal.timeout(15000)
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const reason = result.error || result.blockers?.join(' ') || `HTTP ${response.status}`;
+        throw new Error(reason);
+      }
+      vodyanyiSnapshot = result;
+      renderVodyanyi(result);
+      return result;
+    }
+
+    function formatVodyanyiSummary(summary) {
+      if (!summary) return '<strong>Водяний</strong>Стандартна процедура готова до сигналу.';
+      const price = summary.priceUAH == null ? 'уточнюється' : `${summary.priceUAH} грн`;
+      const quantity = summary.quantity == null
+        ? 'уточнюється'
+        : `${summary.quantity} × ${summary.bottleLiters || 18.9} л`;
+      const delivery = summary.deliveryTime || 'уточнюється';
+      return `<strong>Водяний · ${escHtml(summary.status || 'стан')}</strong>`
+        + `Ціна: ${escHtml(price)}<br>`
+        + `Кількість: ${escHtml(quantity)}<br>`
+        + `Доставка: ${escHtml(delivery)}`;
+    }
+
+    function renderVodyanyi(result) {
+      const shell = $('vodyanyi-shell');
+      const operation = result?.operation || result?.state?.activeOperation || null;
+      const status = operation?.status || result?.outcome || result?.state?.status || 'REGISTERED';
+      const summary = result?.summary || (operation ? {
+        priceUAH: operation.quote?.totalUAH ?? operation.order?.totalUAH,
+        quantity: operation.profile?.quantity,
+        bottleLiters: operation.profile?.bottleLiters,
+        deliveryTime: operation.order?.deliverySlot ?? operation.quote?.deliverySlot,
+        status
+      } : null);
+
+      shell.classList.toggle('water-active', VODYANYI_ACTIVE.has(status));
+      shell.classList.toggle('water-can-confirm', ['SUBMITTED', 'CONFIRMED', 'IN_TRANSIT'].includes(status));
+      shell.classList.toggle('water-failed', ['FAILED', 'BLOCKED', 'BLOCKED_QUOTE'].includes(status));
+      shell.classList.toggle('water-delivered', status === 'DELIVERED');
+      $('vodyanyi-summary').innerHTML = formatVodyanyiSummary(summary);
+    }
+
+    async function loadVodyanyi() {
+      try {
+        const response = await fetch('/ci/vodyanyi/status', { signal: AbortSignal.timeout(4000) });
+        if (!response.ok) return;
+        vodyanyiSnapshot = await response.json();
+        renderVodyanyi(vodyanyiSnapshot);
+      } catch { /* the transparent marker remains available offline */ }
+    }
+
+    async function executeVodyanyi(source = 'ui.drop') {
+      clearError();
+      try {
+        setState('running');
+        const result = await vodyanyiRequest({
+          marker: 'drop',
+          clicks: 1,
+          action: 'execute_standard',
+          source,
+          actor: 'registered-operator'
+        });
+        $('vodyanyi-summary').classList.add('visible');
+        setState(['SUBMITTED', 'CONFIRMED', 'IN_TRANSIT', 'DEDUPLICATED'].includes(result.outcome) ? 'confirmed' : 'noticed');
+      } catch (error) {
+        renderVodyanyi({ outcome: 'FAILED' });
+        showError(`Водяний: ${error.message}`);
+        setState('error');
+      }
+    }
+
+    async function requestVodyanyiConditions(source = 'ui.drop') {
+      try {
+        await vodyanyiRequest({ marker: 'drop', clicks: 2, action: 'change_conditions', source });
+        openPanel();
+        $('signal-input').value = 'Водяний: змінити умови стандартної доставки води — ';
+        $('signal-input').focus();
+      } catch (error) {
+        showError(`Водяний: ${error.message}`);
+      }
+    }
+
+    async function confirmVodyanyiDelivery(source = 'ui.plus') {
+      try {
+        const result = await vodyanyiRequest({
+          marker: 'Водяний',
+          action: 'confirm_delivery',
+          message: 'Воду привезли',
+          source,
+          actor: 'registered-operator'
+        });
+        $('vodyanyi-summary').classList.add('visible');
+        setState(result.outcome === 'DELIVERED' ? 'confirmed' : 'noticed');
+      } catch (error) {
+        showError(`Водяний: ${error.message}`);
+        setState('error');
+      }
+    }
+
+    function routeVodyanyiConversation(text) {
+      const normalized = String(text || '').toLowerCase();
+      const isWater = /водян|питн\w*\s+вод|\bвод[аиуою]\b|крапл/.test(normalized);
+      if (!isWater) return false;
+
+      if (/вод[ау].{0,20}(привезли|доставили|отримали)|(?:привезли|доставили).{0,20}вод/.test(normalized)) {
+        confirmVodyanyiDelivery('conversation.voice');
+      } else if (/змін|інші?\s+умов|інша?\s+(кількість|час|вода)/.test(normalized)) {
+        requestVodyanyiConditions('conversation.voice');
+      } else if (/водян|замов|поповн|привезти/.test(normalized)) {
+        executeVodyanyi('conversation.voice');
+      } else {
+        vodyanyiRequest({ marker: 'water', action: 'recognize', source: 'conversation.voice', message: text })
+          .catch(() => {});
+      }
+      return true;
+    }
+
+    $('vodyanyi-drop').addEventListener('click', () => {
+      if (vodyanyiClickTimer) {
+        clearTimeout(vodyanyiClickTimer);
+        vodyanyiClickTimer = null;
+        requestVodyanyiConditions();
+        return;
+      }
+
+      vodyanyiClickTimer = setTimeout(() => {
+        vodyanyiClickTimer = null;
+        const operation = vodyanyiSnapshot?.operation || vodyanyiSnapshot?.state?.activeOperation;
+        if (operation && VODYANYI_ACTIVE.has(operation.status)) {
+          $('vodyanyi-summary').classList.toggle('visible');
+        } else {
+          executeVodyanyi();
+        }
+      }, 280);
+    });
+
+    $('vodyanyi-confirm').addEventListener('click', (event) => {
+      event.stopPropagation();
+      confirmVodyanyiDelivery();
+    });
 
     /* ── file ── */
     let attachedFile = null;
@@ -789,6 +1084,13 @@
     renderLog();
     renderChannels();
     checkApiChannel();
+    loadVodyanyi().then(() => {
+      const query = new URLSearchParams(location.search);
+      if (query.get('vodyanyi') === 'nfc' && !sessionStorage.getItem('ci-vodyanyi-nfc-fired')) {
+        sessionStorage.setItem('ci-vodyanyi-nfc-fired', '1');
+        executeVodyanyi('nfc.url');
+      }
+    });
 
     /* check if logo loaded */
     const logoImg = $('ci-logo-img');

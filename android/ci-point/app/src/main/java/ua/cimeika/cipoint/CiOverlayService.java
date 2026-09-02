@@ -1,11 +1,13 @@
 package ua.cimeika.cipoint;
 
+import android.Manifest;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.PixelFormat;
 import android.net.Uri;
 import android.os.Build;
@@ -48,6 +50,14 @@ public final class CiOverlayService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+            stopSelf();
+            return;
+        }
+
         createNotificationChannel();
         startForeground(NOTIFICATION_ID, buildNotification());
 
@@ -64,6 +74,9 @@ public final class CiOverlayService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        if (windowManager == null) {
+            return START_NOT_STICKY;
+        }
         if (activePoint == null && Settings.canDrawOverlays(this)) {
             attachCi();
         }

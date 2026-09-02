@@ -2,3 +2,5 @@ node_modules/
 data/*.jsonl
 data/cigrafin/
 test/tmp-memory.jsonl
+android/**/.gradle/
+android/**/build/

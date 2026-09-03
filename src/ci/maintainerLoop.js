@@ -160,9 +160,7 @@ class MaintainerLoop {
     }
 
     // Step 9: VERIFY
-    const observed = options.observed_execution || options.check_result || workUnit.payload.observed_execution ||
-      workUnit.payload.check_result || null;
-    const evidence = {
+    const observed = options.observed_execution || options.check_result || null;
       final_sha: observed?.final_sha || observed?.sha || null,
       evidence_refs: observed?.evidence_refs || [],
       verified: observed?.verified === true,

@@ -29,8 +29,24 @@ class MaintainerLoop {
     this.compiledPatterns = new Map();
     /** Fast-path decision cache: key -> { result, policy_version, schema_version } */
     this.fastPathCache = new Map();
+    this.authorityLedger = new Map();
     /** Current policy/schema version for fast path invalidation */
     this.currentPolicyVersion = opts.policyVersion || 'v1.0.0';
+  }
+
+  approve(correlationId, approval = {}) {
+    const workUnit = this.eventIntake.getWorkUnit(correlationId);
+    if (!workUnit || approval.repository_id !== workUnit.repository_id ||
+        !['R2', 'R3'].includes(approval.risk_class)) return null;
+    const authority = {
+      id: crypto.randomUUID(),
+      source: 'server-ledger',
+      approved: true,
+      repository_id: workUnit.repository_id,
+      risk_class: approval.risk_class
+    };
+    this.authorityLedger.set(authority.id, authority);
+    return { ...authority };
   }
 
   /**
@@ -43,14 +59,16 @@ class MaintainerLoop {
 
     if (intakeResult.duplicate) {
       const prevRecord = this.executionLog.get(correlationId);
-      return {
-        status: 'DUPLICATE_SKIPPED',
-        correlation_id: correlationId,
-        work_unit: intakeResult.work_unit,
-        previous_execution: prevRecord || null,
-        reason: intakeResult.reason,
-        actions_executed: 0
-      };
+      if (prevRecord && ['COMPLETED', 'RUNNING'].includes(prevRecord.status)) {
+        return {
+          status: 'DUPLICATE_SKIPPED',
+          correlation_id: correlationId,
+          work_unit: intakeResult.work_unit,
+          previous_execution: prevRecord,
+          reason: intakeResult.reason,
+          actions_executed: 0
+        };
+      }
     }
 
     const workUnit = intakeResult.work_unit;
@@ -63,7 +81,7 @@ class MaintainerLoop {
     };
 
     workUnit.status = 'CLASSIFIED';
-    workUnit.risk_class = eventPayload.risk_class || (workUnit.work_type === 'SECURITY_ALERT' ? 'R3' : 'R1');
+    workUnit.risk_class = this.effectiveRisk(repoConfig, workUnit, eventPayload);
 
     // Fast-path cache check: verify policy version & scope
     const cacheKey = `${workUnit.repository_id}:${workUnit.work_type}:${workUnit.title}`;
@@ -105,6 +123,7 @@ class MaintainerLoop {
     }
 
     // Step 7: EXECUTE
+    this.executionLog.set(correlationId, { correlation_id: correlationId, status: 'RUNNING' });
     let executionResult;
     try {
       executionResult = this.executeDelta(workUnit, plan);
@@ -141,11 +160,16 @@ class MaintainerLoop {
     }
 
     // Step 9: VERIFY
+    const observed = options.observed_execution || options.check_result || null;
     const evidence = {
-      final_sha: options.final_sha || repoConfig.last_verified_sha || 'sha-verified-' + crypto.randomUUID().slice(0, 8),
-      evidence_refs: ['test_run_pass', 'lint_pass'],
-      passed: testResults.passed
+      final_sha: observed?.final_sha || observed?.sha || null,
+      evidence_refs: observed?.evidence_refs || [],
+      verified: observed?.verified === true,
+      observed: !!observed
     };
+    if (evidence.final_sha && evidence.final_sha === repoConfig.last_verified_sha) {
+      evidence.verified = false;
+    }
 
     const taskContract = this.ciCompletion.createTaskContract({
       id: correlationId,
@@ -219,6 +243,17 @@ class MaintainerLoop {
     return 'LOW';
   }
 
+  effectiveRisk(repoConfig, workUnit, payload) {
+    const order = { R0: 0, R1: 1, R2: 2, R3: 3 };
+    const max = [repoConfig.risk_class, payload.risk_class,
+      workUnit.work_type === 'SECURITY_ALERT' ? 'R3' : null,
+      payload.observed_side_effects?.risk_class,
+      payload.observed_side_effects?.destructive ? 'R3' : null]
+      .filter((risk) => risk && order[risk] !== undefined)
+      .reduce((highest, risk) => order[risk] > order[highest] ? risk : highest, 'R0');
+    return max;
+  }
+
   planMinimalDelta(workUnit, options = {}) {
     const isSelfModifiedInstruction = options.isSelfModifiedInstruction || workUnit.payload.is_self_modified || false;
     return {
@@ -261,11 +296,11 @@ class MaintainerLoop {
 
     // R2: Meaningful write -> Allowed if maintainer policy explicitly allows R2, else gated
     if (riskClass === 'R2') {
-      if (repoConfig.maintainer_policy?.auto_merge_r2 || options.explicit_r2_policy) {
+      if (repoConfig.maintainer_policy?.auto_merge_r2 && this.hasServerAuthority(options, workUnit, 'R2')) {
         return { authorized: true, level: 'R2', reason: 'R2 allowed by repository maintainer policy.' };
       }
-      if (options.user_approval) {
-        return { authorized: true, level: 'R2', reason: 'R2 explicit user approval granted.' };
+      if (this.hasServerAuthority(options, workUnit, 'R2')) {
+        return { authorized: true, level: 'R2', reason: 'R2 explicit server-ledger authorization granted.' };
       }
       return {
         authorized: false,
@@ -277,9 +312,10 @@ class MaintainerLoop {
 
     // R3: Critical / Production / Finance / Credentials / Legal / Permissions -> ALWAYS GATED
     if (riskClass === 'R3') {
-      if (options.user_approval === true) {
+      if (this.hasServerAuthority(options, workUnit, 'R3')) {
         return { authorized: true, level: 'R3', reason: 'R3 explicit authorization granted.' };
       }
+
       return {
         authorized: false,
         level: 'R3',
@@ -290,6 +326,17 @@ class MaintainerLoop {
     }
 
     return { authorized: false, reason: 'Unknown risk class.' };
+  }
+
+  hasServerAuthority(options, workUnit, level) {
+    const authority = options.authority;
+    const recorded = authority?.id && this.authorityLedger.get(authority.id);
+    return !!(recorded &&
+      recorded.source === 'server-ledger' &&
+      recorded.approved === true &&
+      recorded.repository_id === workUnit.repository_id &&
+      (!recorded.risk_class || ({ R0: 0, R1: 1, R2: 2, R3: 3 }[recorded.risk_class] || 0) >=
+        ({ R0: 0, R1: 1, R2: 2, R3: 3 }[level] || 0)));
   }
 
   executeDelta(workUnit, plan) {

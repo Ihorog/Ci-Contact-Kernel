@@ -173,6 +173,7 @@ class CiCompletion {
   verifyTask(task, executionResult, evidence = {}) {
     this.createTaskContract(task);
     task.verificationAttempt = (task.verificationAttempt || 0) + 1;
+    const canonicalSha = typeof evidence.final_sha === 'string' ? evidence.final_sha.trim() : '';
 
     // 1. Result outcome verifier
     const outcomeStatus = executionResult && executionResult.status === 'SUCCESS' ? VERIFIER_STATUS.PASS : (executionResult && executionResult.outcome === 'ok' ? VERIFIER_STATUS.PASS : VERIFIER_STATUS.FAIL);
@@ -180,14 +181,18 @@ class CiCompletion {
 
     // 2. Final SHA verifier
     if (this.requiredVerifiers.includes('final_sha_verified')) {
-      const shaStatus = evidence.final_sha || evidence.last_verified_sha ? VERIFIER_STATUS.PASS : VERIFIER_STATUS.FAIL;
-      recordVerifierResult(task, 'final_sha_verified', shaStatus, { final_sha: evidence.final_sha || evidence.last_verified_sha || null });
+      const shaStatus = /^[0-9a-f]{7,64}$/i.test(canonicalSha) && evidence.observed === true
+        ? VERIFIER_STATUS.PASS : VERIFIER_STATUS.FAIL;
+      recordVerifierResult(task, 'final_sha_verified', shaStatus, { final_sha: canonicalSha || null });
     }
 
     // 3. Evidence verifier
     if (this.requiredVerifiers.includes('evidence_verified')) {
-      const evStatus = evidence.evidence_refs && evidence.evidence_refs.length > 0 ? VERIFIER_STATUS.PASS : (evidence.passed !== false ? VERIFIER_STATUS.PASS : VERIFIER_STATUS.FAIL);
-      recordVerifierResult(task, 'evidence_verified', evStatus, { evidence_refs: evidence.evidence_refs || [] });
+      const refs = Array.isArray(evidence.evidence_refs) ? evidence.evidence_refs : [];
+      const evStatus = evidence.verified === true && refs.length > 0 &&
+        refs.every((ref) => ref && typeof ref.ref === 'string' && ref.ref.trim() &&
+          ref.sha === canonicalSha) ? VERIFIER_STATUS.PASS : VERIFIER_STATUS.FAIL;
+      recordVerifierResult(task, 'evidence_verified', evStatus, { evidence_refs: refs });
     }
 
     // Evaluate overall policy

@@ -108,6 +108,22 @@ function verifyWebhookSignature(secret, rawBody, signatureHeader) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+function maintainerAuth(req, env) {
+  const configured = typeof env.CI_MAINTAINER_TOKEN === 'string' ? env.CI_MAINTAINER_TOKEN : '';
+  if (!configured) return false;
+  const raw = req.headers.authorization || req.headers['x-ci-maintainer-token'] || '';
+  const presented = String(raw).replace(/^Bearer\s+/i, '');
+  const a = Buffer.from(configured);
+  const b = Buffer.from(presented);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+function requireMaintainerAuth(env, rateLimiter) {
+  return (req, res, next) => rateLimiter(req, res, () => maintainerAuth(req, env)
+    ? next()
+    : res.status(401).json({ error: 'Maintainer authentication required.' }));
+}
+
 function createApp(options = {}) {
   const app = express();
   const orchestrator = options.orchestrator || new CiOrchestrator(options);
@@ -127,7 +143,9 @@ function createApp(options = {}) {
     },
   }));
   app.use(express.static(path.resolve(process.cwd(), 'public')));
-  app.use('/ci', ciRateLimiter);
+  app.use('/ci', (req, res, next) => req.path.startsWith('/maintainer/')
+    ? next()
+    : ciRateLimiter(req, res, next));
   app.use('/ciopen', ciRateLimiter);
   app.use('/mcp/keenetic', ciRateLimiter);
 
@@ -231,14 +249,16 @@ function createApp(options = {}) {
     res.json({ repositories: kernel.repoRegistry.list() });
   });
 
-  app.post('/ci/maintainer/intake', (req, res) => {
+  app.post('/ci/maintainer/intake', requireMaintainerAuth(runtimeEnv, ciRateLimiter), (req, res) => {
     const result = kernel.eventIntake.intake(req.body || {});
     res.status(result.duplicate ? 200 : 201).json(result);
   });
 
-  app.post('/ci/maintainer/run', async (req, res) => {
+  app.post('/ci/maintainer/run', requireMaintainerAuth(runtimeEnv, ciRateLimiter), async (req, res) => {
     const payload = req.body || {};
-    const result = await kernel.maintainerLoop.run(payload, payload.options || {});
+    // Authority is never accepted from request data; it must be attached by the
+    // authenticated server-side checkpoint/ledger boundary.
+    const result = await kernel.maintainerLoop.run(payload, {});
     kernel.operationsDigest.processEvent(result);
     res.json({ result });
   });

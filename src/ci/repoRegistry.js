@@ -7,6 +7,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
 
 const REGISTRY_PATH = path.resolve(__dirname, '../../docs/ci/CI_REPO_REGISTRY.json');
 
@@ -14,18 +15,29 @@ class RepoRegistry {
   constructor(customPath) {
     this.filePath = customPath || REGISTRY_PATH;
     this.repositories = new Map();
+    this.status = 'HEALTHY';
+    this.diagnostic = null;
     this.load();
   }
 
   load() {
-    this.repositories.clear();
-    if (fs.existsSync(this.filePath)) {
+    try {
+      if (!fs.existsSync(this.filePath)) throw new Error('Registry file is missing.');
       const data = JSON.parse(fs.readFileSync(this.filePath, 'utf8'));
-      if (Array.isArray(data.repositories)) {
-        for (const repo of data.repositories) {
-          this.repositories.set(repo.repository_id, repo);
+      if (!Array.isArray(data.repositories)) throw new Error('Registry repositories must be an array.');
+      const repositories = new Map();
+      for (const repo of data.repositories) {
+        if (!repo || typeof repo.repository_id !== 'string') {
+          throw new Error('Registry contains an invalid repository entry.');
         }
+        repositories.set(repo.repository_id, repo);
       }
+      this.repositories = repositories;
+      this.status = 'HEALTHY';
+      this.diagnostic = null;
+    } catch (err) {
+      this.status = 'DEGRADED';
+      this.diagnostic = `Registry unavailable: ${err.message}`;
     }
   }
 
@@ -47,10 +59,32 @@ class RepoRegistry {
 
   updateVerification(repoId, sha, timestamp = new Date().toISOString()) {
     const repo = this.repositories.get(repoId);
-    if (!repo) return null;
+    if (!repo || this.status !== 'HEALTHY' || !/^[0-9a-f]{7,64}$/i.test(String(sha || ''))) return null;
     repo.last_verified_sha = sha;
     repo.last_verified_at = timestamp;
+    this.persist();
     return repo;
+  }
+
+  persist() {
+    const dir = path.dirname(this.filePath);
+    const tempPath = `${this.filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+    const repositories = this.list();
+    const provenance = {
+      algorithm: 'sha256',
+      hash: crypto.createHash('sha256').update(JSON.stringify(repositories)).digest('hex'),
+      source: 'RepoRegistry.updateVerification',
+      updated_at: new Date().toISOString()
+    };
+    const body = JSON.stringify({ _schema: 'ci-repo-registry-v1', _integrity: provenance, repositories }, null, 2) + '\n';
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(tempPath, body, { flag: 'wx', mode: 0o600 });
+    try {
+      fs.renameSync(tempPath, this.filePath);
+    } catch (err) {
+      try { fs.unlinkSync(tempPath); } catch {}
+      throw err;
+    }
   }
 }
 

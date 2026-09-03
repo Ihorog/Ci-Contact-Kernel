@@ -359,7 +359,8 @@ function createKernel(options = {}) {
     contracts,
     async getStatus() {
       return {
-        status: 'ok',
+        status: repoRegistry.status === 'HEALTHY' ? 'ok' : 'DEGRADED',
+        diagnostic: repoRegistry.diagnostic,
         executionCenters: EXECUTION_CENTERS,
         memoryRecords: (await memoryStore.readAll()).length,
         inventoriedRepositories: repoRegistry.list().length,

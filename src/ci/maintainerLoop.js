@@ -161,6 +161,7 @@ class MaintainerLoop {
 
     // Step 9: VERIFY
     const observed = options.observed_execution || options.check_result || null;
+    const evidence = {
       final_sha: observed?.final_sha || observed?.sha || null,
       evidence_refs: observed?.evidence_refs || [],
       verified: observed?.verified === true,
@@ -299,7 +300,7 @@ class MaintainerLoop {
         return { authorized: true, level: 'R2', reason: 'R2 allowed by repository maintainer policy.' };
       }
       if (this.hasServerAuthority(options, workUnit, 'R2')) {
-        return { authorized: true, level: 'R2', reason: 'R2 explicit user approval granted.' };
+        return { authorized: true, level: 'R2', reason: 'R2 explicit server-ledger authorization granted.' };
       }
       return {
         authorized: false,
@@ -331,8 +332,8 @@ class MaintainerLoop {
     const authority = options.authority;
     const recorded = authority?.id && this.authorityLedger.get(authority.id);
     return !!(recorded &&
-      authority.source === 'server-ledger' &&
-      authority.approved === true &&
+      recorded.source === 'server-ledger' &&
+      recorded.approved === true &&
       recorded.repository_id === workUnit.repository_id &&
       (!recorded.risk_class || ({ R0: 0, R1: 1, R2: 2, R3: 3 }[recorded.risk_class] || 0) >=
         ({ R0: 0, R1: 1, R2: 2, R3: 3 }[level] || 0)));

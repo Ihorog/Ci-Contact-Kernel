@@ -173,6 +173,7 @@ class CiCompletion {
   verifyTask(task, executionResult, evidence = {}) {
     this.createTaskContract(task);
     task.verificationAttempt = (task.verificationAttempt || 0) + 1;
+    const canonicalSha = typeof evidence.final_sha === 'string' ? evidence.final_sha.trim() : '';
 
     // 1. Result outcome verifier
     const outcomeStatus = executionResult && executionResult.status === 'SUCCESS' ? VERIFIER_STATUS.PASS : (executionResult && executionResult.outcome === 'ok' ? VERIFIER_STATUS.PASS : VERIFIER_STATUS.FAIL);
@@ -180,10 +181,9 @@ class CiCompletion {
 
     // 2. Final SHA verifier
     if (this.requiredVerifiers.includes('final_sha_verified')) {
-      const sha = typeof evidence.final_sha === 'string' ? evidence.final_sha.trim() : '';
-      const shaStatus = /^[0-9a-f]{7,64}$/i.test(sha) && evidence.observed === true
+      const shaStatus = /^[0-9a-f]{7,64}$/i.test(canonicalSha) && evidence.observed === true
         ? VERIFIER_STATUS.PASS : VERIFIER_STATUS.FAIL;
-      recordVerifierResult(task, 'final_sha_verified', shaStatus, { final_sha: sha || null });
+      recordVerifierResult(task, 'final_sha_verified', shaStatus, { final_sha: canonicalSha || null });
     }
 
     // 3. Evidence verifier
@@ -191,7 +191,7 @@ class CiCompletion {
       const refs = Array.isArray(evidence.evidence_refs) ? evidence.evidence_refs : [];
       const evStatus = evidence.verified === true && refs.length > 0 &&
         refs.every((ref) => ref && typeof ref.ref === 'string' && ref.ref.trim() &&
-          ref.sha === evidence.final_sha) ? VERIFIER_STATUS.PASS : VERIFIER_STATUS.FAIL;
+          ref.sha === canonicalSha) ? VERIFIER_STATUS.PASS : VERIFIER_STATUS.FAIL;
       recordVerifierResult(task, 'evidence_verified', evStatus, { evidence_refs: refs });
     }
 

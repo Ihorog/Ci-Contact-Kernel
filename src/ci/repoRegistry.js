@@ -21,17 +21,18 @@ class RepoRegistry {
   }
 
   load() {
-    this.repositories.clear();
     try {
       if (!fs.existsSync(this.filePath)) throw new Error('Registry file is missing.');
       const data = JSON.parse(fs.readFileSync(this.filePath, 'utf8'));
       if (!Array.isArray(data.repositories)) throw new Error('Registry repositories must be an array.');
+      const repositories = new Map();
       for (const repo of data.repositories) {
         if (!repo || typeof repo.repository_id !== 'string') {
           throw new Error('Registry contains an invalid repository entry.');
         }
-        this.repositories.set(repo.repository_id, repo);
+        repositories.set(repo.repository_id, repo);
       }
+      this.repositories = repositories;
       this.status = 'HEALTHY';
       this.diagnostic = null;
     } catch (err) {
@@ -67,7 +68,7 @@ class RepoRegistry {
 
   persist() {
     const dir = path.dirname(this.filePath);
-    const tempPath = `${this.filePath}.${process.pid}.tmp`;
+    const tempPath = `${this.filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
     const repositories = this.list();
     const provenance = {
       algorithm: 'sha256',

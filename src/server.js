@@ -118,10 +118,10 @@ function maintainerAuth(req, env) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-function requireMaintainerAuth(env, rateLimiter) {
-  return (req, res, next) => rateLimiter(req, res, () => maintainerAuth(req, env)
+function requireMaintainerAuth(env) {
+  return (req, res, next) => maintainerAuth(req, env)
     ? next()
-    : res.status(401).json({ error: 'Maintainer authentication required.' }));
+    : res.status(401).json({ error: 'Maintainer authentication required.' });
 }
 
 function createApp(options = {}) {
@@ -247,12 +247,12 @@ function createApp(options = {}) {
     res.json({ repositories: kernel.repoRegistry.list() });
   });
 
-  app.post('/ci/maintainer/intake', requireMaintainerAuth(runtimeEnv, ciRateLimiter), (req, res) => {
+  app.post('/ci/maintainer/intake', requireMaintainerAuth(runtimeEnv), (req, res) => {
     const result = kernel.eventIntake.intake(req.body || {});
     res.status(result.duplicate ? 200 : 201).json(result);
   });
 
-  app.post('/ci/maintainer/run', requireMaintainerAuth(runtimeEnv, ciRateLimiter), async (req, res) => {
+  app.post('/ci/maintainer/run', requireMaintainerAuth(runtimeEnv), async (req, res) => {
     const payload = req.body || {};
     // Authority is never accepted from request data; it must be attached by the
     // authenticated server-side checkpoint/ledger boundary.

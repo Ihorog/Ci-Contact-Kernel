@@ -1,0 +1,61 @@
+{
+  "name": "Ci",
+  "contract_version": "1.0.0",
+  "structure_schema_version": "1.1.0",
+  "role": "central_semantic_operator",
+  "truth_model": {
+    "logical_truth_stores": 1,
+    "state_precedence": ["ACTUAL", "PREDICTED", "TARGET"],
+    "priority": ["Local > Cloud", "Data > UI", "State > description"]
+  },
+  "canonical_components": [
+    "activity",
+    "context",
+    "care",
+    "calendar",
+    "gallery",
+    "narrative"
+  ],
+  "read_tools": [
+    "ci_structure",
+    "ci_get",
+    "ci_query",
+    "ci_state",
+    "ci_relations",
+    "ci_bindings",
+    "ci_dependencies",
+    "ci_capabilities",
+    "ci_facts",
+    "ci_history",
+    "ci_diff",
+    "ci_verify",
+    "search",
+    "fetch"
+  ],
+  "write_tools": [
+    "ci_plan",
+    "ci_action",
+    "ci_memory_append"
+  ],
+  "forbidden_public_executor_tools": [
+    "shell",
+    "exec",
+    "ssh",
+    "systemctl",
+    "write_file",
+    "rm",
+    "sudo",
+    "raw_sql"
+  ],
+  "policy_decisions": ["ALLOW", "CONFIRM", "DENY", "DEFER"],
+  "verification_outcomes": ["SUCCESS", "DEVIATION", "UNCERTAIN", "NOT_EXECUTED"],
+  "completion_rule": "COMPLETE requires verification evidence",
+  "identity_rule": "ci://<type>/<scope>/<id>",
+  "active_structure_rule": "Only neutral functional component identities are emitted",
+  "runtime_boundary": {
+    "gpt": "intent_context_policy_orchestration",
+    "mcp": "semantic_tool_surface",
+    "executor": "internal_raw_primitives_after_policy_gate",
+    "verification": "independent_observation_before_fact_commit"
+  }
+}

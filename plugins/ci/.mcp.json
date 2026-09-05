@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "ci": {
+      "type": "http",
+      "url": "https://mcp-http.cimeika.com.ua/mcp",
+      "oauth_resource": "https://mcp-http.cimeika.com.ua"
+    }
+  }
+}

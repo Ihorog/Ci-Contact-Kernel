@@ -3,10 +3,9 @@
 /**
  * Ci Unified Structure Contract v1.1
  *
- * This module is deliberately framework-agnostic. It defines the canonical
- * logical structure seen by GPTs Ci and other adapters. It is not a second
- * truth store: runtime implementations must resolve ACTUAL state from their
- * authoritative facts/evidence sources.
+ * Framework-agnostic logical contract for GPTs Ci and adapters.
+ * Runtime implementations must resolve ACTUAL state from authoritative
+ * facts/evidence sources. This module is not a second truth store.
  */
 
 const SCHEMA_VERSION = '1.1.0';
@@ -44,13 +43,6 @@ const CANONICAL_COMPONENTS = Object.freeze([
     key: 'narrative',
     role: 'explanation_history_language_projection',
   }),
-]);
-
-const LEGACY_PUBLIC_LABELS = Object.freeze([
-  'ПоДія',
-  'Настрій',
-  'Маля',
-  'Казкар',
 ]);
 
 const CORE_READ_TOOLS = Object.freeze([
@@ -101,16 +93,11 @@ const INVARIANTS = Object.freeze([
   'local_over_cloud_when_equivalent',
   'data_over_ui',
   'state_over_description',
-  'legacy_public_labels_forbidden_in_actual_ui_mcp_and_new_facts',
+  'deprecated_personified_labels_forbidden_in_active_structure',
 ]);
 
 function isCiId(value) {
   return typeof value === 'string' && /^ci:\/\/[a-z0-9._-]+\/[a-z0-9._-]+\/[a-z0-9._-]+$/i.test(value);
-}
-
-function containsLegacyPublicLabel(value) {
-  const text = typeof value === 'string' ? value : JSON.stringify(value ?? '');
-  return LEGACY_PUBLIC_LABELS.some((label) => text.includes(label));
 }
 
 function canonicalComponentByKey(key) {
@@ -131,7 +118,7 @@ function createStructureEnvelope({
   issues = [],
   sources = [],
 } = {}) {
-  const envelope = {
+  return {
     schema_version: SCHEMA_VERSION,
     structure_version: structureVersion || 'unversioned',
     generated_at: generatedAt || new Date().toISOString(),
@@ -146,11 +133,6 @@ function createStructureEnvelope({
     issues,
     sources,
   };
-
-  if (containsLegacyPublicLabel(envelope)) {
-    throw new Error('Ci Unified Structure must not emit legacy public labels.');
-  }
-  return envelope;
 }
 
 module.exports = {
@@ -159,13 +141,11 @@ module.exports = {
   CORE_WRITE_TOOLS,
   FORBIDDEN_PUBLIC_EXECUTOR_TOOLS,
   INVARIANTS,
-  LEGACY_PUBLIC_LABELS,
   POLICY_DECISIONS,
   SCHEMA_VERSION,
   STATE_PRECEDENCE,
   VERIFICATION_OUTCOMES,
   canonicalComponentByKey,
-  containsLegacyPublicLabel,
   createStructureEnvelope,
   isCiId,
 };

@@ -7,9 +7,17 @@
       "config": {
         "includeFiles": ["public/**"]
       }
+    },
+    {
+      "src": "src/ciMcpServer.js",
+      "use": "@vercel/node"
     }
   ],
   "routes": [
+    {
+      "src": "/mcp/ci/?$",
+      "dest": "src/ciMcpServer.js"
+    },
     {
       "src": "/(.*)",
       "dest": "src/server.js"

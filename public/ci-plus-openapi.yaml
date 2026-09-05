@@ -1,0 +1,284 @@
+openapi: 3.1.0
+info:
+  title: Ci+ Control Plane
+  version: 0.1.0
+  description: >-
+    GPT-facing facade for the Ci+ control plane. Ci+ classifies a signal, routes it,
+    applies permission/risk gates, records the resulting task state, and returns
+    verification evidence. Sensitive external execution remains fail-closed unless
+    a real authorized executor is connected and verified.
+servers:
+  - url: https://ciplus.cimeika.com.ua
+paths:
+  /ci/status:
+    get:
+      operationId: getCiStatus
+      summary: Get Ci+ runtime status
+      description: >-
+        Use this before or after an operation to check whether the Ci+ control plane
+        is active and which runtime/storage modules are available.
+      responses:
+        '200':
+          description: Current Ci+ control-plane status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CiStatus'
+  /ci/signal:
+    post:
+      operationId: resolveCiContext
+      summary: Resolve a signal into Ci+ context and route
+      description: >-
+        Use this to classify a user signal, resolve its target node and execution
+        center, apply the permission gate, and persist the resulting Ci task record.
+        This endpoint does not perform an external write through a sensitive executor.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CiSignalInput'
+      responses:
+        '202':
+          description: Signal resolved and represented as a Ci task.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CiTaskEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /ci/task:
+    post:
+      operationId: executeCiOperation
+      summary: Create and evaluate a Ci+ operation
+      description: >-
+        Use this when the user asks Ci+ to perform an operation. The kernel creates
+        the operation record, evaluates classification, routing and permissions, and
+        returns either a verified local result or a fail-closed BLOCKED/stub result
+        when a sensitive external executor is not actually connected.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CiOperationInput'
+      responses:
+        '201':
+          description: Operation accepted by the Ci+ kernel and represented as a task.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CiTaskEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /ci/task/{taskId}:
+    get:
+      operationId: verifyCiResult
+      summary: Verify a Ci+ operation result
+      description: >-
+        Use this to retrieve the persisted task, its permission decision, execution
+        outcome and verification evidence. Treat SUCCESS/COMPLETED as fact only when
+        the returned verification state supports it.
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          description: Ci task UUID returned by resolveCiContext or executeCiOperation.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Persisted Ci task and verification state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CiTaskEnvelope'
+        '404':
+          description: Task not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  schemas:
+    CiStatus:
+      type: object
+      additionalProperties: true
+      properties:
+        status:
+          type: string
+        runtime:
+          type: string
+        workerActive:
+          type: boolean
+        taskCount:
+          type: integer
+        storage:
+          type: string
+        durableStorage:
+          type: boolean
+        knownModules:
+          type: array
+          items:
+            type: string
+        timestamp:
+          type: string
+          format: date-time
+    CiSignalInput:
+      type: object
+      additionalProperties: true
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: Natural-language signal to resolve.
+          maxLength: 12000
+        source:
+          type: string
+          default: chatgpt.ci-plus
+        signalId:
+          type: string
+        classification:
+          $ref: '#/components/schemas/Classification'
+        priority:
+          type: string
+          enum: [low, normal, high, critical]
+          default: normal
+        context:
+          type: object
+          additionalProperties: true
+    CiOperationInput:
+      type: object
+      additionalProperties: true
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: Requested Ci+ operation in natural language.
+          maxLength: 12000
+        requestedAction:
+          type: string
+        source:
+          type: string
+          default: chatgpt.ci-plus
+        signalId:
+          type: string
+        classification:
+          $ref: '#/components/schemas/Classification'
+        priority:
+          type: string
+          enum: [low, normal, high, critical]
+          default: normal
+        permissionLevel:
+          type: string
+          enum:
+            - L0_READ
+            - L1_DRAFT
+            - L2_LOCAL_WRITE
+            - L3_REPO_WRITE
+            - L4_EXTERNAL_API_WRITE
+            - L5_DEPLOY_OR_DEVICE_ACTION
+        permissions:
+          type: object
+          additionalProperties: false
+          properties:
+            localWrite:
+              type: boolean
+            repoWrite:
+              type: boolean
+            externalApiWrite:
+              type: boolean
+            deployOrDeviceConfirm:
+              type: boolean
+        approvalPolicy:
+          type: string
+        completionPolicy:
+          type: string
+        requiredVerifiers:
+          type: array
+          items:
+            type: string
+        context:
+          type: object
+          additionalProperties: true
+    Classification:
+      type: string
+      enum:
+        - fact
+        - intent
+        - task
+        - event
+        - memory
+        - service_action
+        - device_action
+        - repo_action
+        - deploy_action
+        - human_action
+        - unknown
+    CiTaskEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+        - task
+      properties:
+        task:
+          $ref: '#/components/schemas/CiTask'
+    CiTask:
+      type: object
+      additionalProperties: true
+      properties:
+        id:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        source:
+          type: string
+        signalId:
+          type: [string, 'null']
+        status:
+          type: string
+          enum: [COMPLETED, BLOCKED]
+        classification:
+          $ref: '#/components/schemas/Classification'
+        targetNode:
+          type: string
+        executionCenter:
+          type: string
+        requestedAction:
+          type: [string, 'null']
+        permissionLevel:
+          type: string
+        permissionDecision:
+          type: string
+        result:
+          type: object
+          additionalProperties: true
+        verification:
+          type: object
+          additionalProperties: true
+        verificationResults:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        nextSuggestedAction:
+          type: [string, 'null']
+    Error:
+      type: object
+      additionalProperties: true
+      properties:
+        error:
+          type: string
+  responses:
+    BadRequest:
+      description: Invalid request.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

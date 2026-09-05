@@ -1,12 +1,13 @@
 openapi: 3.1.0
 info:
   title: Ci+ Control Plane
-  version: 0.1.0
+  version: 0.1.1
   description: >-
-    GPT-facing facade for the Ci+ control plane. Ci+ classifies a signal, routes it,
-    applies permission/risk gates, records the resulting task state, and returns
-    verification evidence. Sensitive external execution remains fail-closed unless
-    a real authorized executor is connected and verified.
+    GPT-facing facade for the Ci+ control plane. The GPT may provide intent and context,
+    but it cannot grant permissions, select authority levels, or override Ci+ policy/risk
+    classification. Ci+ classifies, routes, gates, records state, and returns verification
+    evidence. Sensitive external execution remains fail-closed unless a real authorized
+    executor is connected and verified.
 servers:
   - url: https://ciplus.cimeika.com.ua
 paths:
@@ -29,9 +30,9 @@ paths:
       operationId: resolveCiContext
       summary: Resolve a signal into Ci+ context and route
       description: >-
-        Use this to classify a user signal, resolve its target node and execution
-        center, apply the permission gate, and persist the resulting Ci task record.
-        This endpoint does not perform an external write through a sensitive executor.
+        Submit user intent and context. Ci+ determines classification, target node,
+        execution center, and permission/risk decision server-side. This endpoint does
+        not let the client grant authority or perform a sensitive external write.
       requestBody:
         required: true
         content:
@@ -52,10 +53,10 @@ paths:
       operationId: executeCiOperation
       summary: Create and evaluate a Ci+ operation
       description: >-
-        Use this when the user asks Ci+ to perform an operation. The kernel creates
-        the operation record, evaluates classification, routing and permissions, and
-        returns either a verified local result or a fail-closed BLOCKED/stub result
-        when a sensitive external executor is not actually connected.
+        Submit the requested operation as intent. Ci+ determines classification,
+        routing, permission level, approval requirements, completion policy, and
+        verification server-side. The client cannot supply permission overrides.
+        Sensitive execution remains fail-closed when no authorized executor is verified.
       requestBody:
         required: true
         content:
@@ -126,21 +127,19 @@ components:
           format: date-time
     CiSignalInput:
       type: object
-      additionalProperties: true
+      additionalProperties: false
       required:
         - message
       properties:
         message:
           type: string
-          description: Natural-language signal to resolve.
+          description: Natural-language signal to resolve. Authority is derived server-side.
           maxLength: 12000
         source:
           type: string
           default: chatgpt.ci-plus
         signalId:
           type: string
-        classification:
-          $ref: '#/components/schemas/Classification'
         priority:
           type: string
           enum: [low, normal, high, critical]
@@ -150,13 +149,13 @@ components:
           additionalProperties: true
     CiOperationInput:
       type: object
-      additionalProperties: true
+      additionalProperties: false
       required:
         - message
       properties:
         message:
           type: string
-          description: Requested Ci+ operation in natural language.
+          description: Requested Ci+ operation in natural language. Authority is derived server-side.
           maxLength: 12000
         requestedAction:
           type: string
@@ -165,41 +164,10 @@ components:
           default: chatgpt.ci-plus
         signalId:
           type: string
-        classification:
-          $ref: '#/components/schemas/Classification'
         priority:
           type: string
           enum: [low, normal, high, critical]
           default: normal
-        permissionLevel:
-          type: string
-          enum:
-            - L0_READ
-            - L1_DRAFT
-            - L2_LOCAL_WRITE
-            - L3_REPO_WRITE
-            - L4_EXTERNAL_API_WRITE
-            - L5_DEPLOY_OR_DEVICE_ACTION
-        permissions:
-          type: object
-          additionalProperties: false
-          properties:
-            localWrite:
-              type: boolean
-            repoWrite:
-              type: boolean
-            externalApiWrite:
-              type: boolean
-            deployOrDeviceConfirm:
-              type: boolean
-        approvalPolicy:
-          type: string
-        completionPolicy:
-          type: string
-        requiredVerifiers:
-          type: array
-          items:
-            type: string
         context:
           type: object
           additionalProperties: true

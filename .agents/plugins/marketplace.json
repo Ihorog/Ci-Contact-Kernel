@@ -1,0 +1,20 @@
+{
+  "name": "cimeika-local",
+  "interface": {
+    "displayName": "Cimeika"
+  },
+  "plugins": [
+    {
+      "name": "ci",
+      "source": {
+        "source": "local",
+        "path": "./plugins/ci"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "name": "ci",
+  "version": "0.1.0",
+  "description": "Cimeika Ci coordination workflows backed by the verified Ci MCP runtime.",
+  "author": {
+    "name": "Cimeika",
+    "url": "https://cimeika.com.ua"
+  },
+  "homepage": "https://cimeika.com.ua",
+  "repository": "https://github.com/Ihorog/Ci-Contact-Kernel",
+  "keywords": [
+    "ci",
+    "cimeika",
+    "home",
+    "coordination",
+    "mcp"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Ci",
+    "shortDescription": "Verified coordination of Ci facts, relations, memory and safe actions",
+    "longDescription": "Ci exposes the current verified Cimeika state through one semantic MCP surface for facts, relations, devices, network, storage, memory, planning, verification and policy-gated actions.",
+    "developerName": "Cimeika",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://cimeika.com.ua",
+    "defaultPrompt": [
+      "Покажи актуальний стан Ci і тільки підтверджені проблеми.",
+      "Перевір локальний Ci-контур і відокрем FACT від припущень.",
+      "Знайди найменшу безпечну дію, яка прибере найбільше майбутньої роботи."
+    ]
+  }
+}

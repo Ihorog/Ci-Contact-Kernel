@@ -43,6 +43,12 @@ function approvedOptions(loop, payload, options = {}) {
   return { ...nextVerifiedEvidence(), ...options, authority };
 }
 
+function createAuthorizedLoop() {
+  const repoRegistry = new RepoRegistry();
+  repoRegistry.updateVerification = () => null;
+  return new MaintainerLoop({ repoRegistry });
+}
+
 test('RepoRegistry: inventories all 19 Ihorog repositories with required fields', () => {
   const registry = new RepoRegistry();
   const repos = registry.list();
@@ -117,7 +123,7 @@ test('EventIntake: Idempotent intake deduplicates repeated events', () => {
 });
 
 test('MaintainerLoop: Negative Test 1 & 2 - Duplicate event and retry are idempotent', async () => {
-  const loop = new MaintainerLoop();
+  const loop = createAuthorizedLoop();
   const payload = { repository: { full_name: 'Ihorog/Ci-Contact-Kernel' }, pull_request: { number: 100 }, title: 'Refactor core' };
 
   const res1 = await loop.run(payload, approvedOptions(loop, payload));
@@ -140,7 +146,7 @@ test('MaintainerLoop: Negative Test 3 - Stale experience does not bypass permiss
 });
 
 test('MaintainerLoop: Negative Test 4 - Policy/schema change invalidates fast path', async () => {
-  const loop = new MaintainerLoop();
+  const loop = createAuthorizedLoop();
   const payload1 = { repository: { full_name: 'Ihorog/Ci-Contact-Kernel' }, pull_request: { number: 101 }, title: 'Fast path test' };
 
   const run1 = await loop.run(payload1, approvedOptions(loop, payload1));
@@ -165,7 +171,7 @@ test('MaintainerLoop: Negative Test 5 - Cross-repo experience does not grant aut
 });
 
 test('MaintainerLoop: Negative Test 6 - Failing dependency bulkhead does not block separate bulkhead', async () => {
-  const loop = new MaintainerLoop();
+  const loop = createAuthorizedLoop();
 
   const payloadA = { repository: { full_name: 'Ihorog/ci-moment' }, pull_request: { number: 1 }, title: 'A' };
   const payloadB = { repository: { full_name: 'Ihorog/cimeika-backend' }, pull_request: { number: 2 }, title: 'B' };
@@ -178,7 +184,7 @@ test('MaintainerLoop: Negative Test 6 - Failing dependency bulkhead does not blo
 });
 
 test('MaintainerLoop: Negative Test 7 - Unresolved review or merge conflict blocks merge', async () => {
-  const loop = new MaintainerLoop();
+  const loop = createAuthorizedLoop();
   const payload1 = { repository: { full_name: 'Ihorog/ci-moment' }, pull_request: { number: 3 }, title: 'PR review blocked' };
 
   const res1 = await loop.run(payload1, approvedOptions(loop, payload1, { hasUnresolvedReview: true }));
@@ -192,7 +198,7 @@ test('MaintainerLoop: Negative Test 7 - Unresolved review or merge conflict bloc
 });
 
 test('MaintainerLoop: Negative Test 8 - AI proposal does not become code without mechanical verification', async () => {
-  const loop = new MaintainerLoop();
+  const loop = createAuthorizedLoop();
   const payload = { repository: { full_name: 'Ihorog/Ci-Contact-Kernel' }, pull_request: { number: 5 }, title: 'Copilot AI Proposal' };
 
   const res = await loop.run(payload, approvedOptions(loop, payload, { aiProposalUnverified: true }));
@@ -201,7 +207,7 @@ test('MaintainerLoop: Negative Test 8 - AI proposal does not become code without
 });
 
 test('MaintainerLoop: Negative Test 9 - Self-modified instruction with regression automatically rolls back', async () => {
-  const loop = new MaintainerLoop();
+  const loop = createAuthorizedLoop();
   const payload = { repository: { full_name: 'Ihorog/Ci-Contact-Kernel' }, issue: { number: 20 }, is_self_modified: true, title: 'Self-modified instruction update' };
 
   const res = await loop.run(payload, approvedOptions(loop, payload, { isSelfModifiedInstruction: true, simulateTestFailure: true }));
@@ -211,7 +217,7 @@ test('MaintainerLoop: Negative Test 9 - Self-modified instruction with regressio
 });
 
 test('MaintainerLoop: Negative Test 10 - Kernel failure is isolated without corrupting repository state', async () => {
-  const loop = new MaintainerLoop();
+  const loop = createAuthorizedLoop();
   const payload = { repository: { full_name: 'Ihorog/Ci-Contact-Kernel' }, simulate_kernel_error: true, title: 'Error handling' };
 
   const res = await loop.run(payload, approvedOptions(loop, payload));
@@ -220,7 +226,7 @@ test('MaintainerLoop: Negative Test 10 - Kernel failure is isolated without corr
 });
 
 test('MaintainerLoop: Negative Test 11 - Repeated maintainer run is idempotent', async () => {
-  const loop = new MaintainerLoop();
+  const loop = createAuthorizedLoop();
   const payload = { repository: { full_name: 'Ihorog/Ci-Contact-Kernel' }, pull_request: { number: 99 }, title: 'Idempotency test' };
 
   const run1 = await loop.run(payload, approvedOptions(loop, payload));

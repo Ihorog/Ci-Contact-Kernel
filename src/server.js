@@ -267,6 +267,10 @@ function createApp(options = {}) {
     res.json(kernel.operationsDigest.generateDigestSummary());
   });
 
+  // ── Domivka Graph Core (Phase 1) ───────────────────────────────────────────
+  const { createGraphApiRouter } = require('./routes/graphApi');
+  app.use('/ci/graph', createGraphApiRouter());
+
   app.all('/mcp/keenetic', async (req, res) => {
     if (req.method === 'OPTIONS') {
       res.set({

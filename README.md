@@ -41,3 +41,17 @@ The widget starts as one transparent Ci icon. Activating it opens the signal sur
 - `POST /ci/vodyanyi/signal`
 
 See [`docs/VODYANYI.md`](docs/VODYANYI.md) for the NFC/UI/voice one-click contract, delivery confirmation and executor adapter contract.
+
+## Domivka Graph Core (Phase 1)
+
+Home identity + semantic graph seed on existing `ci_graph_*` (no parallel schema).
+
+- Mapping & gate: [`docs/domivka-graph-core.md`](docs/domivka-graph-core.md)
+- Seed migration: `supabase/migrations/20260906_domivka_home_spaces_seed.sql` (INSERT-only, idempotent)
+- Local seed mirror: `src/cigraph/homeSeed.js`
+- API: `/ci/graph` — spaces tree, nodes, edges, append-only events (`src/routes/graphApi.js`)
+
+```bash
+node --test test/domivka-home-seed.test.js
+```
+

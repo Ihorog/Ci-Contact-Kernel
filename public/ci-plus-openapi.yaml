@@ -1,0 +1,252 @@
+openapi: 3.1.0
+info:
+  title: Ci+ Control Plane
+  version: 0.1.1
+  description: >-
+    GPT-facing facade for the Ci+ control plane. The GPT may provide intent and context,
+    but it cannot grant permissions, select authority levels, or override Ci+ policy/risk
+    classification. Ci+ classifies, routes, gates, records state, and returns verification
+    evidence. Sensitive external execution remains fail-closed unless a real authorized
+    executor is connected and verified.
+servers:
+  - url: https://ciplus.cimeika.com.ua
+paths:
+  /ci/status:
+    get:
+      operationId: getCiStatus
+      summary: Get Ci+ runtime status
+      description: >-
+        Use this before or after an operation to check whether the Ci+ control plane
+        is active and which runtime/storage modules are available.
+      responses:
+        '200':
+          description: Current Ci+ control-plane status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CiStatus'
+  /ci/signal:
+    post:
+      operationId: resolveCiContext
+      summary: Resolve a signal into Ci+ context and route
+      description: >-
+        Submit user intent and context. Ci+ determines classification, target node,
+        execution center, and permission/risk decision server-side. This endpoint does
+        not let the client grant authority or perform a sensitive external write.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CiSignalInput'
+      responses:
+        '202':
+          description: Signal resolved and represented as a Ci task.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CiTaskEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /ci/task:
+    post:
+      operationId: executeCiOperation
+      summary: Create and evaluate a Ci+ operation
+      description: >-
+        Submit the requested operation as intent. Ci+ determines classification,
+        routing, permission level, approval requirements, completion policy, and
+        verification server-side. The client cannot supply permission overrides.
+        Sensitive execution remains fail-closed when no authorized executor is verified.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CiOperationInput'
+      responses:
+        '201':
+          description: Operation accepted by the Ci+ kernel and represented as a task.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CiTaskEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /ci/task/{taskId}:
+    get:
+      operationId: verifyCiResult
+      summary: Verify a Ci+ operation result
+      description: >-
+        Use this to retrieve the persisted task, its permission decision, execution
+        outcome and verification evidence. Treat SUCCESS/COMPLETED as fact only when
+        the returned verification state supports it.
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          description: Ci task UUID returned by resolveCiContext or executeCiOperation.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Persisted Ci task and verification state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CiTaskEnvelope'
+        '404':
+          description: Task not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  schemas:
+    CiStatus:
+      type: object
+      additionalProperties: true
+      properties:
+        status:
+          type: string
+        runtime:
+          type: string
+        workerActive:
+          type: boolean
+        taskCount:
+          type: integer
+        storage:
+          type: string
+        durableStorage:
+          type: boolean
+        knownModules:
+          type: array
+          items:
+            type: string
+        timestamp:
+          type: string
+          format: date-time
+    CiSignalInput:
+      type: object
+      additionalProperties: false
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: Natural-language signal to resolve. Authority is derived server-side.
+          maxLength: 12000
+        source:
+          type: string
+          default: chatgpt.ci-plus
+        signalId:
+          type: string
+        priority:
+          type: string
+          enum: [low, normal, high, critical]
+          default: normal
+        context:
+          type: object
+          additionalProperties: true
+    CiOperationInput:
+      type: object
+      additionalProperties: false
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: Requested Ci+ operation in natural language. Authority is derived server-side.
+          maxLength: 12000
+        requestedAction:
+          type: string
+        source:
+          type: string
+          default: chatgpt.ci-plus
+        signalId:
+          type: string
+        priority:
+          type: string
+          enum: [low, normal, high, critical]
+          default: normal
+        context:
+          type: object
+          additionalProperties: true
+    Classification:
+      type: string
+      enum:
+        - fact
+        - intent
+        - task
+        - event
+        - memory
+        - service_action
+        - device_action
+        - repo_action
+        - deploy_action
+        - human_action
+        - unknown
+    CiTaskEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+        - task
+      properties:
+        task:
+          $ref: '#/components/schemas/CiTask'
+    CiTask:
+      type: object
+      additionalProperties: true
+      properties:
+        id:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        source:
+          type: string
+        signalId:
+          type: [string, 'null']
+        status:
+          type: string
+          enum: [COMPLETED, BLOCKED]
+        classification:
+          $ref: '#/components/schemas/Classification'
+        targetNode:
+          type: string
+        executionCenter:
+          type: string
+        requestedAction:
+          type: [string, 'null']
+        permissionLevel:
+          type: string
+        permissionDecision:
+          type: string
+        result:
+          type: object
+          additionalProperties: true
+        verification:
+          type: object
+          additionalProperties: true
+        verificationResults:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        nextSuggestedAction:
+          type: [string, 'null']
+    Error:
+      type: object
+      additionalProperties: true
+      properties:
+        error:
+          type: string
+  responses:
+    BadRequest:
+      description: Invalid request.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

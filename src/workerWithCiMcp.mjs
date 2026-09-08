@@ -1,5 +1,6 @@
 import baseWorker, { VodyanyiState } from './worker.mjs';
 import ciMcpCore from './ciMcpCore.js';
+import { handleCiLink } from './ciLink.mjs';
 
 const {
   handleCiMcpMessage,
@@ -107,6 +108,20 @@ async function handleCiMcp(request, env) {
 export default {
   async fetch(request, env = {}) {
     const pathname = new URL(request.url).pathname;
+
+    if (pathname === '/ci' || pathname === '/ci/') {
+      try {
+        return await handleCiLink(
+          request,
+          env,
+          (localRequest) => baseWorker.fetch(localRequest, env),
+        );
+      } catch (error) {
+        console.error('Ci Link Worker request failed', error);
+        return json({ error: 'Internal Ci Link error.' }, 500, request, env);
+      }
+    }
+
     if (pathname === '/mcp/ci' || pathname === '/mcp/ci/') {
       try {
         return await handleCiMcp(request, env);

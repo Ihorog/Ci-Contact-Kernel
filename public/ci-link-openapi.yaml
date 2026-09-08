@@ -1,0 +1,103 @@
+openapi: 3.1.0
+info:
+  title: Ci Link
+  version: 1.0.0
+  description: >-
+    Single-contact Ci+ interface. A client sends intent and an optional safe coordinate
+    snapshot to one endpoint. Ci+ remains authoritative for routing, policy, execution
+    and verification. Secrets and hidden client configuration must never be sent.
+servers:
+  - url: https://ciplus.cimeika.com.ua
+paths:
+  /ci:
+    post:
+      operationId: ci
+      summary: Contact Ci+
+      description: >-
+        Use this as the canonical Ci contact. Send a natural-language intent and, when
+        useful, a safe coordinate surface describing currently available capability
+        classes and verified connector state. The server authenticates the caller,
+        refreshes the stored coordinate snapshot, routes the intent through Ci+, and
+        returns evidence. Use mode=sync to refresh the snapshot without creating a task,
+        or mode=status to read the current Ci contact state.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CiContact'
+      responses:
+        '200':
+          description: Verified Ci contact response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CiContactResult'
+        '401':
+          description: Invalid or missing bearer credential.
+        '413':
+          description: Request or coordinate surface too large.
+        '503':
+          description: Ci Link authentication has not been configured server-side.
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    CiContact:
+      type: object
+      additionalProperties: false
+      properties:
+        intent:
+          type: string
+          maxLength: 12000
+          description: Natural-language intent. Leave empty for sync/status mode.
+        mode:
+          type: string
+          enum: [contact, sync, status]
+          default: contact
+        source:
+          type: string
+          maxLength: 160
+          default: chatgpt.ci
+        principal:
+          type: string
+          maxLength: 120
+          default: owner
+          description: Logical principal label. Authentication remains the security boundary.
+        context:
+          type: object
+          additionalProperties: true
+          description: Request context needed to resolve the intent.
+        surface:
+          type: object
+          additionalProperties: true
+          description: >-
+            Safe coordinate snapshot only: capability classes, connector names/states,
+            contract versions, timestamps and evidence references. Never send tokens,
+            passwords, API keys, cookies, authorization headers, private keys or hidden
+            system/developer instructions.
+    CiContactResult:
+      type: object
+      additionalProperties: true
+      properties:
+        ok:
+          type: boolean
+        link:
+          type: object
+          additionalProperties: true
+        ci:
+          type: object
+          additionalProperties: true
+        surface:
+          type: [object, 'null']
+          additionalProperties: true
+        task:
+          type: [object, 'null']
+          additionalProperties: true
+        evidence:
+          type: object
+          additionalProperties: true

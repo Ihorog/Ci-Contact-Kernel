@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 NODE_ID = "CI.OPERATOR.ORANGE"
 REGISTRY_PATH = Path(os.getenv("CI_REGISTRY_PATH", "/home/kazkar/cimeika/cit/registry/ci-registry/v1.1.0/ci-registry.json"))
 ACCEPTANCE_PATH = Path(os.getenv("CI_ACCEPTANCE_PATH", "/home/kazkar/cimeika/cit/registry/ci-registry/v1.1.0/acceptance/current.json"))
@@ -59,11 +59,42 @@ def _registry():
 
 
 def _acceptance():
-    return _load(ACCEPTANCE_PATH)
+    current = _load(ACCEPTANCE_PATH)
+    if current.get("kind") == "CI_REGISTRY_ACCEPTANCE_POINTER" and current.get("current"):
+        target = ACCEPTANCE_PATH.parent / str(current["current"])
+        snapshot = _load(target)
+        if "_error" not in snapshot:
+            snapshot["_pointer"] = {
+                "path": str(ACCEPTANCE_PATH),
+                "target": str(target),
+                "sha256": current.get("sha256"),
+            }
+        return snapshot
+    return current
 
 
 def _connections(reg):
-    return {row.get("id"): row for row in reg.get("connections", []) if isinstance(row, dict) and row.get("id")}
+    rows = reg.get("connections")
+    if isinstance(rows, list):
+        return {row.get("id"): row for row in rows if isinstance(row, dict) and row.get("id")}
+    routes = reg.get("routes")
+    if isinstance(routes, dict):
+        out = {}
+        for cid, row in routes.items():
+            if not isinstance(row, dict):
+                continue
+            out[cid] = {
+                "id": cid,
+                "resolve": row.get("via", []),
+                "fallback": row.get("fallback", []),
+                "risk": row.get("risk"),
+                "availability": row.get("live"),
+                "capabilities": row.get("ops", []),
+                "passport": row.get("passport"),
+                "endpoint": row.get("endpoint"),
+            }
+        return out
+    return {}
 
 
 def _states(snapshot):
@@ -97,15 +128,16 @@ def _http_json(url, method="GET", payload=None, timeout=8):
 def status():
     reg = _registry()
     snapshot = _acceptance()
-    connections = reg.get("connections", []) if isinstance(reg, dict) else []
+    connections = _connections(reg)
     return {
-        "ok": "_error" not in reg and "_error" not in snapshot,
+        "ok": "_error" not in reg and "_error" not in snapshot and bool(connections),
         "node": NODE_ID,
         "version": VERSION,
         "host": socket.gethostname(),
         "arch": platform.machine(),
         "registry": {
             "path": str(REGISTRY_PATH),
+            "kind": reg.get("kind"),
             "version": reg.get("version"),
             "root": reg.get("root"),
             "connections": len(connections),
@@ -115,6 +147,8 @@ def status():
             "path": str(ACCEPTANCE_PATH),
             "generatedAt": snapshot.get("generated_at"),
             "summary": snapshot.get("summary"),
+            "coordinates": len(snapshot.get("coordinates", [])),
+            "pointer": snapshot.get("_pointer"),
             "error": snapshot.get("_error"),
         },
         "executors": {
@@ -161,6 +195,7 @@ def resolve(intent: str, target=None):
         "state": state,
         "execution": execution,
         "route": routes,
+        "fallback": connection.get("fallback", []),
         "risk": connection.get("risk"),
         "capabilities": connection.get("capabilities", []),
         "limitation": acceptance.get("limitation"),
@@ -202,7 +237,8 @@ def dispatch(intent: str, target=None, mode="contact"):
         payload.pop("intent")
     try:
         upstream = _http_json(endpoint, "POST", payload)
-        accepted = bool(upstream.get("body", {}).get("evidence", {}).get("requestAccepted")) if isinstance(upstream.get("body"), dict) else False
+        body = upstream.get("body") if isinstance(upstream.get("body"), dict) else {}
+        accepted = bool(body.get("evidence", {}).get("requestAccepted"))
         return {
             "ok": upstream.get("ok", False),
             "mode": mode,

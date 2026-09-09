@@ -33,14 +33,24 @@ init_status, init = post('/mcp', {
 })
 tools_status, tools = post('/mcp', {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/list', 'params': {}})
 names = sorted(t.get('name') for t in tools.get('result', {}).get('tools', []))
-required = {'ci_operator_status', 'ci_resolve', 'ci_dispatch'}
+required = {
+    'ci_operator_status', 'ci_resolve', 'ci_dispatch',
+    'ci_executor_status', 'ci_execute_read',
+    'ci_operator_metrics', 'ci_operator_release',
+}
 
 result = {
     'base': BASE,
     'health': {'http': health_status, 'node': health.get('node'), 'version': health.get('version'), 'connections': health.get('registry', {}).get('connections')},
     'oauth': {'http': oauth_status, 'resource': oauth.get('resource'), 'scopes': oauth.get('scopes_supported')},
     'initialize': {'http': init_status, 'serverInfo': init.get('result', {}).get('serverInfo'), 'instructions': init.get('result', {}).get('instructions')},
-    'tools': {'http': tools_status, 'count': len(names), 'operatorTools': sorted(required.intersection(names))},
+    'tools': {
+        'http': tools_status,
+        'count': len(names),
+        'required': sorted(required),
+        'present': sorted(required.intersection(names)),
+        'missing': sorted(required.difference(names)),
+    },
 }
 print(json.dumps(result, ensure_ascii=False, indent=2))
 ok = (

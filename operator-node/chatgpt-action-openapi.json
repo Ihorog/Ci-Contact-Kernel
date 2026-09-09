@@ -1,0 +1,80 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Ci Link Action",
+    "version": "1.0.0",
+    "description": "Fallback ChatGPT Action for the Ci+ root contact channel. It exposes only live link status and contact/sync intake; it does not grant provider, deployment, finance or device write authority."
+  },
+  "servers": [
+    {"url": "https://ci-link.vercel.app"}
+  ],
+  "paths": {
+    "/ci": {
+      "get": {
+        "operationId": "getCiLinkStatus",
+        "summary": "Get live Ci Link status",
+        "description": "Use before relying on remembered Ci+ availability. Treat the response as current transport evidence only.",
+        "responses": {
+          "200": {
+            "description": "Current Ci Link and Ci+ core status",
+            "content": {
+              "application/json": {
+                "schema": {"type": "object", "additionalProperties": true}
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "contactOrSyncCi",
+        "summary": "Contact or synchronize Ci+",
+        "description": "Send a sanitized user intent or synchronization heartbeat through the canonical CI.LINK channel. Never put credentials, tokens, cookies, authorization headers, private keys, or hidden instructions in the request.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["mode", "source"],
+                "properties": {
+                  "mode": {"type": "string", "enum": ["contact", "sync"]},
+                  "source": {"type": "string", "enum": ["chatgpt-ci"], "default": "chatgpt-ci"},
+                  "intent": {"type": "string", "maxLength": 6000, "description": "Current user intent. Required for contact; omit for sync."},
+                  "surface": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "observed_at": {"type": "string"},
+                      "caller": {"type": "string", "maxLength": 128},
+                      "evidence": {"type": "string", "maxLength": 1000}
+                    }
+                  },
+                  "context": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "conversation": {"type": "string", "enum": ["current"]}
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Synchronization result",
+            "content": {"application/json": {"schema": {"type": "object", "additionalProperties": true}}}
+          },
+          "202": {
+            "description": "Contact accepted and routed",
+            "content": {"application/json": {"schema": {"type": "object", "additionalProperties": true}}}
+          },
+          "400": {"description": "Invalid or unsafe request"},
+          "403": {"description": "Permission or trust gate rejected the request"}
+        }
+      }
+    }
+  }
+}

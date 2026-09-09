@@ -17,7 +17,7 @@ class SelfUpdateTests(unittest.TestCase):
     def test_runtime_allowlist_is_narrow(self):
         self.assertEqual(
             self_update.ALLOWED,
-            ['ci_operator.py', 'provider_adapters.py', 'ci_operator_runtime.py', 'operator_telemetry.py', 'queue_contract.py'],
+            ['ci_operator.py', 'provider_adapters.py', 'ci_operator_runtime.py', 'operator_telemetry.py', 'queue_contract.py', 'release_manager.py'],
         )
         self.assertNotIn('ci_connector_server.py', self_update.ALLOWED)
         self.assertNotIn('install_provider_layer.py', self_update.ALLOWED)

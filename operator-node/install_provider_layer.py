@@ -29,7 +29,8 @@ def main():
     tools = [
         " tooldef('ci_executor_status','Виконавці Ci','Probe Orange-local provider adapters without exposing credentials.',{'type':'object','properties':{}}),",
         " tooldef('ci_execute_read','Пряме читання Ci','Run one allowlisted read-only provider operation directly on Orange when a local authenticated adapter is ready.',{'type':'object','properties':{'coordinate':{'type':'string','enum':['CI.GITHUB','CI.VERCEL','CI.SUPABASE','CI.CLOUDFLARE']},'operation':{'type':'string','enum':['identity','inventory']}},'required':['coordinate','operation']},read_only=True,open_world=True),",
-        " tooldef('ci_operator_update','Оновити Ci Operator','Update only allowlisted Orange operator modules from an exact 40-character commit SHA in Ihorog/Ci-Contact-Kernel. The updater verifies Git blob SHAs, compiles staged files and keeps a rollback backup.',{'type':'object','properties':{'commit':{'type':'string','pattern':'^[0-9a-f]{40}$'},'activate':{'type':'boolean','default':False}},'required':['commit']},scope='act',read_only=False,open_world=True),",
+        " tooldef('ci_operator_update','Оновити runtime Ci Operator','Update only allowlisted Orange runtime modules from an exact 40-character commit SHA in Ihorog/Ci-Contact-Kernel.',{'type':'object','properties':{'commit':{'type':'string','pattern':'^[0-9a-f]{40}$'},'activate':{'type':'boolean','default':False}},'required':['commit']},scope='act',read_only=False,open_world=True),",
+        " tooldef('ci_operator_release','Реліз Ci Operator','Atomically deploy an exact canonical Git commit to Orange runtime and MCP connector with compile checks, rollback backups and optional supervised restart.',{'type':'object','properties':{'commit':{'type':'string','pattern':'^[0-9a-f]{40}$'},'activate':{'type':'boolean','default':False}},'required':['commit']},scope='act',read_only=False,open_world=True),",
         " tooldef('ci_operator_metrics','Метрики Ci Operator','Return PII-safe execution KPIs from Orange telemetry: success, evidence completeness, fallback, executed rate and latency percentiles.',{'type':'object','properties':{'limit':{'type':'integer','minimum':1,'maximum':5000,'default':500}}},read_only=True,open_world=False),",
     ]
     for tool in tools:
@@ -44,6 +45,7 @@ def main():
         ("ci_executor_status", "    if name=='ci_executor_status': return ci_operator.executor_status()"),
         ("ci_execute_read", "    if name=='ci_execute_read': return ci_operator.execute_read(args.get('coordinate',''),args.get('operation',''))"),
         ("ci_operator_update", "    if name=='ci_operator_update': return ci_operator.operator_update(args.get('commit',''),args.get('activate',False))"),
+        ("ci_operator_release", "    if name=='ci_operator_release': return ci_operator.operator_release(args.get('commit',''),args.get('activate',False))"),
         ("ci_operator_metrics", "    if name=='ci_operator_metrics': return ci_operator.metrics(args.get('limit',500))"),
     ]
     for name, call in calls:
@@ -52,27 +54,33 @@ def main():
                 raise RuntimeError(f'call marker not found for {name}')
             source = source.replace(call_marker, call + "\n" + call_marker, 1)
 
-    source = source.replace(
+    for old in [
         "return 'ci:act' if name in {'ci_plan','ci_action','ci_memory_append','ci_dispatch'} else 'ci:read'",
         "return 'ci:act' if name in {'ci_plan','ci_action','ci_memory_append','ci_dispatch','ci_operator_update'} else 'ci:read'",
-    )
-    for old in ('1.2.0', '1.3.0', '1.4.0'):
+    ]:
         source = source.replace(
-            f"'serverInfo':{{'name':'ci-operator','title':'Ci Operator','version':'{old}'}}",
-            "'serverInfo':{'name':'ci-operator','title':'Ci Operator','version':'1.5.0'}",
+            old,
+            "return 'ci:act' if name in {'ci_plan','ci_action','ci_memory_append','ci_dispatch','ci_operator_update','ci_operator_release'} else 'ci:read'",
         )
 
-    old_instructions = [
+    for old in ('1.2.0', '1.3.0', '1.4.0', '1.5.0'):
+        source = source.replace(
+            f"'serverInfo':{{'name':'ci-operator','title':'Ci Operator','version':'{old}'}}",
+            "'serverInfo':{'name':'ci-operator','title':'Ci Operator','version':'1.6.0'}",
+        )
+
+    instruction_candidates = [
         "Use ci_resolve before external actions. Use ci_dispatch to pass intent through CI.LINK. Treat registry state as routing metadata and require live evidence for execution.",
         "Use ci_resolve before external actions. Prefer ci_execute_read only when ci_executor_status shows a ready Orange-local adapter. Otherwise delegate to the named ChatGPT connector or CI.LINK. Require live evidence for execution.",
         "Use ci_resolve before external actions. Prefer ci_execute_read only when ci_executor_status shows a ready Orange-local adapter. Otherwise delegate to the named ChatGPT connector or CI.LINK. ci_operator_update is a gated self-update and requires an exact canonical Git commit SHA. Require live evidence for execution.",
+        "Use ci_resolve before external actions. Prefer ci_execute_read only when ci_executor_status shows a ready Orange-local adapter. Otherwise delegate to the named ChatGPT connector or CI.LINK. ci_operator_update is a gated self-update and requires an exact canonical Git commit SHA. Use ci_operator_metrics for PII-safe operational KPI evidence. Require live evidence for execution.",
     ]
     new_instructions = (
         "Use ci_resolve before external actions. Prefer ci_execute_read only when ci_executor_status shows a ready Orange-local adapter. "
-        "Otherwise delegate to the named ChatGPT connector or CI.LINK. ci_operator_update is a gated self-update and requires an exact canonical Git commit SHA. "
+        "Otherwise delegate to the named ChatGPT connector or CI.LINK. Use ci_operator_release for a complete pinned Orange release; ci_operator_update is runtime-only. "
         "Use ci_operator_metrics for PII-safe operational KPI evidence. Require live evidence for execution."
     )
-    for old in old_instructions:
+    for old in instruction_candidates:
         source = source.replace(old, new_instructions)
 
     if source == original:

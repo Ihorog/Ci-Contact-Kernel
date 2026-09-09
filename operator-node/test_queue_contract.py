@@ -18,8 +18,15 @@ class QueueContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "invalid_commit"):
             queue_contract.build("operator.self_update", {"commit": "main", "activate": True})
         item = queue_contract.build("operator.self_update", {"commit": "a" * 40, "activate": False})
-        self.assertIn("a" * 40, item["legacyShell"])
-        self.assertNotIn("main", item["legacyShell"])
+        self.assertIn("operator_update", item["legacyShell"])
+
+    def test_release_is_pinned_and_uses_release_manager_surface(self):
+        item = queue_contract.build("operator.release", {"commit": "b" * 40, "activate": True})
+        self.assertEqual(item["risk"], "elevated_write")
+        self.assertIn("operator_release", item["legacyShell"])
+        self.assertIn("b" * 40, item["legacyShell"])
+        with self.assertRaisesRegex(ValueError, "invalid_commit"):
+            queue_contract.build("operator.release", {"commit": "main", "activate": True})
 
     def test_update_rejects_string_boolean(self):
         with self.assertRaisesRegex(ValueError, "activate_must_be_boolean"):

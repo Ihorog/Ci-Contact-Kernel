@@ -17,7 +17,7 @@ REPO = "Ihorog/Ci-Contact-Kernel"
 API = f"https://api.github.com/repos/{REPO}/contents/operator-node"
 TARGET = Path("/home/kazkar/cit/modules/ci_operator")
 BACKUPS = TARGET / ".backups"
-ALLOWED = ["ci_operator.py", "provider_adapters.py", "ci_operator_runtime.py", "operator_telemetry.py", "queue_contract.py"]
+ALLOWED = ["ci_operator.py", "provider_adapters.py", "ci_operator_runtime.py", "operator_telemetry.py", "queue_contract.py", "release_manager.py"]
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 

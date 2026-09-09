@@ -4,9 +4,10 @@ import time
 import ci_operator as base
 import operator_telemetry as telemetry
 import provider_adapters
+import release_manager
 import self_update as updater
 
-VERSION = "1.3.1"
+VERSION = "1.4.0"
 NODE_ID = base.NODE_ID
 
 
@@ -15,9 +16,10 @@ def _evidence_present(result):
         return False
     if result.get("evidence") or result.get("upstream") or result.get("verification"):
         return True
-    # A successful pinned self-update returns immutable commit identity, staged file
-    # Git blob evidence and a rollback backup rather than a generic `evidence` field.
-    if result.get("executed") and result.get("commit") and result.get("backup") and result.get("files"):
+    if result.get("executed") and result.get("commit") and (
+        (result.get("backup") and result.get("files"))
+        or (result.get("runtimeBackup") and result.get("connectorBackup"))
+    ):
         return True
     return False
 
@@ -33,15 +35,10 @@ def _record(event, started, result, coordinate=None, route=None, fallback=False)
     else:
         ok, executed, error = True, False, None
     telemetry.record(
-        event,
-        coordinate=coordinate,
-        route=route,
-        outcome="ok" if ok else "error",
-        latency_ms=elapsed,
-        executed=executed,
-        evidence=_evidence_present(result),
-        fallback=fallback,
-        error_code=error,
+        event, coordinate=coordinate, route=route,
+        outcome="ok" if ok else "error", latency_ms=elapsed,
+        executed=executed, evidence=_evidence_present(result),
+        fallback=fallback, error_code=error,
     )
 
 
@@ -53,6 +50,12 @@ def status():
         "repository": updater.REPO,
         "exactCommitRequired": True,
         "allowlistedFiles": list(updater.ALLOWED),
+    }
+    value["releaseManager"] = {
+        "version": release_manager.VERSION,
+        "canonicalRepository": updater.REPO,
+        "connectorPatch": True,
+        "rollback": True,
     }
     value["telemetry"] = {
         "schema": "ci.operator.telemetry/v1",
@@ -87,12 +90,7 @@ def dispatch(intent: str, target=None, mode="contact"):
 
 
 def executor_status():
-    return {
-        "ok": True,
-        "node": NODE_ID,
-        "operatorRuntimeVersion": VERSION,
-        "adapters": provider_adapters.probe_all(),
-    }
+    return {"ok": True, "node": NODE_ID, "operatorRuntimeVersion": VERSION, "adapters": provider_adapters.probe_all()}
 
 
 def execute_read(coordinate: str, operation: str):
@@ -110,6 +108,15 @@ def operator_update(commit: str, activate=False):
     result["node"] = NODE_ID
     result["operatorRuntimeVersion"] = VERSION
     _record("operator_update", started, result, coordinate="CI.ORANGE", route="PINNED_GITHUB_UPDATE")
+    return result
+
+
+def operator_release(commit: str, activate=False):
+    started = time.perf_counter()
+    result = release_manager.deploy(commit, activate)
+    result["node"] = NODE_ID
+    result["operatorRuntimeVersion"] = VERSION
+    _record("operator_release", started, result, coordinate="CI.ORANGE", route="PINNED_GITHUB_RELEASE")
     return result
 
 

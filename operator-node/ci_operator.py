@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 NODE_ID = "CI.OPERATOR.ORANGE"
 REGISTRY_PATH = Path(os.getenv("CI_REGISTRY_PATH", "/home/kazkar/cimeika/cit/registry/ci-registry/v1.1.0/ci-registry.json"))
 ACCEPTANCE_PATH = Path(os.getenv("CI_ACCEPTANCE_PATH", "/home/kazkar/cimeika/cit/registry/ci-registry/v1.1.0/acceptance/current.json"))
@@ -16,30 +16,30 @@ DEFAULT_LINK = os.getenv("CI_LINK_ENDPOINT", "https://ci-link.vercel.app/ci")
 SOURCE = os.getenv("CI_OPERATOR_SOURCE", "ci.operator.orange")
 
 KEYWORDS = [
-    (r"github|repo|repository|git|репозитор|коміт|commit", "CI.GITHUB"),
-    (r"supabase|postgres|database|sql|база", "CI.SUPABASE"),
-    (r"vercel|deploy|deployment|депло", "CI.VERCEL"),
-    (r"cloudflare|worker|tunnel|воркер", "CI.CLOUDFLARE"),
-    (r"orange|orange pi|orangepi|service|systemd", "CI.ORANGE"),
-    (r"keenetic|router|vault|роутер|сховищ", "CI.KEENETIC"),
-    (r"remote desktop|rdc|cihub", "CI.RDC"),
-    (r"gmail|mail|email|пошта", "CI.GMAIL"),
-    (r"calendar|календар", "CI.CALENDAR"),
-    (r"contact|contacts|контакт", "CI.CONTACTS"),
-    (r"google drive|drive|диск", "CI.DRIVE"),
-    (r"dropbox", "CI.DROPBOX"),
     (r"sharepoint", "CI.SHAREPOINT"),
+    (r"dropbox", "CI.DROPBOX"),
     (r"notion", "CI.NOTION"),
-    (r"teams|microsoft teams", "CI.TEAMS"),
+    (r"microsoft teams|\bteams\b", "CI.TEAMS"),
     (r"hubspot", "CI.HUBSPOT"),
     (r"airtable", "CI.AIRTABLE"),
     (r"figma", "CI.FIGMA"),
     (r"canva", "CI.CANVA"),
-    (r"openai|api key|gpt", "CI.OPENAI"),
+    (r"supabase|postgres|database|\bsql\b|база", "CI.SUPABASE"),
+    (r"vercel|deploy|deployment|депло", "CI.VERCEL"),
+    (r"cloudflare|worker|tunnel|воркер", "CI.CLOUDFLARE"),
+    (r"github|\brepo\b|repository|\bgit\b|репозитор|коміт|commit", "CI.GITHUB"),
+    (r"orange pi|orangepi|\borange\b|systemd", "CI.ORANGE"),
+    (r"keenetic|router|vault|роутер|сховищ", "CI.KEENETIC"),
+    (r"remote desktop|\brdc\b|cihub", "CI.RDC"),
+    (r"gmail|\bmail\b|\bemail\b|пошта", "CI.GMAIL"),
+    (r"calendar|календар", "CI.CALENDAR"),
+    (r"contacts?|контакт", "CI.CONTACTS"),
+    (r"google drive|\bdrive\b|диск", "CI.DRIVE"),
+    (r"openai|api key|\bgpt\b", "CI.OPENAI"),
     (r"automation|schedule|reminder|автомат|нагад", "CI.AUTOMATION"),
     (r"image|зображ|картин", "CI.IMAGE"),
     (r"python|compute|обчис", "CI.PYTHON"),
-    (r"web|internet|search|пошук", "CI.WEB"),
+    (r"\bweb\b|internet|search|пошук", "CI.WEB"),
     (r"file|document|файл|документ", "CI.FILES"),
     (r"home|дім|хата|будинок", "CI.HOME"),
 ]

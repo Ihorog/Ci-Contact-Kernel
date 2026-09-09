@@ -1,6 +1,6 @@
 {
   "kind": "CI_OPERATOR_CONNECTOR_PASSPORT",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "node": "CI.OPERATOR.ORANGE",
   "role": "resolver_executor_control_node",
   "runtime": {
@@ -34,7 +34,9 @@
     "version": "1.1.0",
     "path": "/home/kazkar/cimeika/cit/registry/ci-registry/v1.1.0/ci-registry.json",
     "coordinates": 28,
-    "root": "CI.LINK"
+    "root": "CI.LINK",
+    "acceptance_current": "2026-09-09T211541Z.json",
+    "acceptance_sha256": "465f0f4573d98f8ebc1879a5d9e1d52c50f158758001c5711532909823030198"
   },
   "ci_link_identity": {
     "source": "ci.operator.orange",
@@ -55,7 +57,13 @@
       "target": "orange",
       "executor_user": "kazkar",
       "probe_command_id": "f86bb071-e8e1-48ab-876e-d104abcfb334",
-      "probe_stdout": "CI_QUEUE_PROBE_20260909T1712Z"
+      "probe_stdout": "CI_QUEUE_PROBE_20260909T1712Z",
+      "deployment_evidence": [
+        "8b12c53a-af03-4cfb-ad4a-2454d37d7319",
+        "a17ecfab-77b4-475f-9db4-138454a50d29",
+        "50398048-39a8-4ded-b8bc-93defcf0758e",
+        "e7fb63b6-d2a6-4579-854b-faa60443d3e2"
+      ]
     }
   },
   "provider_adapters": {
@@ -72,6 +80,16 @@
     "allowlisted_files": ["ci_operator.py", "provider_adapters.py", "ci_operator_runtime.py"],
     "staged_compile_required": true,
     "rollback_backup_required": true
+  },
+  "safety_backup": {
+    "state": "VERIFIED",
+    "target": "Keenetic Vault",
+    "path": "/mnt/cimeika_vault/0A36-16EE/CIMEIKA_VAULT/backups/ci-operator/v1.2.0/ci-operator-v1.2.0.tar.gz",
+    "format": "tar.gz",
+    "strategy": "single_archive_due_to_davfs_small_file_cache_behavior",
+    "sha256": "44444b49589ba3704ad7816ced034387c3bc8627bbeab4e8852a2ae391185667",
+    "compare": "PASS",
+    "verification_command_id": "4a9248f8-c4cc-4d61-806b-c474cd2d75fc"
   },
   "routing_policy": [
     "Resolve intent to a canonical Ci coordinate before selecting an executor.",
@@ -92,11 +110,14 @@
     "install_command_id": "a17ecfab-77b4-475f-9db4-138454a50d29",
     "restart_command_id": "50398048-39a8-4ded-b8bc-93defcf0758e",
     "acceptance_command_id": "e7fb63b6-d2a6-4579-854b-faa60443d3e2",
+    "acceptance_refresh_command_id": "3d02b7f0-5f4f-4ebc-91b0-fa72b7042eea",
     "service_after_restart": "active",
     "public_health_http": 200,
     "public_mcp_probe": "PASS",
     "registry_coordinates_loaded": 28,
     "mcp_tool_count": 28,
+    "vault_archive_compare": "PASS",
+    "vault_archive_sha256": "44444b49589ba3704ad7816ced034387c3bc8627bbeab4e8852a2ae391185667",
     "ci_link_task_id": "4c7a0cb1-b1df-4562-ac92-d725553ccb96",
     "ci_link_task_status": "COMPLETED"
   }

@@ -4,7 +4,7 @@ import re
 import shlex
 import uuid
 
-VERSION = "1.0.1"
+VERSION = "1.1.0"
 SCHEMA = "ci.operator.command/v1"
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 
@@ -12,6 +12,7 @@ ACTIONS = {
     "operator.health": {"risk": "read", "argv": ["curl", "-fsS", "http://127.0.0.1:8796/operator/health"]},
     "operator.metrics": {"risk": "read"},
     "operator.self_update": {"risk": "elevated_write"},
+    "operator.release": {"risk": "elevated_write"},
 }
 
 
@@ -31,6 +32,17 @@ def _strict_bool(value, name):
     if not isinstance(value, bool):
         raise ValueError(f"{name}_must_be_boolean")
     return value
+
+
+def _pinned_action_code(action, commit, activate):
+    if not COMMIT_RE.fullmatch(commit):
+        raise ValueError("invalid_commit")
+    fn = "operator_release" if action == "operator.release" else "operator_update"
+    return (
+        "import sys;sys.path.insert(0,'/home/kazkar/cit/modules/ci_operator');"
+        "import ci_operator_runtime as r;import json;"
+        f"print(json.dumps(r.{fn}('{commit}',{activate!r}),separators=(',',':')))"
+    )
 
 
 def build(action, args=None, request_id=None):
@@ -57,14 +69,7 @@ def build(action, args=None, request_id=None):
     else:
         commit = str(args.get("commit", ""))
         activate = _strict_bool(args.get("activate", False), "activate")
-        if not COMMIT_RE.fullmatch(commit):
-            raise ValueError("invalid_commit")
-        code = (
-            "import sys;sys.path.insert(0,'/home/kazkar/cit/modules/ci_operator');"
-            "import ci_operator_runtime as r;import json;"
-            f"print(json.dumps(r.operator_update('{commit}',{activate!r}),separators=(',',':')))"
-        )
-        argv = ["python3", "-c", code]
+        argv = ["python3", "-c", _pinned_action_code(action, commit, activate)]
 
     return {
         "schema": SCHEMA,

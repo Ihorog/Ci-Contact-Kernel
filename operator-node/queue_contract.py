@@ -4,7 +4,7 @@ import re
 import shlex
 import uuid
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 SCHEMA = "ci.operator.command/v1"
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 
@@ -16,12 +16,20 @@ ACTIONS = {
 
 
 def _bounded_limit(value):
+    if isinstance(value, bool):
+        raise ValueError("limit_must_be_integer")
     try:
         value = int(value)
     except Exception as exc:
         raise ValueError("limit_must_be_integer") from exc
     if not 1 <= value <= 5000:
         raise ValueError("limit_out_of_range")
+    return value
+
+
+def _strict_bool(value, name):
+    if not isinstance(value, bool):
+        raise ValueError(f"{name}_must_be_boolean")
     return value
 
 
@@ -48,7 +56,7 @@ def build(action, args=None, request_id=None):
         argv = ["python3", "-c", code]
     else:
         commit = str(args.get("commit", ""))
-        activate = bool(args.get("activate", False))
+        activate = _strict_bool(args.get("activate", False), "activate")
         if not COMMIT_RE.fullmatch(commit):
             raise ValueError("invalid_commit")
         code = (

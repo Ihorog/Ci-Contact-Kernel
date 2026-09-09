@@ -1,0 +1,50 @@
+{
+  "services": [
+    {
+      "name": "frontend",
+      "command": "npm",
+      "args": [
+        "start"
+      ],
+      "path": "./frontend",
+      "port": 3000,
+      "type": "frontend",
+      "description": "React/Vue/Angular frontend"
+    },
+    {
+      "name": "backend",
+      "command": "npm",
+      "args": [
+        "run",
+        "dev"
+      ],
+      "path": "./backend",
+      "port": 8000,
+      "type": "backend",
+      "description": "Node.js API server",
+      "dependsOn": [
+        "database"
+      ]
+    },
+    {
+      "name": "database",
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-p",
+        "5432:5432",
+        "-e",
+        "POSTGRES_PASSWORD=dev",
+        "postgres:13"
+      ],
+      "port": 5432,
+      "type": "database",
+      "description": "PostgreSQL database"
+    }
+  ],
+  "settings": {
+    "startDelay": 2000,
+    "respectDependencies": true
+  }
+}

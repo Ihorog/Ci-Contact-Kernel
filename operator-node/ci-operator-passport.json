@@ -1,11 +1,13 @@
 {
   "kind": "CI_OPERATOR_CONNECTOR_PASSPORT",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "node": "CI.OPERATOR.ORANGE",
   "role": "resolver_executor_control_node",
   "runtime": {
     "host": "orangepi3-lts",
-    "module": "/home/kazkar/cit/modules/ci_operator/ci_operator.py",
+    "base_module": "/home/kazkar/cit/modules/ci_operator/ci_operator.py",
+    "runtime_module": "/home/kazkar/cit/modules/ci_operator/ci_operator_runtime.py",
+    "runtime_version": "1.2.0",
     "service": "ci_mcp_server.service",
     "connector_module": "/home/kazkar/cit/modules/ci_connector/ci_connector_server.py"
   },
@@ -17,25 +19,15 @@
     "oauth_metadata": "https://mcp-http.cimeika.com.ua/.well-known/oauth-protected-resource",
     "scopes": ["ci:read", "ci:act"],
     "server_name": "ci-operator",
-    "server_version": "1.2.0"
+    "server_version": "1.4.0"
   },
   "operator_tools": {
-    "ci_operator_status": {
-      "purpose": "Return live Orange operator, registry, acceptance and executor status.",
-      "scope": "ci:read",
-      "read_only": true
-    },
-    "ci_resolve": {
-      "purpose": "Resolve a user intent to the canonical Ci coordinate and safest available executor route.",
-      "scope": "ci:read",
-      "read_only": true
-    },
-    "ci_dispatch": {
-      "purpose": "Dispatch intent through the Orange operator and CI.LINK while preserving downstream permission gates.",
-      "scope": "ci:act",
-      "read_only": false,
-      "external_write_authority": false
-    }
+    "ci_operator_status": {"scope": "ci:read", "read_only": true},
+    "ci_resolve": {"scope": "ci:read", "read_only": true},
+    "ci_dispatch": {"scope": "ci:act", "read_only": false, "external_write_authority": false},
+    "ci_executor_status": {"scope": "ci:read", "read_only": true},
+    "ci_execute_read": {"scope": "ci:read", "read_only": true, "allowlisted": true},
+    "ci_operator_update": {"scope": "ci:act", "read_only": false, "exact_commit_required": true, "canonical_repo_only": true}
   },
   "registry": {
     "id": "CI.REGISTRY",
@@ -53,24 +45,59 @@
     "transport_attested": true,
     "write_authority": false
   },
+  "orange_executors": {
+    "mcp": {"state": "VERIFIED", "service": "ci_mcp_server.service"},
+    "rdc_ssh": {"state": "AVAILABLE_WHEN_RDC_PROCESS_CHANNEL_IS_LIVE"},
+    "supabase_command_queue": {
+      "state": "VERIFIED",
+      "project": "ci-gitapi",
+      "table": "public.ci_commands",
+      "target": "orange",
+      "executor_user": "kazkar",
+      "probe_command_id": "f86bb071-e8e1-48ab-876e-d104abcfb334",
+      "probe_stdout": "CI_QUEUE_PROBE_20260909T1712Z"
+    }
+  },
+  "provider_adapters": {
+    "version": "1.0.0",
+    "coordinates": ["CI.GITHUB", "CI.VERCEL", "CI.SUPABASE", "CI.CLOUDFLARE"],
+    "policy": "Read-only direct execution is allowed only for an allowlisted operation when local CLI and credential signal are both present.",
+    "current_direct_read_candidates": [],
+    "current_reason": "gh, vercel, supabase and wrangler CLIs are not installed on Orange; provider work therefore remains delegated to callable ChatGPT connectors/CI.LINK."
+  },
+  "self_update": {
+    "enabled_in_runtime": true,
+    "canonical_repository": "Ihorog/Ci-Contact-Kernel",
+    "exact_40_hex_commit_required": true,
+    "allowlisted_files": ["ci_operator.py", "provider_adapters.py", "ci_operator_runtime.py"],
+    "staged_compile_required": true,
+    "rollback_backup_required": true
+  },
   "routing_policy": [
-    "Use ci_resolve before an external operation when the target is not already explicit.",
-    "Prefer a live direct callable executor when available.",
-    "Use CI.LINK as the root fallback and causal evidence channel.",
-    "Treat Registry as routing metadata, not as proof that an executor is currently live.",
+    "Resolve intent to a canonical Ci coordinate before selecting an executor.",
+    "Prefer a verified Orange-local executor for an allowlisted operation when live readiness is proven.",
+    "Otherwise delegate to the named callable ChatGPT connector; use CI.LINK for causal registration and fallback.",
+    "Registry and memory are context, not proof of current availability.",
     "Require live evidence before declaring a meaningful action complete.",
-    "Do not infer write authority from connector availability or CHANNEL_AUTHORIZED.",
-    "Financial, legal, destructive, security, public and device-changing actions remain separately permission-gated."
+    "Do not infer write authority from connector availability, queue availability or CHANNEL_AUTHORIZED.",
+    "Financial, legal, destructive, security, public, deployment and device-changing actions remain separately permission-gated."
   ],
   "evidence": {
-    "operator_selftest": "PASS",
-    "public_mcp_probe": "PASS",
+    "operator_source_commit": "71382c05338cb1c8207cbfaff4abaf9f915bd7d9",
+    "operator_ci_run": 34381119105,
+    "operator_ci_conclusion": "success",
+    "queue_probe": "PASS",
+    "queue_preflight_command_id": "9bc57bc5-3686-4af8-9437-7541d9a3fd1a",
+    "stage_command_id": "8b12c53a-af03-4cfb-ad4a-2454d37d7319",
+    "install_command_id": "a17ecfab-77b4-475f-9db4-138454a50d29",
+    "restart_command_id": "50398048-39a8-4ded-b8bc-93defcf0758e",
+    "acceptance_command_id": "e7fb63b6-d2a6-4579-854b-faa60443d3e2",
+    "service_after_restart": "active",
     "public_health_http": 200,
+    "public_mcp_probe": "PASS",
     "registry_coordinates_loaded": 28,
+    "mcp_tool_count": 28,
     "ci_link_task_id": "4c7a0cb1-b1df-4562-ac92-d725553ccb96",
-    "ci_link_task_status": "COMPLETED",
-    "transport_attested_at": "2026-09-09T16:42:10Z",
-    "operator_source_commit": "d129a8abb62fe882a33f6e3edc583cd20f3d5ed0",
-    "probe_source_commit": "bceb90c3145d05183ee6e7307f29a20c2ea9d73f"
+    "ci_link_task_status": "COMPLETED"
   }
 }

@@ -25,6 +25,6 @@ jobs:
         with:
           python-version: '3.13'
       - name: Compile operator modules
-        run: python -m py_compile ci_operator.py ci_operator_runtime.py provider_adapters.py install_orange.py install_provider_layer.py selftest.py mcp_probe.py
-      - name: Run provider adapter tests
-        run: python -m unittest -v test_provider_adapters.py
+        run: python -m py_compile ci_operator.py ci_operator_runtime.py provider_adapters.py self_update.py install_orange.py install_provider_layer.py selftest.py mcp_probe.py
+      - name: Run operator safety tests
+        run: python -m unittest -v test_provider_adapters.py test_self_update.py

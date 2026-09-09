@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Ci Registry Runtime",
+  "type": "object",
+  "required": ["kind","version","id","root","policy","index","routes"],
+  "properties": {
+    "kind": {"const":"CI_CONNECTION_REGISTRY_RUNTIME"},
+    "version": {"type":"string"},
+    "id": {"const":"CI.REGISTRY"},
+    "root": {"type":"string"},
+    "policy": {"type":"object"},
+    "index": {"type":"object","additionalProperties":{"type":"array","items":{"type":"string"}}},
+    "routes": {
+      "type":"object",
+      "additionalProperties": {
+        "type":"object",
+        "required":["via","risk","live","ops"],
+        "properties": {
+          "via":{"type":"array","minItems":1,"items":{"type":"string"}},
+          "risk":{"type":"string"},
+          "live":{"type":"string"},
+          "fallback":{"type":"array","items":{"type":"string"}},
+          "passport":{"type":"string"},
+          "ops":{"type":"array","items":{"type":"string"}}
+        }
+      }
+    }
+  }
+}

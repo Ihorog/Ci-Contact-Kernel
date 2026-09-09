@@ -1,0 +1,76 @@
+{
+  "kind": "CI_OPERATOR_CONNECTOR_PASSPORT",
+  "version": "1.0.0",
+  "node": "CI.OPERATOR.ORANGE",
+  "role": "resolver_executor_control_node",
+  "runtime": {
+    "host": "orangepi3-lts",
+    "module": "/home/kazkar/cit/modules/ci_operator/ci_operator.py",
+    "service": "ci_mcp_server.service",
+    "connector_module": "/home/kazkar/cit/modules/ci_connector/ci_connector_server.py"
+  },
+  "chatgpt_connector": {
+    "type": "remote_mcp",
+    "mcp_endpoint": "https://mcp-http.cimeika.com.ua/mcp",
+    "health_endpoint": "https://mcp-http.cimeika.com.ua/operator/health",
+    "oauth_resource": "https://mcp-http.cimeika.com.ua",
+    "oauth_metadata": "https://mcp-http.cimeika.com.ua/.well-known/oauth-protected-resource",
+    "scopes": ["ci:read", "ci:act"],
+    "server_name": "ci-operator",
+    "server_version": "1.2.0"
+  },
+  "operator_tools": {
+    "ci_operator_status": {
+      "purpose": "Return live Orange operator, registry, acceptance and executor status.",
+      "scope": "ci:read",
+      "read_only": true
+    },
+    "ci_resolve": {
+      "purpose": "Resolve a user intent to the canonical Ci coordinate and safest available executor route.",
+      "scope": "ci:read",
+      "read_only": true
+    },
+    "ci_dispatch": {
+      "purpose": "Dispatch intent through the Orange operator and CI.LINK while preserving downstream permission gates.",
+      "scope": "ci:act",
+      "read_only": false,
+      "external_write_authority": false
+    }
+  },
+  "registry": {
+    "id": "CI.REGISTRY",
+    "version": "1.1.0",
+    "path": "/home/kazkar/cimeika/cit/registry/ci-registry/v1.1.0/ci-registry.json",
+    "coordinates": 28,
+    "root": "CI.LINK"
+  },
+  "ci_link_identity": {
+    "source": "ci.operator.orange",
+    "principal": "ci-operator-orange",
+    "coordinate_key": "5e403a84bf75eed7e7b79e4424d2d3ee760e748816f2b536",
+    "trust_state": "CHANNEL_AUTHORIZED",
+    "scopes": ["contact", "sync", "read_context"],
+    "transport_attested": true,
+    "write_authority": false
+  },
+  "routing_policy": [
+    "Use ci_resolve before an external operation when the target is not already explicit.",
+    "Prefer a live direct callable executor when available.",
+    "Use CI.LINK as the root fallback and causal evidence channel.",
+    "Treat Registry as routing metadata, not as proof that an executor is currently live.",
+    "Require live evidence before declaring a meaningful action complete.",
+    "Do not infer write authority from connector availability or CHANNEL_AUTHORIZED.",
+    "Financial, legal, destructive, security, public and device-changing actions remain separately permission-gated."
+  ],
+  "evidence": {
+    "operator_selftest": "PASS",
+    "public_mcp_probe": "PASS",
+    "public_health_http": 200,
+    "registry_coordinates_loaded": 28,
+    "ci_link_task_id": "4c7a0cb1-b1df-4562-ac92-d725553ccb96",
+    "ci_link_task_status": "COMPLETED",
+    "transport_attested_at": "2026-09-09T16:42:10Z",
+    "operator_source_commit": "d129a8abb62fe882a33f6e3edc583cd20f3d5ed0",
+    "probe_source_commit": "bceb90c3145d05183ee6e7307f29a20c2ea9d73f"
+  }
+}

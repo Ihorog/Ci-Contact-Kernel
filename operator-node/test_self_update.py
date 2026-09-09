@@ -14,11 +14,17 @@ class SelfUpdateTests(unittest.TestCase):
         value = self_update.prepare('a' * 12)
         self.assertFalse(value['ok'])
 
-    def test_runtime_allowlist_is_narrow(self):
+    def test_runtime_allowlist_is_narrow_and_self_consistent(self):
         self.assertEqual(
             self_update.ALLOWED,
-            ['ci_operator.py', 'provider_adapters.py', 'ci_operator_runtime.py', 'operator_telemetry.py', 'queue_contract.py', 'release_manager.py'],
+            [
+                'ci_operator.py', 'provider_adapters.py', 'ci_operator_runtime.py',
+                'operator_telemetry.py', 'queue_contract.py', 'release_manager.py',
+                'self_update.py', 'mcp_probe.py',
+            ],
         )
+        self.assertIn('self_update.py', self_update.ALLOWED)
+        self.assertIn('mcp_probe.py', self_update.ALLOWED)
         self.assertNotIn('ci_connector_server.py', self_update.ALLOWED)
         self.assertNotIn('install_provider_layer.py', self_update.ALLOWED)
 

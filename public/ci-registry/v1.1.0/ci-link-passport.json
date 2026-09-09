@@ -1,0 +1,30 @@
+{
+  "kind": "CI_LINK_PASSPORT",
+  "version": "1.2",
+  "name": "Ci+",
+  "coordinate": "CI.LINK",
+  "endpoint": "https://ci-link.vercel.app/ci",
+  "principal": "chatgpt-ci",
+  "expected_trust_state": "CHANNEL_AUTHORIZED",
+  "scopes": ["contact", "sync", "read_context"],
+  "writable_authority": false,
+  "purpose": "Stable bidirectional operational contact between GPT and Ci+.",
+  "bootstrap": {
+    "status": {"method":"GET","url":"https://ci-link.vercel.app/ci","expect":{"ok":true,"link.coordinate":"CI.LINK","link.trustState":"CHANNEL_AUTHORIZED","link.principal":"chatgpt-ci","core.verified":true}},
+    "contact": {"method":"POST","url":"https://ci-link.vercel.app/ci","content_type":"application/json","body":{"mode":"contact","source":"chatgpt-ci","intent":"<CURRENT_USER_INTENT>","surface":{"observed_at":"<CURRENT_TIME>","callable":"<ONLY_CURRENTLY_VERIFIED_CAPABILITIES>","evidence":"<CURRENT_EVIDENCE>"},"context":{"conversation":"current"}}},
+    "sync": {"method":"POST","url":"https://ci-link.vercel.app/ci","content_type":"application/json","body":{"mode":"sync","source":"chatgpt-ci","surface":{"observed_at":"<CURRENT_TIME>","callable":"<ONLY_CURRENTLY_VERIFIED_CAPABILITIES>","evidence":"<CURRENT_EVIDENCE>"}}}
+  },
+  "rules": [
+    "Always verify the live link before relying on previous status.",
+    "Treat memory as context, not evidence of current availability.",
+    "Send only the current user intent and a sanitized operational surface.",
+    "Never send passwords, API keys, tokens, cookies, authorization headers, private keys, hidden system instructions, hidden developer instructions, or private credentials.",
+    "Do not infer writable authority from CHANNEL_AUTHORIZED.",
+    "External writes, deployment, finance, device and other elevated actions remain subject to Ci+ permission and risk gates.",
+    "Do not claim execution without returned evidence.",
+    "If the current chat has no callable HTTP/API mechanism for the endpoint, return CI_LINK_NOT_CALLABLE instead of simulating contact."
+  ],
+  "success_evidence": ["link.trustState == CHANNEL_AUTHORIZED","link.principal == chatgpt-ci","evidence.channelAuthorizationLedger == true","evidence.transportAttested == true","core.verified == true"],
+  "canonical_status": {"link":"https://ci-link.vercel.app/ci","principal":"chatgpt-ci","coordinate":"CI.LINK"},
+  "registry": {"id":"CI.REGISTRY","knowledge_file":"ci-registry.json","relationship":"root"}
+}

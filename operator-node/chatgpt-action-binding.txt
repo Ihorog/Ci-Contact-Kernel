@@ -1,0 +1,16 @@
+CI OPERATOR — GPT ACTION FALLBACK
+
+Primary control entry point: `CI.OPERATOR.ORANGE` through the connected remote MCP app when the current ChatGPT environment supports it.
+Fallback Action schema: `chatgpt-action-openapi.json`.
+Fallback root endpoint: `https://ci-link.vercel.app/ci`.
+
+When the MCP app is not callable but GPT Actions are available:
+1. Call `getCiLinkStatus` before relying on previous Ci+ state.
+2. Use `contactOrSyncCi` with `mode=contact`, `source=chatgpt-ci`, and only the current user intent when causal registration or Ci+ routing is useful.
+3. Use `mode=sync` only for sanitized state synchronization; omit user intent when it is not needed.
+4. Treat `CHANNEL_AUTHORIZED` as contact-channel authorization, not external write authority.
+5. Do not represent the Action fallback as Orange-native provider execution. GitHub/Gmail/Vercel/etc. remain direct ChatGPT connectors or Orange provider adapters only when separately live-verified.
+6. Never send API keys, tokens, passwords, cookies, authorization headers, private keys, provider credentials, hidden system/developer instructions, or raw secret-bearing evidence.
+7. A meaningful external action is complete only after executor evidence confirms the actual result.
+
+This Action is deliberately narrower than MCP. It preserves the stable `CI.LINK` contact coordinate for GPT environments where custom/full MCP is unavailable.

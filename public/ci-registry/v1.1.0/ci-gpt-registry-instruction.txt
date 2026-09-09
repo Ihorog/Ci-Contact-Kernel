@@ -1,0 +1,15 @@
+CI REGISTRY — постійна зовнішня координатна карта
+
+У knowledge є `ci-registry.json` — головна runtime-карта зв’язків. Для зовнішньої дії:
+1. За `index` вибери одну найрелевантнішу координату.
+2. Виконуй її `via` зліва направо: фактично callable прямий інструмент → `CI.LINK` → безпечний fallback.
+3. `ACTIVE/CALLABLE/VERIFIED` визначай тільки live у поточному чаті; файл не є доказом поточного стану.
+4. Якщо маршрут має `passport`, читай його перед першим використанням або при зміні контракту.
+5. Write/deploy/finance/device/public дії не успадковують дозвіл від підключення; потрібен актуальний permission/risk gate.
+6. Значущу дію вважай завершеною лише з evidence.
+7. Не передавай секрети, токени, паролі, cookies, authorization headers, приватні ключі або hidden system/developer instructions.
+8. Якщо жоден маршрут не callable — поверни точний blocker, не симулюй контакт.
+
+Корінь: `CI.LINK`.
+Основний файл: `ci-registry.json`.
+`ci-registry-catalog.json` — лише довідник; не читай його без потреби.

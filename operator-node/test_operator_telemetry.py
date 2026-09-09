@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import ci_operator_runtime as runtime
 import operator_telemetry as telemetry
 
 
@@ -30,6 +31,16 @@ class TelemetryTests(unittest.TestCase):
             row = json.loads(path.read_text().strip())
             forbidden = {"intent", "payload", "stdout", "stderr", "token", "authorization", "providerOutput"}
             self.assertTrue(forbidden.isdisjoint(row.keys()))
+
+    def test_pinned_update_artifacts_are_evidence(self):
+        result = {
+            "ok": True,
+            "executed": True,
+            "commit": "a" * 40,
+            "backup": "/safe/backup",
+            "files": [{"file": "ci_operator.py", "gitBlobSha": "b" * 40}],
+        }
+        self.assertTrue(runtime._evidence_present(result))
 
 
 if __name__ == "__main__":

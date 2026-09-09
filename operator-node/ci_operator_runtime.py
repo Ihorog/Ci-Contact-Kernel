@@ -6,14 +6,20 @@ import operator_telemetry as telemetry
 import provider_adapters
 import self_update as updater
 
-VERSION = "1.3.0"
+VERSION = "1.3.1"
 NODE_ID = base.NODE_ID
 
 
 def _evidence_present(result):
     if not isinstance(result, dict):
         return False
-    return bool(result.get("evidence") or result.get("upstream") or result.get("verification"))
+    if result.get("evidence") or result.get("upstream") or result.get("verification"):
+        return True
+    # A successful pinned self-update returns immutable commit identity, staged file
+    # Git blob evidence and a rollback backup rather than a generic `evidence` field.
+    if result.get("executed") and result.get("commit") and result.get("backup") and result.get("files"):
+        return True
+    return False
 
 
 def _record(event, started, result, coordinate=None, route=None, fallback=False):

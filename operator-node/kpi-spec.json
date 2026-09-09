@@ -1,0 +1,36 @@
+{
+  "kind": "CI_OPERATOR_KPI_SPEC",
+  "version": "1.0.0",
+  "source": "ci.operator.telemetry/v1",
+  "measurement_policy": {
+    "baseline_first": true,
+    "targets_require_observed_baseline_or_explicit_approval": true,
+    "missing_data_is_not_imputed": true,
+    "qualitative_signals_are_not_quantified_proof": true,
+    "intent_payload_provider_output_not_recorded": true
+  },
+  "primary": {
+    "successRate": {"definition": "successful operator events / all operator events", "target": null},
+    "evidenceCompleteness": {"definition": "executed events with evidence / executed events", "target": null},
+    "latencyP95Ms": {"definition": "95th percentile measured operator latency in milliseconds", "target": null}
+  },
+  "drivers": {
+    "fallbackRate": {"definition": "events using delegated fallback / all operator events"},
+    "executedRate": {"definition": "events with real executor attempt / all operator events"},
+    "directProviderReadiness": {"definition": "Orange provider adapters live-ready / configured provider adapters"}
+  },
+  "guardrails": {
+    "secretExposure": {"definition": "telemetry records containing intent, payload, provider output or credential values", "required": 0},
+    "unverifiedCompletion": {"definition": "executed actions declared complete without evidence", "required": 0},
+    "unsupportedQueueAction": {"definition": "queue actions outside ci.operator.command/v1 allowlist", "required": 0}
+  },
+  "data_quality": {
+    "latencyCoverage": "events with latencyMs / all events",
+    "eventSchema": "ci.operator.telemetry/v1",
+    "commandSchema": "ci.operator.command/v1",
+    "systemOfRecord": "Orange operator telemetry",
+    "replicaTargets": ["acceptance snapshot", "Keenetic Vault safety copy"],
+    "conflictPolicy": "live evidence wins over registry or memory",
+    "redactionPolicy": "no intent, payload, credentials or provider response body"
+  }
+}

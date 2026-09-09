@@ -17,7 +17,7 @@ REPO = "Ihorog/Ci-Contact-Kernel"
 API = f"https://api.github.com/repos/{REPO}/contents/operator-node"
 TARGET = Path("/home/kazkar/cit/modules/ci_operator")
 BACKUPS = TARGET / ".backups"
-ALLOWED = ["ci_operator.py", "provider_adapters.py", "ci_operator_runtime.py"]
+ALLOWED = ["ci_operator.py", "provider_adapters.py", "ci_operator_runtime.py", "operator_telemetry.py", "queue_contract.py"]
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
@@ -92,7 +92,6 @@ def apply(commit, activate=False):
         "activationScheduled": False,
     }
     if activate:
-        # The connector is supervised by systemd Restart=always; delayed TERM lets the MCP response flush first.
         subprocess.Popen(["sh", "-c", f"sleep 2; kill -TERM {os.getpid()}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         result["activationScheduled"] = True
     return result

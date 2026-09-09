@@ -17,9 +17,10 @@ class SelfUpdateTests(unittest.TestCase):
     def test_runtime_allowlist_is_narrow(self):
         self.assertEqual(
             self_update.ALLOWED,
-            ['ci_operator.py', 'provider_adapters.py', 'ci_operator_runtime.py'],
+            ['ci_operator.py', 'provider_adapters.py', 'ci_operator_runtime.py', 'operator_telemetry.py', 'queue_contract.py'],
         )
         self.assertNotIn('ci_connector_server.py', self_update.ALLOWED)
+        self.assertNotIn('install_provider_layer.py', self_update.ALLOWED)
 
     def test_git_blob_sha_is_deterministic(self):
         self.assertEqual(

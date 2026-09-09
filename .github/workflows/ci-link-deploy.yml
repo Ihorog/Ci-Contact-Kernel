@@ -1,0 +1,79 @@
+name: ci-link-deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/ciLink.mjs'
+      - 'src/workerWithCiMcp.mjs'
+      - 'src/worker.mjs'
+      - 'public/ci-link-openapi.yaml'
+      - 'wrangler.jsonc'
+      - '.github/workflows/ci-link-deploy.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-link-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CI_LINK_TOKEN: ${{ secrets.CI_LINK_TOKEN }}
+      CI_MCP_TOKEN: ${{ secrets.CI_MCP_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm test
+
+      - name: Check deployment credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}" || { echo 'CLOUDFLARE_API_TOKEN is not configured'; exit 2; }
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" || { echo 'CLOUDFLARE_ACCOUNT_ID is not configured'; exit 2; }
+          LINK_TOKEN="${CI_LINK_TOKEN:-${CI_MCP_TOKEN:-}}"
+          test -n "$LINK_TOKEN" || { echo 'CI_LINK_TOKEN or CI_MCP_TOKEN is not configured'; exit 2; }
+
+      - name: Deploy Ci+ Worker
+        run: npx wrangler deploy
+
+      - name: Configure Ci Link secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          LINK_TOKEN="${CI_LINK_TOKEN:-${CI_MCP_TOKEN:-}}"
+          printf '%s' "$LINK_TOKEN" | npx wrangler secret put CI_LINK_TOKEN
+
+      - name: Verify live Ci Link
+        shell: bash
+        run: |
+          set -euo pipefail
+          LINK_TOKEN="${CI_LINK_TOKEN:-${CI_MCP_TOKEN:-}}"
+          BASE='https://ciplus.cimeika.com.ua'
+
+          curl --fail --silent --show-error --retry 5 --retry-delay 2 \
+            "$BASE/ci/status" > /tmp/ci-status.json
+
+          curl --fail --silent --show-error --retry 5 --retry-delay 2 \
+            -X POST "$BASE/ci" \
+            -H "Authorization: Bearer $LINK_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data '{"mode":"sync","principal":"chatgpt-ci","source":"github.actions.deploy","surface":{"contract":"ci-link/v1","classes":["remote-ci-contact"],"evidence":"github-actions-production-smoke"}}' \
+            > /tmp/ci-link.json
+
+          jq -e '.status == "ok" and .workerActive == true' /tmp/ci-status.json >/dev/null
+          jq -e '.ok == true and .link.state == "VERIFIED_CONTACT" and .link.durableSnapshot == true and .evidence.requestAccepted == true' /tmp/ci-link.json >/dev/null
+          echo 'Ci Link production verification passed.'

@@ -21,9 +21,15 @@ class QueueContractTests(unittest.TestCase):
         self.assertIn("a" * 40, item["legacyShell"])
         self.assertNotIn("main", item["legacyShell"])
 
+    def test_update_rejects_string_boolean(self):
+        with self.assertRaisesRegex(ValueError, "activate_must_be_boolean"):
+            queue_contract.build("operator.self_update", {"commit": "a" * 40, "activate": "false"})
+
     def test_metrics_limit_is_bounded(self):
         with self.assertRaisesRegex(ValueError, "limit_out_of_range"):
             queue_contract.build("operator.metrics", {"limit": 5001})
+        with self.assertRaisesRegex(ValueError, "limit_must_be_integer"):
+            queue_contract.build("operator.metrics", {"limit": True})
         item = queue_contract.build("operator.metrics", {"limit": 250})
         self.assertIn("metrics(250)", item["legacyShell"])
 

@@ -3,16 +3,23 @@ import json
 from urllib.request import Request, urlopen
 
 BASE = 'https://mcp-http.cimeika.com.ua'
+HEADERS = {
+    'accept': 'application/json, text/event-stream',
+    'user-agent': 'Mozilla/5.0 CiOperatorMCPProbe/1.0',
+}
 
 
 def get(path):
-    with urlopen(BASE + path, timeout=12) as r:
+    req = Request(BASE + path, headers=HEADERS)
+    with urlopen(req, timeout=12) as r:
         return r.status, json.loads(r.read().decode())
 
 
 def post(path, body):
     raw = json.dumps(body).encode()
-    req = Request(BASE + path, data=raw, method='POST', headers={'content-type': 'application/json', 'accept': 'application/json'})
+    headers = dict(HEADERS)
+    headers['content-type'] = 'application/json'
+    req = Request(BASE + path, data=raw, method='POST', headers=headers)
     with urlopen(req, timeout=12) as r:
         payload = r.read()
         return r.status, json.loads(payload.decode()) if payload else None

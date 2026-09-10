@@ -1,0 +1,72 @@
+{
+  "kind": "CI_REGISTRY_ACCEPTANCE_SNAPSHOT",
+  "version": "1.2",
+  "registry_version": "1.1.0",
+  "generated_at": "2026-09-09T23:59:06Z",
+  "policy": {
+    "live_state_is_evidence_only": true,
+    "registry_is_not_live_truth": true,
+    "write_capability_not_inferred_from_read": true,
+    "no_secrets_or_pii": true
+  },
+  "provenance": {
+    "previous_snapshot": "2026-09-09T211541Z.json",
+    "current_cycle_verified": ["CI.LINK", "CI.CORE", "CI.GITHUB", "CI.SUPABASE", "CI.RDC", "CI.ORANGE", "CI.KEENETIC", "CI.HOME", "CI.OPENAI"],
+    "unchanged_coordinates": "carried forward from previous acceptance unless explicitly refreshed below"
+  },
+  "summary": {
+    "coordinates_total": 28,
+    "verified_or_callable": 27,
+    "blocked": 1,
+    "partial_or_limited": 4,
+    "full_unrestricted_control": false
+  },
+  "coordinates": [
+    {"id":"CI.LINK","state":"VERIFIED","access":["status","contact","sync","read_context"],"route":"Vercel→Supabase→Cloudflare","evidence":"2026-09-09T23:58:57.341Z: CHANNEL_AUTHORIZED; principal=chatgpt-ci; transportAttested=true; channelAuthorizationLedger=true; core.verified=true; core HTTP 200","limitation":"writableAuthority=false; externalWriteAuthorityGranted=false"},
+    {"id":"CI.CORE","state":"VERIFIED","access":["classify","route","policy","verification"],"route":"CI.LINK","evidence":"2026-09-09T23:58:58.156Z: cloudflare-workers; workerActive=true; HTTP 200; queueDepth=0","limitation":"core task storage reports isolate-memory; Ci Link ledger is durable separately"},
+    {"id":"CI.GITHUB","state":"VERIFIED","access":["read","push","admin_on_accessible_repos"],"route":"connector:GitHub","evidence":"Ihorog/Ci-Contact-Kernel main=5559dd3507ea69d53a1839a0f942604f3305cdb9; operator-node-test run 52 success; ci-plus-cloud run 157 success","limitation":"scope limited to repositories exposed by authenticated installation"},
+    {"id":"CI.SUPABASE","state":"VERIFIED","access":["read","sql","migrations","edge_functions","orange_command_queue"],"route":"connector:Supabase","evidence":"ci-gitapi public.ci_commands executed exact Orange release 0c8447c7-a36e-4c8d-a5bc-5129833b7653; strict MCP acceptance 66f4093c-1b26-4c67-9b13-2c043b4e890a; KPI snapshot 8bfa811e-5ea8-4a71-ab93-ce809650f5ad","limitation":"project-scoped; command queue is elevated internal execution and requires task relevance plus evidence"},
+    {"id":"CI.VERCEL","state":"VERIFIED","access":["projects","deployments","logs","deploy"],"route":"connector:Vercel","evidence":"ci-link production transport responded through CI.LINK at 2026-09-09T23:58:57.341Z","limitation":"team/project-scoped"},
+    {"id":"CI.CLOUDFLARE","state":"VERIFIED_PARTIAL","access":["runtime_status","ci_core"],"route":"CI.LINK","evidence":"Cloudflare Workers core reachable; HTTP 200; workerActive=true at 2026-09-09T23:58:58.156Z","limitation":"direct deploy remains separately permission/credential gated"},
+    {"id":"CI.RDC","state":"VERIFIED_PARTIAL","access":["registered_device"],"route":"connector:Remote_Desktop_Commander","evidence":"Cihub returned as the sole online registered device, but process invocation returned Not connected during this acceptance cycle","limitation":"filesystem/terminal execution is not callable in the current acceptance state; use verified Orange queue fallback"},
+    {"id":"CI.ORANGE","state":"VERIFIED","access":["filesystem","services","execution","operator_mcp","self_update","release","telemetry","metrics"],"route":"Supabase ci_commands→Orange; CI.RDC→SSH fallback when live","evidence":"exact release 5559dd3507ea69d53a1839a0f942604f3305cdb9 completed; runtime 1.4.0; MCP server 1.6.0; service active PID 240412; strict CI_OPERATOR_MCP_PROBE=PASS; MCP tool count=30; self-update bundle=8 files","limitation":"provider-native SaaS adapters remain delegated until local CLI+credential readiness is proven"},
+    {"id":"CI.KEENETIC","state":"VERIFIED","access":["vault_write","webdav_storage","operator_backup"],"route":"Orange→davfs2→Keenetic Vault","evidence":"v1.4.0 exact-commit archive byte compare PASS; SHA256=76a9d6dc1f85b497121d8dcbd8a256c31ce4879975d974e8d28ec93445a213db; command=a91becab-a77d-4303-b72e-12e16dfd5678","limitation":"router configuration/admin actions not acceptance-tested; single-archive strategy retained for davfs cache reliability"},
+    {"id":"CI.HOME","state":"VERIFIED","access":["local_context","routing","device_coordination"],"route":"CI.OPERATOR.ORANGE / Supabase queue / RDC / Keenetic Vault","evidence":"Orange operator 1.4.0 active; command queue verified; current v1.4.0 Keenetic archive backup verified","limitation":"does not imply every home device is individually verified"},
+    {"id":"CI.DRIVE","state":"VERIFIED","access":["read"],"route":"connector:Google_Drive","evidence":"carried forward: root folder list succeeded","limitation":"write not acceptance-tested"},
+    {"id":"CI.DROPBOX","state":"VERIFIED","access":["read"],"route":"connector:Dropbox","evidence":"carried forward: authenticated folder listing returned cursor without error","limitation":"write not acceptance-tested"},
+    {"id":"CI.SHAREPOINT","state":"BLOCKED","access":[],"route":"connector:Microsoft_SharePoint","evidence":"carried forward: provider returned Tenant does not have a SPO license","limitation":"requires SharePoint Online license/account capability"},
+    {"id":"CI.NOTION","state":"VERIFIED","access":["read"],"route":"connector:Notion","evidence":"carried forward: authenticated self-user lookup succeeded","limitation":"write not acceptance-tested"},
+    {"id":"CI.GMAIL","state":"VERIFIED","access":["read"],"route":"connector:Gmail","evidence":"carried forward: INBOX label metadata read succeeded","limitation":"send/write not acceptance-tested"},
+    {"id":"CI.TEAMS","state":"VERIFIED","access":["read"],"route":"connector:Microsoft_Teams","evidence":"carried forward: authenticated Teams profile read succeeded","limitation":"write actions not acceptance-tested"},
+    {"id":"CI.CALENDAR","state":"VERIFIED","access":["read"],"route":"connector:Google_Calendar","evidence":"carried forward: calendar listing succeeded","limitation":"create/update/delete not acceptance-tested"},
+    {"id":"CI.CONTACTS","state":"VERIFIED","access":["read"],"route":"connector:Google_Contacts","evidence":"carried forward: contact search completed without error after authorization","limitation":"read-only connector surface"},
+    {"id":"CI.HUBSPOT","state":"VERIFIED_PARTIAL","access":["CONTACT:read","COMPANY:read","DEAL:read","TICKET:read"],"route":"connector:HubSpot","evidence":"carried forward: common CRM reads AVAILABLE","limitation":"common writes and many advanced objects require reauthorization; some require account modification"},
+    {"id":"CI.AIRTABLE","state":"VERIFIED","access":["read","create_scope"],"route":"connector:Airtable","evidence":"carried forward: base listing succeeded; permissionLevel=create","limitation":"no destructive/write probe performed"},
+    {"id":"CI.FIGMA","state":"VERIFIED_PARTIAL","access":["view"],"route":"connector:Figma","evidence":"carried forward: authenticated account and Cimeika plan returned","limitation":"seat=View; write/create ability limited"},
+    {"id":"CI.CANVA","state":"VERIFIED","access":["read"],"route":"connector:Canva","evidence":"carried forward: owned design search succeeded","limitation":"permanent edits require their own confirmation/transaction flow"},
+    {"id":"CI.OPENAI","state":"VERIFIED","access":["platform_targets","secure_key_setup","gpt_action_schema"],"route":"connector:OpenAI_Platform + repository Action schema","evidence":"OpenAI Platform organizations/projects returned; CI.LINK OpenAPI Action fallback merged at 69087c55ea4f754360e91dc231968205f84e1fcc and schema tests passed","limitation":"API key creation was not completed; GPT Action schema is source-ready but requires GPT-side configuration to become callable"},
+    {"id":"CI.WEB","state":"CALLABLE","access":["public_web_read"],"route":"native:web","evidence":"native web executor available in current runtime","limitation":"not an authenticated account resource"},
+    {"id":"CI.FILES","state":"VERIFIED","access":["uploaded_file_search","read"],"route":"native:file_search","evidence":"native uploaded/file-library interface available","limitation":"only files exposed to current ChatGPT context/library"},
+    {"id":"CI.PYTHON","state":"VERIFIED","access":["compute","analysis","artifact_generation"],"route":"native:python","evidence":"native sandbox compute available","limitation":"local sandbox only; no internet"},
+    {"id":"CI.IMAGE","state":"CALLABLE","access":["generate","edit"],"route":"native:image_generation","evidence":"native image generation tool available","limitation":"not exercised by this acceptance audit"},
+    {"id":"CI.AUTOMATION","state":"VERIFIED","access":["schedule","recurrence","condition_watch"],"route":"native:automation","evidence":"automation capability previously verified","limitation":"future runs depend on currently available capabilities"}
+  ],
+  "operator_observability": {
+    "schema": "ci.operator.metrics/v1",
+    "telemetry_version": "1.0.0",
+    "sample_window": 2,
+    "kpi": {
+      "successRate": 1.0,
+      "evidenceCompleteness": 1.0,
+      "fallbackRate": 0.5,
+      "executedRate": 0.5,
+      "latencyMs": {"p50": 1508.56, "p95": 2863.84, "mean": 1508.56}
+    },
+    "data_quality": {
+      "events": 2,
+      "latencyCoverage": 1.0,
+      "piiPolicy": "intent_payload_provider_output_not_recorded"
+    },
+    "interpretation": "baseline_only; sample too small for performance targets"
+  }
+}

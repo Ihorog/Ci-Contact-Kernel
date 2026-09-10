@@ -1,14 +1,16 @@
 {
   "kind": "CI_OPERATOR_CONNECTOR_PASSPORT",
-  "version": "1.2.0",
+  "version": "1.4.0",
   "node": "CI.OPERATOR.ORANGE",
   "role": "resolver_executor_control_node",
   "runtime": {
     "host": "orangepi3-lts",
     "base_module": "/home/kazkar/cit/modules/ci_operator/ci_operator.py",
     "runtime_module": "/home/kazkar/cit/modules/ci_operator/ci_operator_runtime.py",
-    "runtime_version": "1.2.0",
+    "runtime_version": "1.4.0",
     "service": "ci_mcp_server.service",
+    "service_state": "active",
+    "observed_pid": 240412,
     "connector_module": "/home/kazkar/cit/modules/ci_connector/ci_connector_server.py"
   },
   "chatgpt_connector": {
@@ -19,7 +21,19 @@
     "oauth_metadata": "https://mcp-http.cimeika.com.ua/.well-known/oauth-protected-resource",
     "scopes": ["ci:read", "ci:act"],
     "server_name": "ci-operator",
-    "server_version": "1.4.0"
+    "server_version": "1.6.0",
+    "tool_count": 30,
+    "strict_probe": "PASS"
+  },
+  "chatgpt_action_fallback": {
+    "state": "SOURCE_READY_NOT_BOUND",
+    "schema": "operator-node/chatgpt-action-openapi.json",
+    "binding": "operator-node/chatgpt-action-binding.txt",
+    "endpoint": "https://ci-link.vercel.app/ci",
+    "operations": ["getCiLinkStatus", "contactOrSyncCi"],
+    "merged_commit": "69087c55ea4f754360e91dc231968205f84e1fcc",
+    "external_write_authority": false,
+    "note": "MCP remains the primary operator-control transport; the Action fallback is intentionally limited to CI.LINK status/contact/sync."
   },
   "operator_tools": {
     "ci_operator_status": {"scope": "ci:read", "read_only": true},
@@ -27,7 +41,9 @@
     "ci_dispatch": {"scope": "ci:act", "read_only": false, "external_write_authority": false},
     "ci_executor_status": {"scope": "ci:read", "read_only": true},
     "ci_execute_read": {"scope": "ci:read", "read_only": true, "allowlisted": true},
-    "ci_operator_update": {"scope": "ci:act", "read_only": false, "exact_commit_required": true, "canonical_repo_only": true}
+    "ci_operator_update": {"scope": "ci:act", "read_only": false, "exact_commit_required": true, "canonical_repo_only": true, "runtime_only": true},
+    "ci_operator_release": {"scope": "ci:act", "read_only": false, "exact_commit_required": true, "canonical_repo_only": true, "connector_patch": true, "rollback": true},
+    "ci_operator_metrics": {"scope": "ci:read", "read_only": true, "pii_safe": true}
   },
   "registry": {
     "id": "CI.REGISTRY",
@@ -35,8 +51,8 @@
     "path": "/home/kazkar/cimeika/cit/registry/ci-registry/v1.1.0/ci-registry.json",
     "coordinates": 28,
     "root": "CI.LINK",
-    "acceptance_current": "2026-09-09T211541Z.json",
-    "acceptance_sha256": "465f0f4573d98f8ebc1879a5d9e1d52c50f158758001c5711532909823030198"
+    "acceptance_current": "2026-09-09T235906Z.json",
+    "acceptance_sha256": "b452079a610cb605f90338d7d036cd17df98157f5e34fcb069210638434e4d28"
   },
   "ci_link_identity": {
     "source": "ci.operator.orange",
@@ -45,11 +61,13 @@
     "trust_state": "CHANNEL_AUTHORIZED",
     "scopes": ["contact", "sync", "read_context"],
     "transport_attested": true,
-    "write_authority": false
+    "write_authority": false,
+    "last_live_check": "2026-09-09T23:58:57.341Z",
+    "core_verified": true
   },
   "orange_executors": {
-    "mcp": {"state": "VERIFIED", "service": "ci_mcp_server.service"},
-    "rdc_ssh": {"state": "AVAILABLE_WHEN_RDC_PROCESS_CHANNEL_IS_LIVE"},
+    "mcp": {"state": "VERIFIED", "service": "ci_mcp_server.service", "strict_probe": "PASS"},
+    "rdc_ssh": {"state": "PARTIAL", "reason": "Cihub registered online but process invocation returned Not connected during current acceptance"},
     "supabase_command_queue": {
       "state": "VERIFIED",
       "project": "ci-gitapi",
@@ -58,12 +76,11 @@
       "executor_user": "kazkar",
       "probe_command_id": "f86bb071-e8e1-48ab-876e-d104abcfb334",
       "probe_stdout": "CI_QUEUE_PROBE_20260909T1712Z",
-      "deployment_evidence": [
-        "8b12c53a-af03-4cfb-ad4a-2454d37d7319",
-        "a17ecfab-77b4-475f-9db4-138454a50d29",
-        "50398048-39a8-4ded-b8bc-93defcf0758e",
-        "e7fb63b6-d2a6-4579-854b-faa60443d3e2"
-      ]
+      "latest_release_command_id": "0c8447c7-a36e-4c8d-a5bc-5129833b7653",
+      "strict_acceptance_command_id": "66f4093c-1b26-4c67-9b13-2c043b4e890a",
+      "kpi_snapshot_command_id": "8bfa811e-5ea8-4a71-ab93-ce809650f5ad",
+      "vault_backup_command_id": "a91becab-a77d-4303-b72e-12e16dfd5678",
+      "ci_link_refresh_command_id": "98b69915-db94-4a91-8d50-d9293d584495"
     }
   },
   "provider_adapters": {
@@ -71,25 +88,50 @@
     "coordinates": ["CI.GITHUB", "CI.VERCEL", "CI.SUPABASE", "CI.CLOUDFLARE"],
     "policy": "Read-only direct execution is allowed only for an allowlisted operation when local CLI and credential signal are both present.",
     "current_direct_read_candidates": [],
-    "current_reason": "gh, vercel, supabase and wrangler CLIs are not installed on Orange; provider work therefore remains delegated to callable ChatGPT connectors/CI.LINK."
+    "current_reason": "gh, vercel, supabase and wrangler CLIs are not installed on Orange; provider work remains delegated to callable ChatGPT connectors/CI.LINK."
   },
   "self_update": {
     "enabled_in_runtime": true,
     "canonical_repository": "Ihorog/Ci-Contact-Kernel",
     "exact_40_hex_commit_required": true,
-    "allowlisted_files": ["ci_operator.py", "provider_adapters.py", "ci_operator_runtime.py"],
+    "allowlisted_files": [
+      "ci_operator.py",
+      "provider_adapters.py",
+      "ci_operator_runtime.py",
+      "operator_telemetry.py",
+      "queue_contract.py",
+      "release_manager.py",
+      "self_update.py",
+      "mcp_probe.py"
+    ],
     "staged_compile_required": true,
-    "rollback_backup_required": true
+    "rollback_backup_required": true,
+    "release_manager_version": "1.0.0"
+  },
+  "observability": {
+    "schema": "ci.operator.metrics/v1",
+    "telemetry_version": "1.0.0",
+    "pii_policy": "intent_payload_provider_output_not_recorded",
+    "sample_window": 2,
+    "baseline": {
+      "successRate": 1.0,
+      "evidenceCompleteness": 1.0,
+      "fallbackRate": 0.5,
+      "executedRate": 0.5,
+      "latencyMs": {"p50": 1508.56, "p95": 2863.84, "mean": 1508.56},
+      "latencyCoverage": 1.0
+    },
+    "interpretation": "baseline_only; sample too small for performance targets"
   },
   "safety_backup": {
     "state": "VERIFIED",
     "target": "Keenetic Vault",
-    "path": "/mnt/cimeika_vault/0A36-16EE/CIMEIKA_VAULT/backups/ci-operator/v1.2.0/ci-operator-v1.2.0.tar.gz",
+    "path": "/mnt/cimeika_vault/0A36-16EE/CIMEIKA_VAULT/backups/ci-operator/v1.4.0/ci-operator-v1.4.0-5559dd3507ea69d53a1839a0f942604f3305cdb9.tar.gz",
     "format": "tar.gz",
     "strategy": "single_archive_due_to_davfs_small_file_cache_behavior",
-    "sha256": "44444b49589ba3704ad7816ced034387c3bc8627bbeab4e8852a2ae391185667",
+    "sha256": "76a9d6dc1f85b497121d8dcbd8a256c31ce4879975d974e8d28ec93445a213db",
     "compare": "PASS",
-    "verification_command_id": "4a9248f8-c4cc-4d61-806b-c474cd2d75fc"
+    "verification_command_id": "a91becab-a77d-4303-b72e-12e16dfd5678"
   },
   "routing_policy": [
     "Resolve intent to a canonical Ci coordinate before selecting an executor.",
@@ -101,24 +143,26 @@
     "Financial, legal, destructive, security, public, deployment and device-changing actions remain separately permission-gated."
   ],
   "evidence": {
-    "operator_source_commit": "71382c05338cb1c8207cbfaff4abaf9f915bd7d9",
-    "operator_ci_run": 34381119105,
+    "operator_source_commit": "5559dd3507ea69d53a1839a0f942604f3305cdb9",
+    "operator_ci_run": 34418867576,
     "operator_ci_conclusion": "success",
+    "cloud_ci_run": 34418867572,
+    "cloud_ci_conclusion": "success",
     "queue_probe": "PASS",
-    "queue_preflight_command_id": "9bc57bc5-3686-4af8-9437-7541d9a3fd1a",
-    "stage_command_id": "8b12c53a-af03-4cfb-ad4a-2454d37d7319",
-    "install_command_id": "a17ecfab-77b4-475f-9db4-138454a50d29",
-    "restart_command_id": "50398048-39a8-4ded-b8bc-93defcf0758e",
-    "acceptance_command_id": "e7fb63b6-d2a6-4579-854b-faa60443d3e2",
-    "acceptance_refresh_command_id": "3d02b7f0-5f4f-4ebc-91b0-fa72b7042eea",
+    "integrity_policy_command_id": "98a4057d-7302-4fbd-b891-a9def0bbf79f",
+    "release_command_id": "0c8447c7-a36e-4c8d-a5bc-5129833b7653",
+    "post_restart_command_id": "9afbd264-77b7-4bc2-bd55-ab83c64c2ab9",
+    "strict_probe_command_id": "66f4093c-1b26-4c67-9b13-2c043b4e890a",
+    "kpi_snapshot_command_id": "8bfa811e-5ea8-4a71-ab93-ce809650f5ad",
+    "ci_link_refresh_command_id": "98b69915-db94-4a91-8d50-d9293d584495",
     "service_after_restart": "active",
     "public_health_http": 200,
     "public_mcp_probe": "PASS",
     "registry_coordinates_loaded": 28,
-    "mcp_tool_count": 28,
+    "mcp_tool_count": 30,
     "vault_archive_compare": "PASS",
-    "vault_archive_sha256": "44444b49589ba3704ad7816ced034387c3bc8627bbeab4e8852a2ae391185667",
-    "ci_link_task_id": "4c7a0cb1-b1df-4562-ac92-d725553ccb96",
-    "ci_link_task_status": "COMPLETED"
+    "vault_archive_sha256": "76a9d6dc1f85b497121d8dcbd8a256c31ce4879975d974e8d28ec93445a213db",
+    "acceptance_snapshot": "2026-09-09T235906Z.json",
+    "acceptance_snapshot_sha256": "b452079a610cb605f90338d7d036cd17df98157f5e34fcb069210638434e4d28"
   }
 }

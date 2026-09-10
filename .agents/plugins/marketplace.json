@@ -1,14 +1,14 @@
 {
-  "name": "cimeika-local",
+  "name": "cimeika",
   "interface": {
     "displayName": "Cimeika"
   },
   "plugins": [
     {
-      "name": "ci",
+      "name": "ci-plus",
       "source": {
         "source": "local",
-        "path": "./plugins/ci"
+        "path": "./plugins/ci-plus"
       },
       "policy": {
         "installation": "AVAILABLE",

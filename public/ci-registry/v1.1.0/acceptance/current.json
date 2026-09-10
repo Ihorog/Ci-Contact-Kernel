@@ -1,7 +1,7 @@
 {
   "kind": "CI_REGISTRY_ACCEPTANCE_POINTER",
   "registry_version": "1.1.0",
-  "current": "2026-09-09T211541Z.json",
-  "sha256": "465f0f4573d98f8ebc1879a5d9e1d52c50f158758001c5711532909823030198",
-  "generated_at": "2026-09-09T21:15:41Z"
+  "current": "2026-09-09T235906Z.json",
+  "sha256": "b452079a610cb605f90338d7d036cd17df98157f5e34fcb069210638434e4d28",
+  "generated_at": "2026-09-09T23:59:06Z"
 }

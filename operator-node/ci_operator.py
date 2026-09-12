@@ -167,6 +167,26 @@ def _infer_target(intent: str):
     return "CI.LINK"
 
 
+def _delegation_from_routes(coordinate, routes, capabilities, risk, fallback):
+    for route in routes:
+        if not isinstance(route, str) or ":" not in route:
+            continue
+        prefix, name = route.split(":", 1)
+        kind = {"connector": "chatgpt_connector", "runtime_connector": "runtime_connector", "native": "native_tool"}.get(prefix)
+        if not kind:
+            continue
+        return {
+            "kind": kind,
+            "executor": name,
+            "coordinate": coordinate,
+            "operations": list(capabilities or []),
+            "risk": risk,
+            "fallback": list(fallback or []),
+            "requiresLiveCheck": True,
+            "requiresEvidence": True,
+        }
+    return None
+
 def resolve(intent: str, target=None):
     reg = _registry()
     snapshot = _acceptance()
@@ -187,6 +207,10 @@ def resolve(intent: str, target=None):
     else:
         execution = "DELEGATE_CONNECTOR"
     routes = connection.get("resolve", [])
+    capabilities = connection.get("capabilities", [])
+    fallback = connection.get("fallback", [])
+    risk = connection.get("risk")
+    delegation = _delegation_from_routes(selected, routes, capabilities, risk, fallback) if execution == "DELEGATE_CONNECTOR" else None
     return {
         "ok": state != "BLOCKED",
         "node": NODE_ID,
@@ -195,14 +219,14 @@ def resolve(intent: str, target=None):
         "state": state,
         "execution": execution,
         "route": routes,
-        "fallback": connection.get("fallback", []),
-        "risk": connection.get("risk"),
-        "capabilities": connection.get("capabilities", []),
+        "fallback": fallback,
+        "risk": risk,
+        "capabilities": capabilities,
         "limitation": acceptance.get("limitation"),
         "evidence": acceptance.get("evidence"),
-        "connectorHint": next((r.split(":", 1)[1] for r in routes if isinstance(r, str) and r.startswith("connector:")), None),
+        "connectorHint": delegation.get("executor") if delegation else None,
+        "delegation": delegation,
     }
-
 
 def dispatch(intent: str, target=None, mode="contact"):
     resolution = resolve(intent, target)
@@ -214,6 +238,19 @@ def dispatch(intent: str, target=None, mode="contact"):
         return {"ok": False, "error": "unsupported_mode", "allowed": ["resolve", "status", "contact", "sync"]}
     if resolution.get("execution") == "BLOCKED":
         return {"ok": False, "mode": mode, "resolution": resolution, "executed": False, "error": "coordinate_blocked"}
+    if resolution.get("execution") == "DELEGATE_CONNECTOR":
+        delegation = resolution.get("delegation")
+        return {
+            "ok": bool(delegation),
+            "mode": "delegate",
+            "requestedMode": mode,
+            "resolution": resolution,
+            "executed": False,
+            "executor": "CALLER_RUNTIME",
+            "delegation": delegation,
+            "nextAction": "CALL_DELEGATED_EXECUTOR" if delegation else "NO_CALLABLE_DELEGATION",
+            "evidenceRequired": True,
+        }
 
     reg = _registry()
     endpoint = _link_endpoint(reg)

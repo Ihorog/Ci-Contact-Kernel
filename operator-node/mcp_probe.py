@@ -34,7 +34,7 @@ init_status, init = post('/mcp', {
 tools_status, tools = post('/mcp', {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/list', 'params': {}})
 names = sorted(t.get('name') for t in tools.get('result', {}).get('tools', []))
 required = {
-    'ci_operator_status', 'ci_resolve', 'ci_dispatch',
+    'ci_operator_status', 'ci_resolve', 'ci_delegate', 'ci_dispatch',
     'ci_executor_status', 'ci_execute_read',
     'ci_operator_metrics', 'ci_operator_release',
 }

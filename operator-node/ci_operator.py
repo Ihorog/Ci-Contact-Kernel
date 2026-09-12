@@ -90,6 +90,7 @@ def _connections(reg):
                 "risk": row.get("risk"),
                 "availability": row.get("live"),
                 "capabilities": row.get("ops", []),
+                "autoOperations": row.get("auto_ops", []),
                 "passport": row.get("passport"),
                 "endpoint": row.get("endpoint"),
             }
@@ -184,8 +185,26 @@ def _delegation_from_routes(coordinate, routes, capabilities, risk, fallback):
             "fallback": list(fallback or []),
             "requiresLiveCheck": True,
             "requiresEvidence": True,
+            "executionPlane": "external_node",
+            "clientExecution": False,
         }
     return None
+
+def _external_node_delegation(coordinate, capabilities, risk, fallback):
+    return {
+        "kind": "ci_node",
+        "executor": NODE_ID,
+        "coordinate": coordinate,
+        "transport": "remote_mcp",
+        "operations": list(capabilities or []),
+        "risk": risk,
+        "fallback": list(fallback or []),
+        "requiresLiveCheck": True,
+        "requiresEvidence": True,
+        "executionPlane": "external_node",
+        "clientExecution": False,
+    }
+
 
 def resolve(intent: str, target=None):
     reg = _registry()
@@ -210,7 +229,12 @@ def resolve(intent: str, target=None):
     capabilities = connection.get("capabilities", [])
     fallback = connection.get("fallback", [])
     risk = connection.get("risk")
-    delegation = _delegation_from_routes(selected, routes, capabilities, risk, fallback) if execution == "DELEGATE_CONNECTOR" else None
+    if execution == "DELEGATE_CONNECTOR":
+        delegation = _delegation_from_routes(selected, routes, capabilities, risk, fallback)
+    elif execution == "ORANGE_LOCAL_SAFE":
+        delegation = _external_node_delegation(selected, capabilities, risk, fallback)
+    else:
+        delegation = None
     return {
         "ok": state != "BLOCKED",
         "node": NODE_ID,
@@ -227,6 +251,55 @@ def resolve(intent: str, target=None):
         "connectorHint": delegation.get("executor") if delegation else None,
         "delegation": delegation,
     }
+
+LIVE_DELEGATION_STATES = {"VERIFIED", "VERIFIED_PARTIAL", "CALLABLE"}
+
+
+def delegate(intent: str, operation: str, target=None):
+    resolution = resolve(intent, target)
+    coordinate = resolution.get("coordinate")
+    connection = _connections(_registry()).get(coordinate, {})
+    capabilities = list(connection.get("capabilities", []))
+    auto_ops = list(connection.get("autoOperations", []))
+    if operation not in capabilities:
+        return {
+            "ok": False, "executed": False, "coordinate": coordinate,
+            "operation": operation, "searchRequired": False,
+            "error": "operation_not_registered", "allowed": capabilities,
+        }
+    delegation = resolution.get("delegation")
+    if delegation is None and coordinate == "CI.LINK":
+        delegation = {
+            "kind": "ci_contact", "executor": "CI.LINK",
+            "coordinate": coordinate, "operations": capabilities,
+            "risk": resolution.get("risk"), "fallback": resolution.get("fallback", []),
+            "requiresLiveCheck": True, "requiresEvidence": True,
+            "executionPlane": "external_node", "clientExecution": False,
+        }
+    live = resolution.get("state") in LIVE_DELEGATION_STATES
+    automatic = bool(live and operation in auto_ops and delegation)
+    return {
+        "ok": bool(live and delegation), "executed": False,
+        "mode": "auto_delegate" if automatic else "gated_delegate",
+        "coordinate": coordinate, "operation": operation,
+        "automatic": automatic, "permissionRequired": not automatic,
+        "searchRequired": False, "resolution": resolution,
+        "delegation": delegation,
+        "client": {
+            "role": "thin_surface", "executesOperation": False,
+            "allowedLocal": ["input_capture", "render_result", "ephemeral_cache", "connectivity", "secure_auth_handoff", "device_presence"],
+        },
+        "condition": {
+            "coordinateKnown": True, "operationRegistered": True,
+            "liveState": live, "boundExecutor": bool(delegation),
+        },
+        "expectedResult": {
+            "terminalState": "VERIFIED", "evidenceRequired": True,
+            "onFailure": "BLOCKED_OR_DEGRADED",
+        },
+        "nextAction": "EXECUTE_EXTERNAL_NODE" if automatic else "REQUEST_PERMISSION_FOR_BOUND_NODE",
+    }
+
 
 def dispatch(intent: str, target=None, mode="contact"):
     resolution = resolve(intent, target)

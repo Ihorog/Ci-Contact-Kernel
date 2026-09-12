@@ -42,6 +42,7 @@ def main():
     tools = """
  tooldef('ci_operator_status','Стан Ci Operator','Get the live Orange operator node, registry, acceptance and executor status.',{'type':'object','properties':{}}),
  tooldef('ci_resolve','Маршрут Ci','Resolve a user intent to the canonical Ci coordinate and safest available executor route.',{'type':'object','properties':{'intent':{'type':'string'},'target':{'type':'string'}},'required':['intent']}),
+ tooldef('ci_delegate','Делегувати вузлу Ci','Bind a registered Ci operation to its already-known external node without searching again. The user device remains a thin surface.',{'type':'object','properties':{'intent':{'type':'string'},'operation':{'type':'string'},'target':{'type':'string'}},'required':['intent','operation']},read_only=True,open_world=True),
  tooldef('ci_dispatch','Передати Ci','Dispatch an intent through the Orange operator. External provider coordinates return a caller-executable delegation envelope; CI.LINK remains contact/sync fallback. Sensitive writes remain permission-gated downstream.',{'type':'object','properties':{'intent':{'type':'string'},'target':{'type':'string'},'mode':{'type':'string','enum':['resolve','status','contact','sync'],'default':'contact'}},'required':['intent']},scope='act',read_only=False,open_world=True),
 """
     marker = "\n]\ndef db():"
@@ -53,6 +54,7 @@ def main():
     calls = """
     if name=='ci_operator_status': return ci_operator.status()
     if name=='ci_resolve': return ci_operator.resolve(args.get('intent',''),args.get('target'))
+    if name=='ci_delegate': return ci_operator.delegate(args.get('intent',''),args.get('operation',''),args.get('target'))
     if name=='ci_dispatch': return ci_operator.dispatch(args.get('intent',''),args.get('target'),args.get('mode','contact'))
 """
     marker = "    return {'ok':False,'error':'unknown_tool'}"

@@ -47,6 +47,7 @@ public final class CiOverlayService extends Service {
     private static final long LONG_PRESS_MS = 420L;
     private static final long SWIPE_MAX_MS = 520L;
     private static final long DOUBLE_TAP_MS = 320L;
+    private static final int HIDDEN_VISIBLE_DP = 12;
 
     private WindowManager windowManager;
     private View activePoint;
@@ -98,7 +99,7 @@ public final class CiOverlayService extends Service {
         touchSlop = ViewConfiguration.get(this).getScaledTouchSlop();
 
         dockSide = prefs.getString(PREF_DOCK_SIDE, "");
-        if (Settings.canDrawOverlays(this) && !prefs.getBoolean(PREF_HIDDEN, false)) {
+        if (Settings.canDrawOverlays(this)) {
             attachCi();
         }
     }
@@ -113,16 +114,13 @@ public final class CiOverlayService extends Service {
             hideCi();
             return START_STICKY;
         }
-        if (ACTION_SHOW.equals(action) && prefs != null) {
-            prefs.edit().putBoolean(PREF_HIDDEN, false).apply();
-            if (overlayState == OverlayState.HIDDEN) overlayState = stableStateFromPrefs();
-        }
-        boolean hidden = prefs != null && prefs.getBoolean(PREF_HIDDEN, false);
-        if (activePoint == null && Settings.canDrawOverlays(this) && !hidden) {
+        if (activePoint == null && Settings.canDrawOverlays(this)) {
             attachCi();
         }
-        if (ACTION_SHOW.equals(action)) {
-            showLogo();
+        if (ACTION_SHOW.equals(action) && prefs != null) {
+            prefs.edit().putBoolean(PREF_HIDDEN, false).apply();
+            if (overlayState == OverlayState.HIDDEN) revealFromHidden(false);
+            else showLogo();
         }
         return START_STICKY;
     }
@@ -151,8 +149,10 @@ public final class CiOverlayService extends Service {
         int preferredY = Math.round(metrics.heightPixels * 0.62f) - pointSize / 2;
         int savedX = prefs != null ? prefs.getInt(PREF_X, preferredX) : preferredX;
         int savedY = prefs != null ? prefs.getInt(PREF_Y, preferredY) : preferredY;
-        overlayState = stableStateFromPrefs();
-        int x = overlayState == OverlayState.DOCKED ? dockX(metrics.widthPixels) : clampX(savedX, metrics.widthPixels);
+        boolean hidden = prefs != null && prefs.getBoolean(PREF_HIDDEN, false);
+        overlayState = hidden ? OverlayState.HIDDEN : stableStateFromPrefs();
+        int x = overlayState == OverlayState.HIDDEN ? hiddenX(metrics.widthPixels)
+                : (overlayState == OverlayState.DOCKED ? dockX(metrics.widthPixels) : clampX(savedX, metrics.widthPixels));
         int y = clampY(savedY, metrics.heightPixels);
 
         activePoint = new View(this);
@@ -268,7 +268,8 @@ public final class CiOverlayService extends Service {
         pendingSingleTap = () -> {
             lastTapUpTime = 0;
             pendingSingleTap = null;
-            if (overlayState == OverlayState.DOCKED) undock(true);
+            if (overlayState == OverlayState.HIDDEN) revealFromHidden(false);
+            else if (overlayState == OverlayState.DOCKED) undock(true);
             else performCiClick();
         };
         handler.postDelayed(pendingSingleTap, DOUBLE_TAP_MS);
@@ -276,11 +277,12 @@ public final class CiOverlayService extends Service {
 
     private void enterMoveMode() {
         if (activePoint == null || ciLogo == null) return;
-        if (overlayState == OverlayState.DOCKED) {
+        if (overlayState == OverlayState.DOCKED || overlayState == OverlayState.HIDDEN) {
             DisplayMetrics metrics = new DisplayMetrics();
             windowManager.getDefaultDisplay().getRealMetrics(metrics);
             int x = "left".equals(dockSide) ? edgeInset : metrics.widthPixels - pointSize - edgeInset;
             moveCi(x, pointParams.y);
+            if (prefs != null) prefs.edit().putBoolean(PREF_HIDDEN, false).apply();
             startX = pointParams.x;
             startY = pointParams.y;
         }
@@ -369,6 +371,25 @@ public final class CiOverlayService extends Service {
         return clampX(prefs != null ? prefs.getInt(PREF_X, edgeInset) : edgeInset, width);
     }
 
+    private int hiddenX(int width) {
+        int visible = dp(HIDDEN_VISIBLE_DP);
+        if ("left".equals(dockSide)) return -pointSize + visible;
+        return width - visible;
+    }
+
+    private void revealFromHidden(boolean invokeAfter) {
+        if (pointParams == null) return;
+        DisplayMetrics metrics = new DisplayMetrics();
+        windowManager.getDefaultDisplay().getRealMetrics(metrics);
+        if (prefs != null) prefs.edit().putBoolean(PREF_HIDDEN, false).apply();
+        int targetX = dockX(metrics.widthPixels);
+        int targetY = clampY(pointParams.y, metrics.heightPixels);
+        animateWindowTo(targetX, targetY, true, () -> {
+            setState(OverlayState.DOCKED);
+            if (invokeAfter) handler.postDelayed(() -> undock(true), 80L);
+        });
+    }
+
     private void animateWindowTo(int targetX, int targetY, boolean spring, Runnable endAction) {
         if (pointParams == null || logoParams == null || activePoint == null || ciLogo == null) return;
         int fromX = pointParams.x;
@@ -413,6 +434,7 @@ public final class CiOverlayService extends Service {
         long d = animate ? 150L : 0L;
         float scale = 1f, alpha = 0.96f, z = dp(8);
         if (overlayState == OverlayState.DOCKED) { scale = 0.94f; alpha = 0.80f; z = dp(5); }
+        if (overlayState == OverlayState.HIDDEN) { scale = 0.82f; alpha = 0.34f; z = dp(2); }
         if (overlayState == OverlayState.MOVE) { scale = 1.08f; alpha = 1f; z = dp(18); }
         if (overlayState == OverlayState.CONTEXT || overlayState == OverlayState.PULSE) { scale = 1.06f; alpha = 1f; z = dp(20); }
         ciLogo.animate().alpha(alpha).scaleX(scale).scaleY(scale).rotationX(0f).rotationY(0f).translationZ(z).setDuration(d).start();
@@ -440,6 +462,13 @@ public final class CiOverlayService extends Service {
 
     private void animateSwipe(float dx, float dy, long duration) {
         String direction = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? "right" : "left") : (dy >= 0 ? "down" : "up");
+        if (overlayState == OverlayState.HIDDEN) {
+            boolean inward = ("left".equals(dockSide) && "right".equals(direction))
+                    || ("right".equals(dockSide) && "left".equals(direction));
+            emitGesture(dx, dy, duration, direction);
+            if (inward) revealFromHidden(false);
+            return;
+        }
         if (overlayState == OverlayState.DOCKED) {
             boolean outward = ("left".equals(dockSide) && "left".equals(direction)) || ("right".equals(dockSide) && "right".equals(direction));
             boolean inward = ("left".equals(dockSide) && "right".equals(direction)) || ("right".equals(dockSide) && "left".equals(direction));
@@ -536,18 +565,22 @@ public final class CiOverlayService extends Service {
     }
 
     private void hideCi() {
+        if (pointParams == null || ciLogo == null) return;
         if (prefs != null) prefs.edit().putBoolean(PREF_HIDDEN, true).apply();
-        overlayState = OverlayState.HIDDEN;
         cancelLongPress();
         cancelPassiveBreath();
         if (pendingSingleTap != null && handler != null) handler.removeCallbacks(pendingSingleTap);
         pendingSingleTap = null;
-        if (ciLogo != null && ciLogo.getAlpha() > 0.2f) {
-            ciLogo.animate().alpha(0f).scaleX(0.80f).scaleY(0.80f).translationZ(0f).setDuration(150)
-                    .withEndAction(this::detachCiViews).start();
-        } else {
-            detachCiViews();
+        DisplayMetrics metrics = new DisplayMetrics();
+        windowManager.getDefaultDisplay().getRealMetrics(metrics);
+        if (!"left".equals(dockSide) && !"right".equals(dockSide)) {
+            dockSide = pointParams.x + pointSize / 2 < metrics.widthPixels / 2 ? "left" : "right";
+            if (prefs != null) prefs.edit().putString(PREF_DOCK_SIDE, dockSide).apply();
         }
+        int targetX = hiddenX(metrics.widthPixels);
+        int targetY = clampY(pointParams.y, metrics.heightPixels);
+        overlayState = OverlayState.HIDDEN;
+        animateWindowTo(targetX, targetY, false, () -> applyStateVisual(true));
     }
 
     private void detachCiViews() {

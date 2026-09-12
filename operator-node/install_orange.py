@@ -42,7 +42,7 @@ def main():
     tools = """
  tooldef('ci_operator_status','Стан Ci Operator','Get the live Orange operator node, registry, acceptance and executor status.',{'type':'object','properties':{}}),
  tooldef('ci_resolve','Маршрут Ci','Resolve a user intent to the canonical Ci coordinate and safest available executor route.',{'type':'object','properties':{'intent':{'type':'string'},'target':{'type':'string'}},'required':['intent']}),
- tooldef('ci_dispatch','Передати Ci','Dispatch an intent through the Orange operator and CI.LINK. Sensitive external writes remain permission-gated downstream.',{'type':'object','properties':{'intent':{'type':'string'},'target':{'type':'string'},'mode':{'type':'string','enum':['resolve','status','contact','sync'],'default':'contact'}},'required':['intent']},scope='act',read_only=False,open_world=True),
+ tooldef('ci_dispatch','Передати Ci','Dispatch an intent through the Orange operator. External provider coordinates return a caller-executable delegation envelope; CI.LINK remains contact/sync fallback. Sensitive writes remain permission-gated downstream.',{'type':'object','properties':{'intent':{'type':'string'},'target':{'type':'string'},'mode':{'type':'string','enum':['resolve','status','contact','sync'],'default':'contact'}},'required':['intent']},scope='act',read_only=False,open_world=True),
 """
     marker = "\n]\ndef db():"
     if "tooldef('ci_operator_status'" not in source:

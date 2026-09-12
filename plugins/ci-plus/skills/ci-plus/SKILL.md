@@ -12,7 +12,7 @@ When Ci+ tools are available:
 1. Call `ci_operator_status` when current operator, Registry or executor state matters.
 2. Call `ci_resolve` before an external action unless the target coordinate is already explicit and live-verified.
 3. Call `ci_delegate` for a registered operation. Do not search for another executor when the Registry already binds the operation to a live node.
-4. If `ci_delegate.automatic=true`, execute the returned external node immediately and require evidence. If permission is required, keep the same bound node and ask only for that permission.
+4. If `ci_delegate.automatic=true`, keep the bound executor. When snapshot freshness is stale/unknown, live-check that same node before execution; do not search for another executor. Require current evidence. If permission is required, keep the same bound node and ask only for that permission.
 5. Treat the user device as a thin surface: input capture, result rendering, ephemeral cache, connectivity, secure auth handoff and device presence only. Do not execute Ci operations on the client device.
 6. Use `ci_executor_status` and `ci_execute_read` only for Orange-local provider adapters when explicitly relevant.
 7. Use `ci_dispatch` for the Ci causal/control path; its availability does not itself grant provider write authority.

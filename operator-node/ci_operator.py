@@ -5,6 +5,7 @@ import platform
 import re
 import socket
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.request import Request, urlopen
 
@@ -73,6 +74,27 @@ def _acceptance():
     return current
 
 
+def _snapshot_freshness(snapshot, reg):
+    policy = reg.get("policy", {}).get("freshness", {}) if isinstance(reg, dict) else {}
+    max_age = int(policy.get("acceptance_max_age_seconds", 86400))
+    generated = snapshot.get("generated_at") if isinstance(snapshot, dict) else None
+    if not generated:
+        return {"status": "UNKNOWN", "generatedAt": None, "ageSeconds": None, "maxAgeSeconds": max_age}
+    try:
+        stamp = datetime.fromisoformat(str(generated).replace("Z", "+00:00"))
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=timezone.utc)
+        age = max(0, int((datetime.now(timezone.utc) - stamp.astimezone(timezone.utc)).total_seconds()))
+        return {
+            "status": "FRESH" if age <= max_age else "STALE",
+            "generatedAt": generated,
+            "ageSeconds": age,
+            "maxAgeSeconds": max_age,
+        }
+    except Exception:
+        return {"status": "UNKNOWN", "generatedAt": generated, "ageSeconds": None, "maxAgeSeconds": max_age}
+
+
 def _connections(reg):
     rows = reg.get("connections")
     if isinstance(rows, list):
@@ -130,6 +152,7 @@ def status():
     reg = _registry()
     snapshot = _acceptance()
     connections = _connections(reg)
+    freshness = _snapshot_freshness(snapshot, reg)
     return {
         "ok": "_error" not in reg and "_error" not in snapshot and bool(connections),
         "node": NODE_ID,
@@ -146,6 +169,7 @@ def status():
         },
         "acceptance": {
             "path": str(ACCEPTANCE_PATH),
+            "freshness": freshness,
             "generatedAt": snapshot.get("generated_at"),
             "summary": snapshot.get("summary"),
             "coordinates": len(snapshot.get("coordinates", [])),
@@ -216,6 +240,7 @@ def resolve(intent: str, target=None):
         selected = "CI.LINK"
     connection = connections.get(selected, {})
     acceptance = states.get(selected, {})
+    freshness = _snapshot_freshness(snapshot, reg)
     state = acceptance.get("state", "UNKNOWN")
     if state == "BLOCKED":
         execution = "BLOCKED"
@@ -241,6 +266,9 @@ def resolve(intent: str, target=None):
         "intent": intent,
         "coordinate": selected,
         "state": state,
+        "effectiveState": "VERIFY_REQUIRED" if freshness.get("status") != "FRESH" and state != "BLOCKED" else state,
+        "stateSource": "acceptance_snapshot",
+        "freshness": freshness,
         "execution": execution,
         "route": routes,
         "fallback": fallback,
@@ -248,6 +276,7 @@ def resolve(intent: str, target=None):
         "capabilities": capabilities,
         "limitation": acceptance.get("limitation"),
         "evidence": acceptance.get("evidence"),
+        "evidenceCurrent": freshness.get("status") == "FRESH",
         "connectorHint": delegation.get("executor") if delegation else None,
         "delegation": delegation,
     }
@@ -276,13 +305,17 @@ def delegate(intent: str, operation: str, target=None):
             "requiresLiveCheck": True, "requiresEvidence": True,
             "executionPlane": "external_node", "clientExecution": False,
         }
-    live = resolution.get("state") in LIVE_DELEGATION_STATES
-    automatic = bool(live and operation in auto_ops and delegation)
+    route_usable = resolution.get("state") in LIVE_DELEGATION_STATES
+    freshness_status = resolution.get("freshness", {}).get("status", "UNKNOWN")
+    automatic = bool(route_usable and operation in auto_ops and delegation)
+    freshness_check_required = freshness_status != "FRESH"
     return {
-        "ok": bool(live and delegation), "executed": False,
+        "ok": bool(route_usable and delegation), "executed": False,
         "mode": "auto_delegate" if automatic else "gated_delegate",
         "coordinate": coordinate, "operation": operation,
-        "automatic": automatic, "permissionRequired": not automatic,
+        "automatic": automatic,
+        "permissionRequired": bool(operation not in auto_ops),
+        "freshnessCheckRequired": freshness_check_required,
         "searchRequired": False, "resolution": resolution,
         "delegation": delegation,
         "client": {
@@ -291,13 +324,18 @@ def delegate(intent: str, operation: str, target=None):
         },
         "condition": {
             "coordinateKnown": True, "operationRegistered": True,
-            "liveState": live, "boundExecutor": bool(delegation),
+            "routeUsable": route_usable, "boundExecutor": bool(delegation),
+            "snapshotFreshness": freshness_status,
         },
         "expectedResult": {
             "terminalState": "VERIFIED", "evidenceRequired": True,
             "onFailure": "BLOCKED_OR_DEGRADED",
         },
-        "nextAction": "EXECUTE_EXTERNAL_NODE" if automatic else "REQUEST_PERMISSION_FOR_BOUND_NODE",
+        "nextAction": (
+            "VERIFY_BOUND_NODE_THEN_EXECUTE" if automatic and freshness_check_required
+            else "EXECUTE_EXTERNAL_NODE" if automatic
+            else "REQUEST_PERMISSION_FOR_BOUND_NODE"
+        ),
     }
 
 

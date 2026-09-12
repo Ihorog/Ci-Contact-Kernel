@@ -8,30 +8,43 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import java.util.ArrayList;
+import java.util.List;
 
 public final class MainActivity extends Activity {
     private static final int OVERLAY_REQUEST = 101;
-    private static final int NOTIFICATION_REQUEST = 102;
+    private static final int RUNTIME_REQUEST = 102;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        requestCiPermissions();
+    }
 
+    private void requestCiPermissions() {
+        List<String> missing = new ArrayList<>();
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            missing.add(Manifest.permission.RECORD_AUDIO);
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
-                != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(
-                    new String[]{Manifest.permission.POST_NOTIFICATIONS},
-                    NOTIFICATION_REQUEST
-            );
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            missing.add(Manifest.permission.POST_NOTIFICATIONS);
+        }
+        if (!missing.isEmpty()) {
+            requestPermissions(missing.toArray(new String[0]), RUNTIME_REQUEST);
             return;
         }
+        requestOverlayOrStart();
+    }
 
-        if (Settings.canDrawOverlays(this)) {
-            startCi();
-            return;
-        }
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == RUNTIME_REQUEST) requestOverlayOrStart();
+    }
 
+    private void requestOverlayOrStart() {
+        if (Settings.canDrawOverlays(this)) { startCi(); return; }
         Intent permissionIntent = new Intent(
                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                 Uri.parse("package:" + getPackageName())
@@ -42,21 +55,15 @@ public final class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == OVERLAY_REQUEST && Settings.canDrawOverlays(this)) {
-            startCi();
-        } else {
-            finish();
-        }
+        if (requestCode == OVERLAY_REQUEST && Settings.canDrawOverlays(this)) startCi();
+        else finish();
     }
 
     private void startCi() {
         Intent serviceIntent = new Intent(this, CiOverlayService.class);
         serviceIntent.setAction(CiOverlayService.ACTION_SHOW);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(serviceIntent);
-        } else {
-            startService(serviceIntent);
-        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(serviceIntent);
+        else startService(serviceIntent);
         finish();
     }
 }

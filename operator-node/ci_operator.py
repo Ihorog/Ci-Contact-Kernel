@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.request import Request, urlopen
 
+import vault_node
+
 VERSION = "1.0.2"
 NODE_ID = "CI.OPERATOR.ORANGE"
 REGISTRY_PATH = Path(os.getenv("CI_REGISTRY_PATH", "/home/kazkar/cimeika/cit/registry/ci-registry/v1.1.0/ci-registry.json"))
@@ -30,7 +32,8 @@ KEYWORDS = [
     (r"cloudflare|worker|tunnel|воркер", "CI.CLOUDFLARE"),
     (r"github|\brepo\b|repository|\bgit\b|репозитор|коміт|commit", "CI.GITHUB"),
     (r"orange pi|orangepi|\borange\b|systemd", "CI.ORANGE"),
-    (r"keenetic|router|vault|роутер|сховищ", "CI.KEENETIC"),
+    (r"vault|сховищ|сховище", "CI.VAULT"),
+    (r"keenetic|router|роутер", "CI.KEENETIC"),
     (r"remote desktop|\brdc\b|cihub", "CI.RDC"),
     (r"gmail|\bmail\b|\bemail\b|пошта", "CI.GMAIL"),
     (r"calendar|календар", "CI.CALENDAR"),
@@ -45,7 +48,7 @@ KEYWORDS = [
     (r"home|дім|хата|будинок", "CI.HOME"),
 ]
 
-LOCAL_COORDINATES = {"CI.ORANGE", "CI.KEENETIC", "CI.HOME", "CI.RDC"}
+LOCAL_COORDINATES = {"CI.ORANGE", "CI.KEENETIC", "CI.VAULT", "CI.HOME", "CI.RDC"}
 
 
 def _load(path: Path):
@@ -180,6 +183,7 @@ def status():
             "localSafe": sorted(LOCAL_COORDINATES),
             "ciLink": _link_endpoint(reg),
             "externalProviders": "delegate_until_provider_credentials_are_mounted_on_orange",
+            "vault": vault_node.status(),
         },
     }
 
@@ -242,6 +246,16 @@ def resolve(intent: str, target=None):
     acceptance = states.get(selected, {})
     freshness = _snapshot_freshness(snapshot, reg)
     state = acceptance.get("state", "UNKNOWN")
+    state_source = "acceptance_snapshot"
+    evidence = acceptance.get("evidence")
+    evidence_current = freshness.get("status") == "FRESH"
+    if selected == "CI.VAULT":
+        live = vault_node.status()
+        state = "VERIFIED" if live.get("ok") else "UNAVAILABLE"
+        state_source = "live_probe"
+        evidence = live
+        evidence_current = bool(live.get("ok"))
+        freshness = {"status": "FRESH" if live.get("ok") else "UNKNOWN", "source": "live_probe", "checkedAt": datetime.now(timezone.utc).isoformat()}
     if state == "BLOCKED":
         execution = "BLOCKED"
     elif selected == "CI.LINK":
@@ -261,13 +275,13 @@ def resolve(intent: str, target=None):
     else:
         delegation = None
     return {
-        "ok": state != "BLOCKED",
+        "ok": state not in {"BLOCKED", "UNAVAILABLE"},
         "node": NODE_ID,
         "intent": intent,
         "coordinate": selected,
         "state": state,
         "effectiveState": "VERIFY_REQUIRED" if freshness.get("status") != "FRESH" and state != "BLOCKED" else state,
-        "stateSource": "acceptance_snapshot",
+        "stateSource": state_source,
         "freshness": freshness,
         "execution": execution,
         "route": routes,
@@ -275,8 +289,8 @@ def resolve(intent: str, target=None):
         "risk": risk,
         "capabilities": capabilities,
         "limitation": acceptance.get("limitation"),
-        "evidence": acceptance.get("evidence"),
-        "evidenceCurrent": freshness.get("status") == "FRESH",
+        "evidence": evidence,
+        "evidenceCurrent": evidence_current,
         "connectorHint": delegation.get("executor") if delegation else None,
         "delegation": delegation,
     }

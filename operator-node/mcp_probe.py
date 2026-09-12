@@ -55,7 +55,7 @@ result = {
 print(json.dumps(result, ensure_ascii=False, indent=2))
 ok = (
     health_status == 200 and health.get('node') == 'CI.OPERATOR.ORANGE'
-    and health.get('registry', {}).get('connections') == 28
+    and health.get('registry', {}).get('connections') == 29
     and oauth_status == 200 and oauth.get('resource') == BASE
     and init_status == 200 and init.get('result', {}).get('serverInfo', {}).get('name') == 'ci-operator'
     and tools_status == 200 and required.issubset(names)

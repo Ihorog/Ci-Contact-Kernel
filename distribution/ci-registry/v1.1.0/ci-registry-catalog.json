@@ -12,6 +12,7 @@
     "CI.RDC":{"kind":"connector","role":"authorized_remote_computer","provider":"Remote Desktop Commander"},
     "CI.ORANGE":{"kind":"asset","role":"orange_pi_node"},
     "CI.KEENETIC":{"kind":"asset","role":"network_node"},
+    "CI.VAULT":{"kind":"asset","role":"personal_vault_storage","provider":"Keenetic/Orange"},
     "CI.HOME":{"kind":"domain","role":"home_resources_and_local_infrastructure"},
     "CI.DRIVE":{"kind":"connector","role":"files_and_documents","provider":"Google Drive"},
     "CI.DROPBOX":{"kind":"connector","role":"files_and_storage","provider":"Dropbox"},

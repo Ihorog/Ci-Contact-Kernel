@@ -33,6 +33,7 @@ public final class CiOverlayService extends Service {
     public static final String ACTION_HIDE = "ua.cimeika.cipoint.HIDE";
     public static final String ACTION_CI_CLICK = "ua.cimeika.ci.action.CLICK";
     public static final String ACTION_CI_GESTURE = "ua.cimeika.ci.action.GESTURE";
+    public static final String ACTION_CI_RESULT = "ua.cimeika.ci.action.RESULT";
 
     private static final String CHANNEL_ID = "ci_active_point";
     private static final int NOTIFICATION_ID = 7;
@@ -60,6 +61,7 @@ public final class CiOverlayService extends Service {
     private int touchSlop;
     private Handler handler;
     private SharedPreferences prefs;
+    private CiVoiceController voiceController;
 
     private enum OverlayState { PASSIVE, CONTEXT, MOVE, DOCKED, PULSE, HIDDEN }
     private OverlayState overlayState = OverlayState.PASSIVE;
@@ -76,6 +78,11 @@ public final class CiOverlayService extends Service {
     private long lastTapUpTime;
     private Runnable pendingSingleTap;
     private Runnable pendingLongPress;
+    private float gestureCenterX;
+    private float gestureCenterY;
+    private double lastGestureAngle;
+    private double accumulatedGestureAngle;
+    private int gestureAngleSamples;
 
     @Override
     public void onCreate() {
@@ -94,6 +101,12 @@ public final class CiOverlayService extends Service {
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         handler = new Handler(Looper.getMainLooper());
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        voiceController = new CiVoiceController(this, new CiVoiceController.Callback() {
+            @Override public void onListeningChanged(boolean listening) { handler.post(() -> handleVoiceListening(listening)); }
+            @Override public void onTranscript(String text) { handler.post(() -> handleVoiceTranscript(text)); }
+            @Override public void onResult(org.json.JSONObject result) { handler.post(() -> handleVoiceResult(result)); }
+            @Override public void onError(String error) { handler.post(() -> handleVoiceError(error)); }
+        });
         pointSize = dp(72);
         edgeInset = dp(18);
         touchSlop = ViewConfiguration.get(this).getScaledTouchSlop();
@@ -135,6 +148,8 @@ public final class CiOverlayService extends Service {
         cancelLongPress();
         cancelPassiveBreath();
         if (pendingSingleTap != null && handler != null) handler.removeCallbacks(pendingSingleTap);
+        if (voiceController != null) voiceController.close();
+        voiceController = null;
         removeOverlay(activePoint);
         removeOverlay(ciLogo);
         activePoint = null;
@@ -207,6 +222,11 @@ public final class CiOverlayService extends Service {
                 startY = pointParams.y;
                 dragging = false;
                 longPressTriggered = false;
+                gestureCenterX = pointParams.x + pointSize / 2f;
+                gestureCenterY = pointParams.y + pointSize / 2f;
+                lastGestureAngle = Math.atan2(event.getRawY() - gestureCenterY, event.getRawX() - gestureCenterX);
+                accumulatedGestureAngle = 0d;
+                gestureAngleSamples = 0;
                 pendingLongPress = this::enterMoveMode;
                 handler.postDelayed(pendingLongPress, LONG_PRESS_MS);
                 return true;
@@ -215,6 +235,7 @@ public final class CiOverlayService extends Service {
                 float moveDx = event.getRawX() - downRawX;
                 float moveDy = event.getRawY() - downRawY;
                 double moveDistance = Math.hypot(moveDx, moveDy);
+                if (overlayState != OverlayState.MOVE) updateCircularGesture(event.getRawX(), event.getRawY());
                 if (overlayState == OverlayState.MOVE) {
                     dragging = true;
                     moveCi(startX + Math.round(moveDx), startY + Math.round(moveDy));
@@ -231,6 +252,8 @@ public final class CiOverlayService extends Service {
                 double distance = Math.hypot(dx, dy);
                 if (overlayState == OverlayState.MOVE) {
                     finishMove();
+                } else if (isCircularGesture() && duration <= 1800L) {
+                    animateCircularGesture(accumulatedGestureAngle > 0d);
                 } else if (distance <= touchSlop && duration < 650) {
                     handleTap();
                 } else if (distance >= dp(32) && duration <= SWIPE_MAX_MS) {
@@ -491,6 +514,63 @@ public final class CiOverlayService extends Service {
         emitGesture(dx, dy, duration, direction);
     }
 
+    private void updateCircularGesture(float rawX, float rawY) {
+        double radius = Math.hypot(rawX - gestureCenterX, rawY - gestureCenterY);
+        if (radius < dp(10)) return;
+        double angle = Math.atan2(rawY - gestureCenterY, rawX - gestureCenterX);
+        double delta = angle - lastGestureAngle;
+        while (delta > Math.PI) delta -= Math.PI * 2d;
+        while (delta < -Math.PI) delta += Math.PI * 2d;
+        if (Math.abs(delta) < 1.35d) {
+            accumulatedGestureAngle += delta;
+            gestureAngleSamples++;
+        }
+        lastGestureAngle = angle;
+    }
+
+    private boolean isCircularGesture() {
+        return gestureAngleSamples >= 6 && Math.abs(accumulatedGestureAngle) >= 4.2d;
+    }
+
+    private void animateCircularGesture(boolean clockwise) {
+        if (ciLogo == null) return;
+        String semantic = clockwise ? "restore_context" : "collapse_all";
+        setState(OverlayState.PULSE);
+        float rotation = clockwise ? 180f : -180f;
+        float midScale = clockwise ? 1.14f : 0.76f;
+        ciLogo.animate().rotation(rotation).scaleX(midScale).scaleY(midScale)
+                .alpha(clockwise ? 1f : 0.52f).translationZ(clockwise ? dp(26) : dp(2))
+                .setDuration(230).withEndAction(() -> ciLogo.animate()
+                        .rotation(0f).scaleX(1f).scaleY(1f).alpha(0.96f).translationZ(dp(8))
+                        .setDuration(280).withEndAction(() -> setState(stableStateFromPrefs())).start()).start();
+        emitSemanticGesture(semantic, clockwise ? "clockwise" : "counterclockwise");
+    }
+
+    private void animateSemanticNudge(String direction, String semantic) {
+        float distance = dp(15);
+        float tx = 0f, ty = 0f, rx = 0f, ry = 0f;
+        if ("left".equals(direction)) { tx = -distance; ry = -7f; }
+        if ("right".equals(direction)) { tx = distance; ry = 7f; }
+        if ("up".equals(direction)) { ty = -distance; rx = 7f; }
+        if ("down".equals(direction)) { ty = distance; rx = -7f; }
+        final float ftx = tx, fty = ty, frx = rx, fry = ry;
+        setState(OverlayState.PULSE);
+        if (ciLogo != null) ciLogo.animate().translationX(ftx).translationY(fty).rotationX(frx).rotationY(fry)
+                .setDuration(110).withEndAction(() -> ciLogo.animate().translationX(0f).translationY(0f)
+                        .rotationX(0f).rotationY(0f).setDuration(180)
+                        .withEndAction(() -> setState(stableStateFromPrefs())).start()).start();
+        emitSemanticGesture(semantic, direction);
+    }
+
+    private void emitSemanticGesture(String semantic, String direction) {
+        Intent event = new Intent(ACTION_CI_GESTURE);
+        event.putExtra("semantic", semantic);
+        event.putExtra("direction", direction);
+        event.putExtra("timestamp", System.currentTimeMillis());
+        event.putExtra("source", "ci-overlay-v3");
+        sendBroadcast(event);
+    }
+
     private void pulseThenHide() {
         if (ciLogo == null) { hideCi(); return; }
         setState(OverlayState.PULSE);
@@ -509,12 +589,10 @@ public final class CiOverlayService extends Service {
         }
         Intent event = new Intent(ACTION_CI_CLICK);
         event.putExtra("timestamp", System.currentTimeMillis());
-        event.putExtra("source", "ci-overlay-v2");
+        event.putExtra("source", "ci-overlay-v3");
         event.putExtra("action", "invoke-ci-context");
-        event.putExtra("gpt", "Ci");
         sendBroadcast(event);
-        handler.postDelayed(this::launchCiGpt, 120L);
-        handler.postDelayed(() -> setState(stableStateFromPrefs()), 520L);
+        handler.postDelayed(() -> setState(stableStateFromPrefs()), 420L);
     }
 
     private void emitGesture(float dx, float dy, long duration, String direction) {
@@ -523,6 +601,10 @@ public final class CiOverlayService extends Service {
         event.putExtra("dy", dy);
         event.putExtra("duration", duration);
         event.putExtra("direction", direction);
+        String semantic = "right".equals(direction) ? "previous"
+                : ("left".equals(direction) ? "next"
+                : ("up".equals(direction) ? "tools" : "collapse_current"));
+        event.putExtra("semantic", semantic);
         event.putExtra("timestamp", System.currentTimeMillis());
         event.putExtra("source", "ci-active-point");
         sendBroadcast(event);
@@ -530,20 +612,88 @@ public final class CiOverlayService extends Service {
 
     private void performVoiceDoubleClick() {
         vibrate();
-        setState(OverlayState.PULSE);
-        if (ciLogo != null) {
-            ciLogo.animate().alpha(0.58f).scaleX(1.12f).scaleY(1.12f).translationZ(dp(24)).setDuration(90)
-                    .withEndAction(() -> ciLogo.animate().alpha(1f).scaleX(1f).scaleY(1f).translationZ(dp(12))
-                            .setDuration(190).start()).start();
+        if (voiceController == null) {
+            handleVoiceError("voice_controller_unavailable");
+            return;
         }
+        voiceController.toggle();
+    }
+
+    private void handleVoiceListening(boolean listening) {
+        setState(listening ? OverlayState.CONTEXT : OverlayState.PULSE);
+        if (ciLogo == null) return;
+        ciLogo.animate().cancel();
+        if (listening) {
+            ciLogo.animate().alpha(1f).scaleX(1.12f).scaleY(1.12f)
+                    .translationZ(dp(26)).setDuration(160).start();
+        } else {
+            ciLogo.animate().alpha(0.96f).scaleX(1.04f).scaleY(1.04f)
+                    .translationZ(dp(16)).setDuration(180).start();
+        }
+    }
+
+    private void handleVoiceTranscript(String text) {
+        setState(OverlayState.PULSE);
         Intent event = new Intent(ACTION_CI_CLICK);
         event.putExtra("timestamp", System.currentTimeMillis());
-        event.putExtra("source", "ci-overlay-v2");
-        event.putExtra("action", "invoke-ci-voice");
-        event.putExtra("gpt", "Ci");
+        event.putExtra("source", "ci-overlay-v3");
+        event.putExtra("action", "voice-transcript");
+        event.putExtra("text", text);
         sendBroadcast(event);
-        handler.postDelayed(this::launchCiGpt, 110L);
-        handler.postDelayed(() -> setState(stableStateFromPrefs()), 520L);
+    }
+
+    private void handleVoiceResult(org.json.JSONObject result) {
+        String action = result.optString("action", "answer");
+        Intent event = new Intent(ACTION_CI_RESULT);
+        event.putExtra("timestamp", System.currentTimeMillis());
+        event.putExtra("source", "ci-overlay-v3");
+        event.putExtra("action", action);
+        event.putExtra("result", result.toString());
+        sendBroadcast(event);
+        if ("open_gpt".equals(action)) {
+            launchCiGpt();
+        } else if ("previous".equals(action)) {
+            animateSemanticNudge("right", "previous");
+        } else if ("next".equals(action)) {
+            animateSemanticNudge("left", "next");
+        } else if ("tools".equals(action)) {
+            animateSemanticNudge("up", "tools");
+        } else if ("collapse_current".equals(action)) {
+            animateSemanticNudge("down", "collapse_current");
+        } else if ("collapse_all".equals(action)) {
+            animateCircularGesture(false);
+        } else if ("restore_context".equals(action)) {
+            animateCircularGesture(true);
+        } else {
+            pulseResult();
+        }
+    }
+
+    private void handleVoiceError(String error) {
+        Intent event = new Intent(ACTION_CI_RESULT);
+        event.putExtra("timestamp", System.currentTimeMillis());
+        event.putExtra("source", "ci-overlay-v3");
+        event.putExtra("action", "error");
+        event.putExtra("error", error);
+        sendBroadcast(event);
+        pulseError();
+    }
+
+    private void pulseResult() {
+        if (ciLogo == null) return;
+        setState(OverlayState.PULSE);
+        ciLogo.animate().scaleX(1.13f).scaleY(1.13f).alpha(1f).translationZ(dp(24))
+                .setDuration(120).withEndAction(() -> ciLogo.animate()
+                        .scaleX(1f).scaleY(1f).alpha(0.96f).translationZ(dp(8))
+                        .setDuration(260).withEndAction(() -> setState(stableStateFromPrefs())).start()).start();
+    }
+
+    private void pulseError() {
+        if (ciLogo == null) return;
+        setState(OverlayState.PULSE);
+        ciLogo.animate().rotation(-7f).setDuration(70).withEndAction(() -> ciLogo.animate()
+                .rotation(7f).setDuration(90).withEndAction(() -> ciLogo.animate()
+                        .rotation(0f).setDuration(90).withEndAction(() -> setState(stableStateFromPrefs())).start()).start()).start();
     }
 
     private void launchChatGpt() {

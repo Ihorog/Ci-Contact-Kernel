@@ -6,8 +6,9 @@ import operator_telemetry as telemetry
 import provider_adapters
 import release_manager
 import self_update as updater
+import vault_node
 
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 NODE_ID = base.NODE_ID
 
 
@@ -98,7 +99,15 @@ def dispatch(intent: str, target=None, mode="contact"):
 
 
 def executor_status():
-    return {"ok": True, "node": NODE_ID, "operatorRuntimeVersion": VERSION, "adapters": provider_adapters.probe_all()}
+    return {"ok": True, "node": NODE_ID, "operatorRuntimeVersion": VERSION, "adapters": provider_adapters.probe_all(), "vault": vault_node.status()}
+
+
+def vault(action: str, **kwargs):
+    started = time.perf_counter()
+    result = vault_node.execute(action, **kwargs)
+    result["operatorRuntimeVersion"] = VERSION
+    _record("vault_" + str(action), started, result, coordinate="CI.VAULT", route="ORANGE_VAULT")
+    return result
 
 
 def execute_read(coordinate: str, operation: str):

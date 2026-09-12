@@ -5,6 +5,7 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -24,6 +25,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.WindowManager;
+import android.view.animation.OvershootInterpolator;
 import android.widget.ImageView;
 
 public final class CiOverlayService extends Service {
@@ -40,8 +42,9 @@ public final class CiOverlayService extends Service {
     private static final String PREF_X = "x";
     private static final String PREF_Y = "y";
     private static final String PREF_HIDDEN = "hidden";
-    private static final long LONG_PRESS_MS = 700L;
-    private static final long DRAG_ARM_MS = 180L;
+    private static final String PREF_STATE = "state";
+    private static final String PREF_DOCK_SIDE = "dock_side";
+    private static final long LONG_PRESS_MS = 420L;
     private static final long SWIPE_MAX_MS = 520L;
     private static final long DOUBLE_TAP_MS = 320L;
 
@@ -56,6 +59,11 @@ public final class CiOverlayService extends Service {
     private int touchSlop;
     private Handler handler;
     private SharedPreferences prefs;
+
+    private enum OverlayState { PASSIVE, CONTEXT, MOVE, DOCKED, PULSE, HIDDEN }
+    private OverlayState overlayState = OverlayState.PASSIVE;
+    private String dockSide = "";
+    private Runnable passiveBreath;
 
     private float downRawX;
     private float downRawY;
@@ -89,6 +97,7 @@ public final class CiOverlayService extends Service {
         edgeInset = dp(18);
         touchSlop = ViewConfiguration.get(this).getScaledTouchSlop();
 
+        dockSide = prefs.getString(PREF_DOCK_SIDE, "");
         if (Settings.canDrawOverlays(this) && !prefs.getBoolean(PREF_HIDDEN, false)) {
             attachCi();
         }
@@ -106,6 +115,7 @@ public final class CiOverlayService extends Service {
         }
         if (ACTION_SHOW.equals(action) && prefs != null) {
             prefs.edit().putBoolean(PREF_HIDDEN, false).apply();
+            if (overlayState == OverlayState.HIDDEN) overlayState = stableStateFromPrefs();
         }
         boolean hidden = prefs != null && prefs.getBoolean(PREF_HIDDEN, false);
         if (activePoint == null && Settings.canDrawOverlays(this) && !hidden) {
@@ -125,6 +135,7 @@ public final class CiOverlayService extends Service {
     @Override
     public void onDestroy() {
         cancelLongPress();
+        cancelPassiveBreath();
         if (pendingSingleTap != null && handler != null) handler.removeCallbacks(pendingSingleTap);
         removeOverlay(activePoint);
         removeOverlay(ciLogo);
@@ -140,7 +151,8 @@ public final class CiOverlayService extends Service {
         int preferredY = Math.round(metrics.heightPixels * 0.62f) - pointSize / 2;
         int savedX = prefs != null ? prefs.getInt(PREF_X, preferredX) : preferredX;
         int savedY = prefs != null ? prefs.getInt(PREF_Y, preferredY) : preferredY;
-        int x = clampX(savedX, metrics.widthPixels);
+        overlayState = stableStateFromPrefs();
+        int x = overlayState == OverlayState.DOCKED ? dockX(metrics.widthPixels) : clampX(savedX, metrics.widthPixels);
         int y = clampY(savedY, metrics.heightPixels);
 
         activePoint = new View(this);
@@ -158,12 +170,15 @@ public final class CiOverlayService extends Service {
         ciLogo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         ciLogo.setBackgroundColor(android.graphics.Color.TRANSPARENT);
         ciLogo.setAlpha(0.96f);
+        ciLogo.setElevation(dp(16));
+        ciLogo.setTranslationZ(dp(8));
 
         logoParams = overlayParams(pointSize, pointSize, x, y,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                         | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
                         | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS);
         windowManager.addView(ciLogo, logoParams);
+        applyStateVisual(false);
     }
 
     private WindowManager.LayoutParams overlayParams(int width, int height, int x, int y, int flags) {
@@ -192,32 +207,30 @@ public final class CiOverlayService extends Service {
                 startY = pointParams.y;
                 dragging = false;
                 longPressTriggered = false;
-                pendingLongPress = this::hideIfStillPressed;
+                pendingLongPress = this::enterMoveMode;
                 handler.postDelayed(pendingLongPress, LONG_PRESS_MS);
                 return true;
 
             case MotionEvent.ACTION_MOVE:
                 float moveDx = event.getRawX() - downRawX;
                 float moveDy = event.getRawY() - downRawY;
-                long elapsed = System.currentTimeMillis() - downTime;
                 double moveDistance = Math.hypot(moveDx, moveDy);
-                if (moveDistance > touchSlop) {
+                if (overlayState == OverlayState.MOVE) {
+                    dragging = true;
+                    moveCi(startX + Math.round(moveDx), startY + Math.round(moveDy));
+                } else if (moveDistance > dp(22)) {
                     cancelLongPress();
-                    if (!dragging && elapsed >= DRAG_ARM_MS) dragging = true;
-                    if (dragging) moveCi(startX + Math.round(moveDx), startY + Math.round(moveDy));
                 }
                 return true;
 
             case MotionEvent.ACTION_UP:
                 cancelLongPress();
-                if (longPressTriggered) return true;
                 float dx = event.getRawX() - downRawX;
                 float dy = event.getRawY() - downRawY;
                 long duration = System.currentTimeMillis() - downTime;
                 double distance = Math.hypot(dx, dy);
-                if (dragging) {
-                    savePosition();
-                    settleAfterMove();
+                if (overlayState == OverlayState.MOVE) {
+                    finishMove();
                 } else if (distance <= touchSlop && duration < 650) {
                     handleTap();
                 } else if (distance >= dp(32) && duration <= SWIPE_MAX_MS) {
@@ -227,7 +240,7 @@ public final class CiOverlayService extends Service {
 
             case MotionEvent.ACTION_CANCEL:
                 cancelLongPress();
-                if (dragging) savePosition();
+                if (overlayState == OverlayState.MOVE) finishMove();
                 return true;
 
             default:
@@ -236,7 +249,7 @@ public final class CiOverlayService extends Service {
     }
 
     private void cancelLongPress() {
-        if (pendingLongPress != null) {
+        if (pendingLongPress != null && handler != null) {
             handler.removeCallbacks(pendingLongPress);
             pendingLongPress = null;
         }
@@ -255,16 +268,28 @@ public final class CiOverlayService extends Service {
         pendingSingleTap = () -> {
             lastTapUpTime = 0;
             pendingSingleTap = null;
-            performCiClick();
+            if (overlayState == OverlayState.DOCKED) undock(true);
+            else performCiClick();
         };
         handler.postDelayed(pendingSingleTap, DOUBLE_TAP_MS);
     }
 
-    private void hideIfStillPressed() {
-        if (!dragging && activePoint != null) {
-            longPressTriggered = true;
-            hideCi();
+    private void enterMoveMode() {
+        if (activePoint == null || ciLogo == null) return;
+        if (overlayState == OverlayState.DOCKED) {
+            DisplayMetrics metrics = new DisplayMetrics();
+            windowManager.getDefaultDisplay().getRealMetrics(metrics);
+            int x = "left".equals(dockSide) ? edgeInset : metrics.widthPixels - pointSize - edgeInset;
+            moveCi(x, pointParams.y);
+            startX = pointParams.x;
+            startY = pointParams.y;
         }
+        longPressTriggered = true;
+        setState(OverlayState.MOVE);
+        vibrate();
+        ciLogo.animate().cancel();
+        ciLogo.animate().alpha(1f).scaleX(1.08f).scaleY(1.08f)
+                .rotationX(-4f).translationZ(dp(18)).setDuration(150).start();
     }
 
     private void moveCi(int requestedX, int requestedY) {
@@ -294,57 +319,173 @@ public final class CiOverlayService extends Service {
         prefs.edit().putInt(PREF_X, pointParams.x).putInt(PREF_Y, pointParams.y).apply();
     }
 
-    private void settleAfterMove() {
+    private void finishMove() {
+        if (pointParams == null) return;
+        DisplayMetrics metrics = new DisplayMetrics();
+        windowManager.getDefaultDisplay().getRealMetrics(metrics);
+        int trigger = dp(42);
+        if (pointParams.x <= edgeInset + trigger) {
+            dockTo("left");
+        } else if (pointParams.x >= metrics.widthPixels - pointSize - edgeInset - trigger) {
+            dockTo("right");
+        } else {
+            savePosition();
+            setState(OverlayState.PASSIVE);
+            animateWindowTo(pointParams.x, pointParams.y, true, null);
+        }
+        dragging = false;
+        longPressTriggered = false;
+    }
+
+    private void dockTo(String side) {
+        DisplayMetrics metrics = new DisplayMetrics();
+        windowManager.getDefaultDisplay().getRealMetrics(metrics);
+        dockSide = side;
+        if (prefs != null) prefs.edit().putString(PREF_DOCK_SIDE, side).putString(PREF_STATE, OverlayState.DOCKED.name()).apply();
+        int targetX = "left".equals(side) ? -Math.round(pointSize * 0.42f) : metrics.widthPixels - Math.round(pointSize * 0.58f);
+        int targetY = clampY(pointParams.y, metrics.heightPixels);
+        animateWindowTo(targetX, targetY, true, () -> {
+            savePosition();
+            setState(OverlayState.DOCKED);
+        });
+    }
+
+    private void undock(boolean invokeAfter) {
+        if (pointParams == null) return;
+        DisplayMetrics metrics = new DisplayMetrics();
+        windowManager.getDefaultDisplay().getRealMetrics(metrics);
+        int targetX = "left".equals(dockSide) ? edgeInset : metrics.widthPixels - pointSize - edgeInset;
+        int targetY = clampY(pointParams.y, metrics.heightPixels);
+        animateWindowTo(targetX, targetY, true, () -> {
+            savePosition();
+            setState(OverlayState.PASSIVE);
+            if (invokeAfter) handler.postDelayed(this::performCiClick, 80L);
+        });
+    }
+
+    private int dockX(int width) {
+        if ("left".equals(dockSide)) return -Math.round(pointSize * 0.42f);
+        if ("right".equals(dockSide)) return width - Math.round(pointSize * 0.58f);
+        return clampX(prefs != null ? prefs.getInt(PREF_X, edgeInset) : edgeInset, width);
+    }
+
+    private void animateWindowTo(int targetX, int targetY, boolean spring, Runnable endAction) {
+        if (pointParams == null || logoParams == null || activePoint == null || ciLogo == null) return;
+        int fromX = pointParams.x;
+        int fromY = pointParams.y;
+        ValueAnimator animator = ValueAnimator.ofFloat(0f, 1f);
+        animator.setDuration(spring ? 280L : 190L);
+        if (spring) animator.setInterpolator(new OvershootInterpolator(0.72f));
+        animator.addUpdateListener(a -> {
+            float f = (float) a.getAnimatedValue();
+            int x = Math.round(fromX + (targetX - fromX) * f);
+            int y = Math.round(fromY + (targetY - fromY) * f);
+            pointParams.x = x; pointParams.y = y;
+            logoParams.x = x; logoParams.y = y;
+            try {
+                windowManager.updateViewLayout(activePoint, pointParams);
+                windowManager.updateViewLayout(ciLogo, logoParams);
+            } catch (Exception ignored) { }
+        });
+        if (endAction != null) animator.addListener(new android.animation.AnimatorListenerAdapter() {
+            @Override public void onAnimationEnd(android.animation.Animator animation) { endAction.run(); }
+        });
+        animator.start();
+    }
+
+    private OverlayState stableStateFromPrefs() {
+        String saved = prefs != null ? prefs.getString(PREF_STATE, OverlayState.PASSIVE.name()) : OverlayState.PASSIVE.name();
+        return OverlayState.DOCKED.name().equals(saved) ? OverlayState.DOCKED : OverlayState.PASSIVE;
+    }
+
+    private void setState(OverlayState next) {
+        overlayState = next;
+        if (prefs != null && (next == OverlayState.PASSIVE || next == OverlayState.DOCKED)) {
+            prefs.edit().putString(PREF_STATE, next.name()).apply();
+        }
+        applyStateVisual(true);
+    }
+
+    private void applyStateVisual(boolean animate) {
         if (ciLogo == null) return;
-        ciLogo.animate().scaleX(1.03f).scaleY(1.03f).setDuration(90)
-                .withEndAction(() -> ciLogo.animate().scaleX(1f).scaleY(1f).setDuration(120).start())
-                .start();
+        cancelPassiveBreath();
+        ciLogo.animate().cancel();
+        long d = animate ? 150L : 0L;
+        float scale = 1f, alpha = 0.96f, z = dp(8);
+        if (overlayState == OverlayState.DOCKED) { scale = 0.94f; alpha = 0.80f; z = dp(5); }
+        if (overlayState == OverlayState.MOVE) { scale = 1.08f; alpha = 1f; z = dp(18); }
+        if (overlayState == OverlayState.CONTEXT || overlayState == OverlayState.PULSE) { scale = 1.06f; alpha = 1f; z = dp(20); }
+        ciLogo.animate().alpha(alpha).scaleX(scale).scaleY(scale).rotationX(0f).rotationY(0f).translationZ(z).setDuration(d).start();
+        if (overlayState == OverlayState.PASSIVE || overlayState == OverlayState.DOCKED) schedulePassiveBreath();
+    }
+
+    private void schedulePassiveBreath() {
+        if (handler == null || ciLogo == null) return;
+        cancelPassiveBreath();
+        passiveBreath = () -> {
+            if (ciLogo == null || (overlayState != OverlayState.PASSIVE && overlayState != OverlayState.DOCKED)) return;
+            float base = overlayState == OverlayState.DOCKED ? 0.94f : 1f;
+            float alpha = overlayState == OverlayState.DOCKED ? 0.80f : 0.96f;
+            ciLogo.animate().scaleX(base + 0.018f).scaleY(base + 0.018f).alpha(Math.min(1f, alpha + 0.03f)).setDuration(1200)
+                    .withEndAction(() -> ciLogo.animate().scaleX(base).scaleY(base).alpha(alpha).setDuration(1350)
+                            .withEndAction(this::schedulePassiveBreath).start()).start();
+        };
+        handler.postDelayed(passiveBreath, 650L);
+    }
+
+    private void cancelPassiveBreath() {
+        if (passiveBreath != null && handler != null) handler.removeCallbacks(passiveBreath);
+        passiveBreath = null;
     }
 
     private void animateSwipe(float dx, float dy, long duration) {
-        if (ciLogo == null) return;
-        float distance = dp(14);
-        float tx = 0f;
-        float ty = 0f;
-        String direction;
-        if (Math.abs(dx) >= Math.abs(dy)) {
-            tx = dx >= 0 ? distance : -distance;
-            direction = dx >= 0 ? "right" : "left";
-        } else {
-            ty = dy >= 0 ? distance : -distance;
-            direction = dy >= 0 ? "down" : "up";
+        String direction = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? "right" : "left") : (dy >= 0 ? "down" : "up");
+        if (overlayState == OverlayState.DOCKED) {
+            boolean outward = ("left".equals(dockSide) && "left".equals(direction)) || ("right".equals(dockSide) && "right".equals(direction));
+            boolean inward = ("left".equals(dockSide) && "right".equals(direction)) || ("right".equals(dockSide) && "left".equals(direction));
+            if (outward) { emitGesture(dx, dy, duration, direction); pulseThenHide(); return; }
+            if (inward) { emitGesture(dx, dy, duration, direction); undock(false); return; }
         }
-        final String dir = direction;
-        ciLogo.animate().translationX(tx).translationY(ty).scaleX(1.04f).scaleY(1.04f).setDuration(110)
-                .withEndAction(() -> ciLogo.animate().translationX(0f).translationY(0f).scaleX(1f).scaleY(1f)
-                        .setDuration(170).start()).start();
-        emitGesture(dx, dy, duration, dir);
+        OverlayState returnState = stableStateFromPrefs();
+        setState(OverlayState.PULSE);
+        float distance = dp(15);
+        float tx = 0f, ty = 0f, rx = 0f, ry = 0f;
+        if ("left".equals(direction)) { tx = -distance; ry = -7f; }
+        if ("right".equals(direction)) { tx = distance; ry = 7f; }
+        if ("up".equals(direction)) { ty = -distance; rx = 7f; }
+        if ("down".equals(direction)) { ty = distance; rx = -7f; }
+        final float ftx = tx, fty = ty, frx = rx, fry = ry;
+        ciLogo.animate().translationX(ftx).translationY(fty).rotationX(frx).rotationY(fry).scaleX(1.05f).scaleY(1.05f).setDuration(105)
+                .withEndAction(() -> ciLogo.animate().translationX(0f).translationY(0f).rotationX(0f).rotationY(0f)
+                        .scaleX(1f).scaleY(1f).setDuration(180)
+                        .withEndAction(() -> setState(returnState)).start()).start();
+        emitGesture(dx, dy, duration, direction);
+    }
+
+    private void pulseThenHide() {
+        if (ciLogo == null) { hideCi(); return; }
+        setState(OverlayState.PULSE);
+        float tx = "left".equals(dockSide) ? -dp(18) : dp(18);
+        ciLogo.animate().translationX(tx).alpha(0.16f).scaleX(0.82f).scaleY(0.82f).setDuration(150)
+                .withEndAction(this::hideCi).start();
     }
 
     private void performCiClick() {
         vibrate();
+        setState(OverlayState.CONTEXT);
         if (ciLogo != null) {
-            ciLogo.animate()
-                    .alpha(0.35f)
-                    .scaleX(0.88f)
-                    .scaleY(0.88f)
-                    .setDuration(80)
-                    .withEndAction(() -> ciLogo.animate()
-                            .alpha(0.96f)
-                            .scaleX(1f)
-                            .scaleY(1f)
-                            .setDuration(150)
-                            .start())
-                    .start();
+            ciLogo.animate().alpha(0.48f).scaleX(0.90f).scaleY(0.90f).translationZ(dp(2)).setDuration(80)
+                    .withEndAction(() -> ciLogo.animate().alpha(1f).scaleX(1.07f).scaleY(1.07f).translationZ(dp(20))
+                            .setDuration(145).start()).start();
         }
-
         Intent event = new Intent(ACTION_CI_CLICK);
         event.putExtra("timestamp", System.currentTimeMillis());
-        event.putExtra("source", "ci-active-point");
-        event.putExtra("action", "invoke-gpt");
+        event.putExtra("source", "ci-overlay-v2");
+        event.putExtra("action", "invoke-ci-context");
+        event.putExtra("gpt", "Ci");
         sendBroadcast(event);
-
-        launchChatGpt();
+        handler.postDelayed(this::launchCiGpt, 120L);
+        handler.postDelayed(() -> setState(stableStateFromPrefs()), 520L);
     }
 
     private void emitGesture(float dx, float dy, long duration, String direction) {
@@ -360,18 +501,20 @@ public final class CiOverlayService extends Service {
 
     private void performVoiceDoubleClick() {
         vibrate();
+        setState(OverlayState.PULSE);
         if (ciLogo != null) {
-            ciLogo.animate().alpha(0.62f).scaleX(1.10f).scaleY(1.10f).setDuration(90)
-                    .withEndAction(() -> ciLogo.animate().alpha(0.96f).scaleX(1f).scaleY(1f)
-                            .setDuration(180).start()).start();
+            ciLogo.animate().alpha(0.58f).scaleX(1.12f).scaleY(1.12f).translationZ(dp(24)).setDuration(90)
+                    .withEndAction(() -> ciLogo.animate().alpha(1f).scaleX(1f).scaleY(1f).translationZ(dp(12))
+                            .setDuration(190).start()).start();
         }
         Intent event = new Intent(ACTION_CI_CLICK);
         event.putExtra("timestamp", System.currentTimeMillis());
-        event.putExtra("source", "ci-active-point");
+        event.putExtra("source", "ci-overlay-v2");
         event.putExtra("action", "invoke-ci-voice");
         event.putExtra("gpt", "Ci");
         sendBroadcast(event);
-        launchCiGpt();
+        handler.postDelayed(this::launchCiGpt, 110L);
+        handler.postDelayed(() -> setState(stableStateFromPrefs()), 520L);
     }
 
     private void launchChatGpt() {
@@ -394,11 +537,13 @@ public final class CiOverlayService extends Service {
 
     private void hideCi() {
         if (prefs != null) prefs.edit().putBoolean(PREF_HIDDEN, true).apply();
+        overlayState = OverlayState.HIDDEN;
         cancelLongPress();
-        if (pendingSingleTap != null) handler.removeCallbacks(pendingSingleTap);
+        cancelPassiveBreath();
+        if (pendingSingleTap != null && handler != null) handler.removeCallbacks(pendingSingleTap);
         pendingSingleTap = null;
-        if (ciLogo != null) {
-            ciLogo.animate().alpha(0f).scaleX(0.82f).scaleY(0.82f).setDuration(140)
+        if (ciLogo != null && ciLogo.getAlpha() > 0.2f) {
+            ciLogo.animate().alpha(0f).scaleX(0.80f).scaleY(0.80f).translationZ(0f).setDuration(150)
                     .withEndAction(this::detachCiViews).start();
         } else {
             detachCiViews();
@@ -416,7 +561,7 @@ public final class CiOverlayService extends Service {
 
     private void showLogo() {
         if (ciLogo == null) return;
-        ciLogo.animate().alpha(0.96f).setDuration(160).start();
+        applyStateVisual(true);
     }
 
     private void removeOverlay(View view) {

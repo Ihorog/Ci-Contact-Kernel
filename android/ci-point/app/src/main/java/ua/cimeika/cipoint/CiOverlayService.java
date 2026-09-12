@@ -103,9 +103,10 @@ public final class CiOverlayService extends Service {
     private void attachCi() {
         DisplayMetrics metrics = new DisplayMetrics();
         windowManager.getDefaultDisplay().getRealMetrics(metrics);
-
-        int x = Math.max(0, metrics.widthPixels - pointSize - edgeInset);
-        int y = Math.max(0, metrics.heightPixels - pointSize - bottomInset);
+        int preferredX = Math.round(metrics.widthPixels * 0.72f) - pointSize / 2;
+        int preferredY = Math.round(metrics.heightPixels * 0.62f) - pointSize / 2;
+        int x = Math.max(edgeInset, Math.min(preferredX, metrics.widthPixels - pointSize - edgeInset));
+        int y = Math.max(edgeInset, Math.min(preferredY, metrics.heightPixels - pointSize - edgeInset));
 
         activePoint = new View(this);
         activePoint.setBackgroundColor(android.graphics.Color.TRANSPARENT);
@@ -268,7 +269,7 @@ public final class CiOverlayService extends Service {
         return builder
                 .setContentTitle("Сі")
                 .setContentText("Активна точка працює")
-                .setSmallIcon(android.R.drawable.presence_online)
+                .setSmallIcon(R.drawable.ci_notification)
                 .setOngoing(true)
                 .build();
     }
@@ -277,3 +278,4 @@ public final class CiOverlayService extends Service {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 }
+

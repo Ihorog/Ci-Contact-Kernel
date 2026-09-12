@@ -1,0 +1,25 @@
+{
+  "schema": "ci.brand.assets/v1",
+  "source": {
+    "googleDriveFolderId": "1vWhnsHU--GQIvosdPU6xGTJQ-Ev-pnK0",
+    "canvaBrandKitId": "kAHUWpVoHEw",
+    "canvaCanonicalAssetId": "MAHUVtp-qKA"
+  },
+  "assets": {
+    "ci-logo-master-transparent.png": {
+      "driveFileId": "10WDtMQsd3XY41K9EN927_xW1op_3JFTf",
+      "sha256": "107dd1b358ef947bd8dedbdf25230fbc13773189265ec37140e6ab7131aeef33",
+      "role": "overlay-master"
+    },
+    "ci-icon-512.png": {
+      "driveFileId": "1xqFJv8zc7ChyeSt3wgYwz9-5i-h6EHkL",
+      "sha256": "24b43847f4184d83b6a465ed6e4be48e03980930c5ca1a1fff5e889b4677c17d",
+      "role": "launcher-icon"
+    },
+    "ci-logo-monochrome-white.png": {
+      "driveFileId": "18XVoh1CbexqI0Fs4QgBEttDMeZYyD9Cw",
+      "sha256": "e5ee21ba129f6907413a2db4d852cece918f1fb516e473c5493e2c08838540d1",
+      "role": "notification-icon"
+    }
+  }
+}

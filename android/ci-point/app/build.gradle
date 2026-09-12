@@ -20,10 +20,36 @@ android {
     }
 }
 
-tasks.register('prepareCiLogo', Copy) {
-    from(rootProject.file('../../Cipole (2).png'))
-    into(layout.projectDirectory.dir('src/main/res/drawable'))
-    rename { 'ci_logo.png' }
+def ciBrandHashes = [
+    'ci-logo-master-transparent.png': '107dd1b358ef947bd8dedbdf25230fbc13773189265ec37140e6ab7131aeef33',
+    'ci-logo-monochrome-white.png': 'e5ee21ba129f6907413a2db4d852cece918f1fb516e473c5493e2c08838540d1',
+    'ci-icon-512.png': '24b43847f4184d83b6a465ed6e4be48e03980930c5ca1a1fff5e889b4677c17d'
+]
+
+tasks.register('verifyCiBrandAssets') {
+    doLast {
+        ciBrandHashes.each { name, expected ->
+            def file = rootProject.file("brand/${name}")
+            if (!file.exists()) throw new GradleException("Missing Ci brand asset: ${name}")
+            def digest = java.security.MessageDigest.getInstance('SHA-256')
+            file.withInputStream { input ->
+                byte[] buffer = new byte[8192]
+                for (int read = input.read(buffer); read > 0; read = input.read(buffer)) {
+                    digest.update(buffer, 0, read)
+                }
+            }
+            def actual = digest.digest().collect { String.format('%02x', it) }.join()
+            if (actual != expected) throw new GradleException("Ci brand asset hash mismatch: ${name}")
+        }
+    }
 }
 
-preBuild.dependsOn tasks.named('prepareCiLogo')
+tasks.register('prepareCiBrandAssets', Copy) {
+    dependsOn tasks.named('verifyCiBrandAssets')
+    from(rootProject.file('brand/ci-logo-master-transparent.png')) { rename { 'ci_logo.png' } }
+    from(rootProject.file('brand/ci-logo-monochrome-white.png')) { rename { 'ci_notification.png' } }
+    from(rootProject.file('brand/ci-icon-512.png')) { rename { 'ci_app_icon.png' } }
+    into(layout.projectDirectory.dir('src/main/res/drawable'))
+}
+
+preBuild.dependsOn tasks.named('prepareCiBrandAssets')

@@ -7,11 +7,14 @@ import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.PixelFormat;
 import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.provider.Settings;
@@ -25,12 +28,22 @@ import android.widget.ImageView;
 
 public final class CiOverlayService extends Service {
     public static final String ACTION_SHOW = "ua.cimeika.cipoint.SHOW";
+    public static final String ACTION_HIDE = "ua.cimeika.cipoint.HIDE";
     public static final String ACTION_CI_CLICK = "ua.cimeika.ci.action.CLICK";
     public static final String ACTION_CI_GESTURE = "ua.cimeika.ci.action.GESTURE";
 
     private static final String CHANNEL_ID = "ci_active_point";
     private static final int NOTIFICATION_ID = 7;
     private static final String CHATGPT_PACKAGE = "com.openai.chatgpt";
+    private static final String CI_GPT_URL = "https://chatgpt.com/g/g-Uc7qoEi2e";
+    private static final String PREFS = "ci_point";
+    private static final String PREF_X = "x";
+    private static final String PREF_Y = "y";
+    private static final String PREF_HIDDEN = "hidden";
+    private static final long LONG_PRESS_MS = 700L;
+    private static final long DRAG_ARM_MS = 180L;
+    private static final long SWIPE_MAX_MS = 520L;
+    private static final long DOUBLE_TAP_MS = 320L;
 
     private WindowManager windowManager;
     private View activePoint;
@@ -40,12 +53,20 @@ public final class CiOverlayService extends Service {
 
     private int pointSize;
     private int edgeInset;
-    private int bottomInset;
     private int touchSlop;
+    private Handler handler;
+    private SharedPreferences prefs;
 
     private float downRawX;
     private float downRawY;
     private long downTime;
+    private int startX;
+    private int startY;
+    private boolean dragging;
+    private boolean longPressTriggered;
+    private long lastTapUpTime;
+    private Runnable pendingSingleTap;
+    private Runnable pendingLongPress;
 
     @Override
     public void onCreate() {
@@ -62,12 +83,13 @@ public final class CiOverlayService extends Service {
         startForeground(NOTIFICATION_ID, buildNotification());
 
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+        handler = new Handler(Looper.getMainLooper());
+        prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         pointSize = dp(72);
         edgeInset = dp(18);
-        bottomInset = dp(120);
         touchSlop = ViewConfiguration.get(this).getScaledTouchSlop();
 
-        if (Settings.canDrawOverlays(this)) {
+        if (Settings.canDrawOverlays(this) && !prefs.getBoolean(PREF_HIDDEN, false)) {
             attachCi();
         }
     }
@@ -77,10 +99,19 @@ public final class CiOverlayService extends Service {
         if (windowManager == null) {
             return START_NOT_STICKY;
         }
-        if (activePoint == null && Settings.canDrawOverlays(this)) {
+        String action = intent != null ? intent.getAction() : null;
+        if (ACTION_HIDE.equals(action)) {
+            hideCi();
+            return START_STICKY;
+        }
+        if (ACTION_SHOW.equals(action) && prefs != null) {
+            prefs.edit().putBoolean(PREF_HIDDEN, false).apply();
+        }
+        boolean hidden = prefs != null && prefs.getBoolean(PREF_HIDDEN, false);
+        if (activePoint == null && Settings.canDrawOverlays(this) && !hidden) {
             attachCi();
         }
-        if (intent != null && ACTION_SHOW.equals(intent.getAction())) {
+        if (ACTION_SHOW.equals(action)) {
             showLogo();
         }
         return START_STICKY;
@@ -93,6 +124,8 @@ public final class CiOverlayService extends Service {
 
     @Override
     public void onDestroy() {
+        cancelLongPress();
+        if (pendingSingleTap != null && handler != null) handler.removeCallbacks(pendingSingleTap);
         removeOverlay(activePoint);
         removeOverlay(ciLogo);
         activePoint = null;
@@ -103,9 +136,12 @@ public final class CiOverlayService extends Service {
     private void attachCi() {
         DisplayMetrics metrics = new DisplayMetrics();
         windowManager.getDefaultDisplay().getRealMetrics(metrics);
-
-        int x = Math.max(0, metrics.widthPixels - pointSize - edgeInset);
-        int y = Math.max(0, metrics.heightPixels - pointSize - bottomInset);
+        int preferredX = Math.round(metrics.widthPixels * 0.72f) - pointSize / 2;
+        int preferredY = Math.round(metrics.heightPixels * 0.62f) - pointSize / 2;
+        int savedX = prefs != null ? prefs.getInt(PREF_X, preferredX) : preferredX;
+        int savedY = prefs != null ? prefs.getInt(PREF_Y, preferredY) : preferredY;
+        int x = clampX(savedX, metrics.widthPixels);
+        int y = clampY(savedY, metrics.heightPixels);
 
         activePoint = new View(this);
         activePoint.setBackgroundColor(android.graphics.Color.TRANSPARENT);
@@ -152,27 +188,137 @@ public final class CiOverlayService extends Service {
                 downRawX = event.getRawX();
                 downRawY = event.getRawY();
                 downTime = System.currentTimeMillis();
+                startX = pointParams.x;
+                startY = pointParams.y;
+                dragging = false;
+                longPressTriggered = false;
+                pendingLongPress = this::hideIfStillPressed;
+                handler.postDelayed(pendingLongPress, LONG_PRESS_MS);
+                return true;
+
+            case MotionEvent.ACTION_MOVE:
+                float moveDx = event.getRawX() - downRawX;
+                float moveDy = event.getRawY() - downRawY;
+                long elapsed = System.currentTimeMillis() - downTime;
+                double moveDistance = Math.hypot(moveDx, moveDy);
+                if (moveDistance > touchSlop) {
+                    cancelLongPress();
+                    if (!dragging && elapsed >= DRAG_ARM_MS) dragging = true;
+                    if (dragging) moveCi(startX + Math.round(moveDx), startY + Math.round(moveDy));
+                }
                 return true;
 
             case MotionEvent.ACTION_UP:
+                cancelLongPress();
+                if (longPressTriggered) return true;
                 float dx = event.getRawX() - downRawX;
                 float dy = event.getRawY() - downRawY;
                 long duration = System.currentTimeMillis() - downTime;
                 double distance = Math.hypot(dx, dy);
-
-                if (distance <= touchSlop && duration < 650) {
-                    performCiClick();
-                } else {
-                    emitGesture(dx, dy, duration);
+                if (dragging) {
+                    savePosition();
+                    settleAfterMove();
+                } else if (distance <= touchSlop && duration < 650) {
+                    handleTap();
+                } else if (distance >= dp(32) && duration <= SWIPE_MAX_MS) {
+                    animateSwipe(dx, dy, duration);
                 }
                 return true;
 
             case MotionEvent.ACTION_CANCEL:
+                cancelLongPress();
+                if (dragging) savePosition();
                 return true;
 
             default:
                 return true;
         }
+    }
+
+    private void cancelLongPress() {
+        if (pendingLongPress != null) {
+            handler.removeCallbacks(pendingLongPress);
+            pendingLongPress = null;
+        }
+    }
+
+    private void handleTap() {
+        long now = System.currentTimeMillis();
+        if (lastTapUpTime > 0 && now - lastTapUpTime <= DOUBLE_TAP_MS) {
+            lastTapUpTime = 0;
+            if (pendingSingleTap != null) handler.removeCallbacks(pendingSingleTap);
+            pendingSingleTap = null;
+            performVoiceDoubleClick();
+            return;
+        }
+        lastTapUpTime = now;
+        pendingSingleTap = () -> {
+            lastTapUpTime = 0;
+            pendingSingleTap = null;
+            performCiClick();
+        };
+        handler.postDelayed(pendingSingleTap, DOUBLE_TAP_MS);
+    }
+
+    private void hideIfStillPressed() {
+        if (!dragging && activePoint != null) {
+            longPressTriggered = true;
+            hideCi();
+        }
+    }
+
+    private void moveCi(int requestedX, int requestedY) {
+        if (windowManager == null || activePoint == null || ciLogo == null) return;
+        DisplayMetrics metrics = new DisplayMetrics();
+        windowManager.getDefaultDisplay().getRealMetrics(metrics);
+        int x = clampX(requestedX, metrics.widthPixels);
+        int y = clampY(requestedY, metrics.heightPixels);
+        pointParams.x = x;
+        pointParams.y = y;
+        logoParams.x = x;
+        logoParams.y = y;
+        windowManager.updateViewLayout(activePoint, pointParams);
+        windowManager.updateViewLayout(ciLogo, logoParams);
+    }
+
+    private int clampX(int value, int width) {
+        return Math.max(edgeInset, Math.min(value, width - pointSize - edgeInset));
+    }
+
+    private int clampY(int value, int height) {
+        return Math.max(edgeInset, Math.min(value, height - pointSize - edgeInset));
+    }
+
+    private void savePosition() {
+        if (prefs == null || pointParams == null) return;
+        prefs.edit().putInt(PREF_X, pointParams.x).putInt(PREF_Y, pointParams.y).apply();
+    }
+
+    private void settleAfterMove() {
+        if (ciLogo == null) return;
+        ciLogo.animate().scaleX(1.03f).scaleY(1.03f).setDuration(90)
+                .withEndAction(() -> ciLogo.animate().scaleX(1f).scaleY(1f).setDuration(120).start())
+                .start();
+    }
+
+    private void animateSwipe(float dx, float dy, long duration) {
+        if (ciLogo == null) return;
+        float distance = dp(14);
+        float tx = 0f;
+        float ty = 0f;
+        String direction;
+        if (Math.abs(dx) >= Math.abs(dy)) {
+            tx = dx >= 0 ? distance : -distance;
+            direction = dx >= 0 ? "right" : "left";
+        } else {
+            ty = dy >= 0 ? distance : -distance;
+            direction = dy >= 0 ? "down" : "up";
+        }
+        final String dir = direction;
+        ciLogo.animate().translationX(tx).translationY(ty).scaleX(1.04f).scaleY(1.04f).setDuration(110)
+                .withEndAction(() -> ciLogo.animate().translationX(0f).translationY(0f).scaleX(1f).scaleY(1f)
+                        .setDuration(170).start()).start();
+        emitGesture(dx, dy, duration, dir);
     }
 
     private void performCiClick() {
@@ -201,27 +347,71 @@ public final class CiOverlayService extends Service {
         launchChatGpt();
     }
 
-    private void emitGesture(float dx, float dy, long duration) {
+    private void emitGesture(float dx, float dy, long duration, String direction) {
         Intent event = new Intent(ACTION_CI_GESTURE);
         event.putExtra("dx", dx);
         event.putExtra("dy", dy);
         event.putExtra("duration", duration);
+        event.putExtra("direction", direction);
         event.putExtra("timestamp", System.currentTimeMillis());
         event.putExtra("source", "ci-active-point");
         sendBroadcast(event);
     }
 
-    private void launchChatGpt() {
-        Intent launch = getPackageManager().getLaunchIntentForPackage(CHATGPT_PACKAGE);
-        if (launch != null) {
-            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(launch);
-            return;
+    private void performVoiceDoubleClick() {
+        vibrate();
+        if (ciLogo != null) {
+            ciLogo.animate().alpha(0.62f).scaleX(1.10f).scaleY(1.10f).setDuration(90)
+                    .withEndAction(() -> ciLogo.animate().alpha(0.96f).scaleX(1f).scaleY(1f)
+                            .setDuration(180).start()).start();
         }
+        Intent event = new Intent(ACTION_CI_CLICK);
+        event.putExtra("timestamp", System.currentTimeMillis());
+        event.putExtra("source", "ci-active-point");
+        event.putExtra("action", "invoke-ci-voice");
+        event.putExtra("gpt", "Ci");
+        sendBroadcast(event);
+        launchCiGpt();
+    }
 
-        Intent web = new Intent(Intent.ACTION_VIEW, Uri.parse("https://chatgpt.com/"));
+    private void launchChatGpt() {
+        launchCiGpt();
+    }
+
+    private void launchCiGpt() {
+        Intent app = new Intent(Intent.ACTION_VIEW, Uri.parse(CI_GPT_URL));
+        app.setPackage(CHATGPT_PACKAGE);
+        app.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        try {
+            startActivity(app);
+            return;
+        } catch (Exception ignored) {
+        }
+        Intent web = new Intent(Intent.ACTION_VIEW, Uri.parse(CI_GPT_URL));
         web.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         startActivity(web);
+    }
+
+    private void hideCi() {
+        if (prefs != null) prefs.edit().putBoolean(PREF_HIDDEN, true).apply();
+        cancelLongPress();
+        if (pendingSingleTap != null) handler.removeCallbacks(pendingSingleTap);
+        pendingSingleTap = null;
+        if (ciLogo != null) {
+            ciLogo.animate().alpha(0f).scaleX(0.82f).scaleY(0.82f).setDuration(140)
+                    .withEndAction(this::detachCiViews).start();
+        } else {
+            detachCiViews();
+        }
+    }
+
+    private void detachCiViews() {
+        removeOverlay(activePoint);
+        removeOverlay(ciLogo);
+        activePoint = null;
+        ciLogo = null;
+        pointParams = null;
+        logoParams = null;
     }
 
     private void showLogo() {
@@ -268,7 +458,7 @@ public final class CiOverlayService extends Service {
         return builder
                 .setContentTitle("Сі")
                 .setContentText("Активна точка працює")
-                .setSmallIcon(android.R.drawable.presence_online)
+                .setSmallIcon(R.drawable.ci_notification)
                 .setOngoing(true)
                 .build();
     }
@@ -277,3 +467,4 @@ public final class CiOverlayService extends Service {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 }
+

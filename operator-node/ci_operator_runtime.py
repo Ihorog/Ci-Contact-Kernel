@@ -80,6 +80,14 @@ def resolve(intent: str, target=None):
     return value
 
 
+def delegate(intent: str, operation: str, target=None):
+    started = time.perf_counter()
+    result = base.delegate(intent, operation, target)
+    result["operatorRuntimeVersion"] = VERSION
+    _record("delegate", started, result, route="EXTERNAL_NODE")
+    return result
+
+
 def dispatch(intent: str, target=None, mode="contact"):
     started = time.perf_counter()
     result = base.dispatch(intent, target, mode)

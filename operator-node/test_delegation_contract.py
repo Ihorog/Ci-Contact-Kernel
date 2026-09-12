@@ -39,6 +39,30 @@ class DelegationContractTest(unittest.TestCase):
         self.assertEqual(result["delegation"]["kind"], "native_tool")
         self.assertEqual(result["delegation"]["executor"], "web")
 
+    def test_known_github_read_is_automatic_external_delegation(self):
+        result = ci_operator.delegate("перевір GitHub", "read_repo", "CI.GITHUB")
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["automatic"])
+        self.assertFalse(result["permissionRequired"])
+        self.assertFalse(result["searchRequired"])
+        self.assertEqual(result["delegation"]["executor"], "GitHub")
+        self.assertFalse(result["client"]["executesOperation"])
+
+    def test_github_write_keeps_executor_but_requires_permission(self):
+        result = ci_operator.delegate("оновити GitHub", "repo_write_when_authorized", "CI.GITHUB")
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["automatic"])
+        self.assertTrue(result["permissionRequired"])
+        self.assertFalse(result["searchRequired"])
+        self.assertEqual(result["delegation"]["executor"], "GitHub")
+
+    def test_orange_status_executes_outside_client_device(self):
+        result = ci_operator.delegate("стан Orange", "status", "CI.ORANGE")
+        self.assertTrue(result["automatic"])
+        self.assertEqual(result["delegation"]["executor"], "CI.OPERATOR.ORANGE")
+        self.assertEqual(result["delegation"]["executionPlane"], "external_node")
+        self.assertFalse(result["delegation"]["clientExecution"])
+
 
 if __name__ == "__main__":
     unittest.main()

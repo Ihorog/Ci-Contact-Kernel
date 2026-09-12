@@ -32,6 +32,7 @@ class ReleaseManagerTests(unittest.TestCase):
                  patch.object(release_manager.updater, 'TARGET', target), \
                  patch.object(release_manager.updater, 'ALLOWED', ['ci_operator.py']), \
                  patch.object(release_manager.updater, '_fetch_file', return_value=(installer, 'b' * 40)), \
+                 patch.object(release_manager, '_fetch_repo_file', return_value=(b'{"kind":"CI_CONNECTION_REGISTRY_RUNTIME"}', 'c' * 40)), \
                  patch.object(release_manager.updater, 'apply', return_value={
                      'ok': True, 'executed': True, 'backup': str(runtime_backup), 'files': []
                  }), \
@@ -40,6 +41,34 @@ class ReleaseManagerTests(unittest.TestCase):
             self.assertFalse(result['ok'])
             self.assertTrue(result['rollback']['connectorRestored'])
             self.assertEqual(connector.read_text(encoding='utf-8'), 'VALUE = 1\n')
+
+    def test_success_syncs_registry_with_release(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            target = root / 'operator'
+            target.mkdir()
+            connector = root / 'connector.py'
+            connector.write_text('VALUE = 1\n', encoding='utf-8')
+            registry = root / 'ci-registry.json'
+            registry.write_text('{"kind":"OLD"}', encoding='utf-8')
+            runtime_backup = root / 'runtime-backup'
+            runtime_backup.mkdir()
+            installer = b"print('installer')\n"
+            registry_bytes = b'{"kind":"CI_CONNECTION_REGISTRY_RUNTIME","version":"1.1.0"}'
+            with patch.object(release_manager, 'CONNECTOR', connector), \
+                 patch.object(release_manager, 'REGISTRY_TARGET', registry), \
+                 patch.object(release_manager.updater, 'TARGET', target), \
+                 patch.object(release_manager.updater, '_fetch_file', return_value=(installer, 'b' * 40)), \
+                 patch.object(release_manager, '_fetch_repo_file', return_value=(registry_bytes, 'c' * 40)), \
+                 patch.object(release_manager.updater, 'apply', return_value={
+                     'ok': True, 'executed': True, 'backup': str(runtime_backup), 'files': []
+                 }), \
+                 patch.object(release_manager.subprocess, 'run', return_value=SimpleNamespace(returncode=0, stdout='ok', stderr='')):
+                result = release_manager.deploy('a' * 40, False)
+            self.assertTrue(result['ok'])
+            self.assertTrue(result['evidence']['registrySynced'])
+            self.assertEqual(registry.read_bytes(), registry_bytes)
+            self.assertEqual(result['registry']['gitBlobSha'], 'c' * 40)
 
 
 if __name__ == '__main__':

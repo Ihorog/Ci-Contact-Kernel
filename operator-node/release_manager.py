@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import base64
+import json
 import os
 import py_compile
 import shutil
@@ -7,13 +9,30 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from urllib.parse import quote
 
 import self_update as updater
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 CONNECTOR = Path('/home/kazkar/cit/modules/ci_connector/ci_connector_server.py')
+REGISTRY_REPO_PATH = "public/ci-registry/v1.1.0/ci-registry.json"
+REGISTRY_TARGET = Path("/home/kazkar/cimeika/cit/registry/ci-registry/v1.1.0/ci-registry.json")
 INSTALLER_NAME = 'install_provider_layer.py'
 SERVICE = 'ci_mcp_server.service'
+
+
+def _fetch_repo_file(repo_path, commit):
+    url = f"https://api.github.com/repos/{updater.REPO}/contents/{quote(repo_path, safe='/')}?ref={commit}"
+    meta = updater._fetch_json(url)
+    encoded = meta.get("content")
+    if not encoded or meta.get("encoding") != "base64":
+        raise RuntimeError(f"missing_base64_content:{repo_path}")
+    content = base64.b64decode(encoded)
+    actual = updater._git_blob_sha(content)
+    expected = meta.get("sha")
+    if actual != expected:
+        raise RuntimeError(f"blob_sha_mismatch:{repo_path}")
+    return content, expected
 
 
 def _restore_runtime(backup):
@@ -63,14 +82,22 @@ def deploy(commit, activate=False):
 
     installer_content = None
     installer_blob = None
+    registry_content = None
+    registry_blob = None
     try:
         installer_content, installer_blob = updater._fetch_file(INSTALLER_NAME, commit)
+        registry_content, registry_blob = _fetch_repo_file(REGISTRY_REPO_PATH, commit)
+        registry_doc = json.loads(registry_content.decode('utf-8'))
+        if registry_doc.get('kind') != 'CI_CONNECTION_REGISTRY_RUNTIME':
+            raise RuntimeError('registry_kind_invalid')
     except Exception as exc:
-        return {'ok': False, 'executed': False, 'error': 'installer_fetch_failed', 'message': str(exc)[:240]}
+        return {'ok': False, 'executed': False, 'error': 'release_asset_fetch_failed', 'message': str(exc)[:240]}
 
     stage_dir = Path(tempfile.mkdtemp(prefix='ci-release-installer-', dir=str(updater.TARGET)))
     installer_path = stage_dir / INSTALLER_NAME
     connector_backup = None
+    registry_backup = None
+    registry_written = False
     runtime_result = None
     try:
         installer_path.write_bytes(installer_content)
@@ -80,10 +107,19 @@ def deploy(commit, activate=False):
         stamp = time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())
         connector_backup = CONNECTOR.with_suffix(CONNECTOR.suffix + f'.release.{stamp}.{commit[:12]}.bak')
         shutil.copy2(CONNECTOR, connector_backup)
+        REGISTRY_TARGET.parent.mkdir(parents=True, exist_ok=True)
+        if REGISTRY_TARGET.exists():
+            registry_backup = REGISTRY_TARGET.with_suffix(REGISTRY_TARGET.suffix + f'.release.{stamp}.{commit[:12]}.bak')
+            shutil.copy2(REGISTRY_TARGET, registry_backup)
 
         runtime_result = updater.apply(commit, activate=False)
         if not runtime_result.get('ok') or not runtime_result.get('executed'):
             raise RuntimeError('runtime_update_failed:' + str(runtime_result.get('error') or 'unknown'))
+
+        registry_tmp = REGISTRY_TARGET.with_suffix(REGISTRY_TARGET.suffix + f'.tmp.{commit[:12]}')
+        registry_tmp.write_bytes(registry_content)
+        os.replace(registry_tmp, REGISTRY_TARGET)
+        registry_written = True
 
         proc = subprocess.run(
             ['python3', str(installer_path)],
@@ -100,14 +136,17 @@ def deploy(commit, activate=False):
             'commit': commit,
             'runtimeBackup': runtime_result.get('backup'),
             'connectorBackup': str(connector_backup),
+            'registryBackup': str(registry_backup) if registry_backup else None,
             'runtimeFiles': runtime_result.get('files', []),
             'installer': {'file': INSTALLER_NAME, 'gitBlobSha': installer_blob, 'bytes': len(installer_content)},
+            'registry': {'file': REGISTRY_REPO_PATH, 'gitBlobSha': registry_blob, 'bytes': len(registry_content)},
             'connectorCompile': 'PASS',
             'restart': restart,
             'evidence': {
                 'canonicalRepository': updater.REPO,
                 'exactCommit': commit,
                 'runtimePreparedAndApplied': True,
+                'registrySynced': True,
                 'connectorPatched': True,
                 'connectorCompiled': True,
             },
@@ -119,6 +158,13 @@ def deploy(commit, activate=False):
                 restored_runtime = _restore_runtime(runtime_result['backup'])
             except Exception:
                 restored_runtime = []
+        registry_restored = False
+        if registry_written and registry_backup and registry_backup.exists():
+            try:
+                shutil.copy2(registry_backup, REGISTRY_TARGET)
+                registry_restored = True
+            except Exception:
+                registry_restored = False
         connector_restored = False
         if connector_backup and connector_backup.exists():
             try:
@@ -132,8 +178,13 @@ def deploy(commit, activate=False):
             'executed': False,
             'error': 'release_failed',
             'message': str(exc)[:240],
-            'rollback': {'runtimeFiles': restored_runtime, 'connectorRestored': connector_restored},
+            'rollback': {
+                'runtimeFiles': restored_runtime,
+                'registryRestored': registry_restored,
+                'connectorRestored': connector_restored,
+            },
             'connectorBackup': str(connector_backup) if connector_backup else None,
+            'registryBackup': str(registry_backup) if registry_backup else None,
         }
     finally:
         shutil.rmtree(stage_dir, ignore_errors=True)

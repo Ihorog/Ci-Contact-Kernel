@@ -4,6 +4,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
@@ -41,6 +43,7 @@ final class CiVoiceController {
     private SpeechRecognizer recognizer;
     private TextToSpeech tts;
     private boolean listening;
+    private boolean preferOfflineActive;
 
     CiVoiceController(Context context, Callback callback) {
         this.context = context;
@@ -63,6 +66,11 @@ final class CiVoiceController {
     }
 
     private void startListening() {
+        startListening(true);
+    }
+
+    private void startListening(boolean preferOffline) {
+        preferOfflineActive = preferOffline;
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
             callback.onError("speech_recognizer_unavailable");
             return;
@@ -77,6 +85,12 @@ final class CiVoiceController {
                 @Override public void onEndOfSpeech() { setListening(false); }
                 @Override public void onError(int error) {
                     setListening(false);
+                    if ((error == SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED
+                            || error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE) && preferOfflineActive) {
+                        try { recognizer.cancel(); } catch (Exception ignored) { }
+                        new Handler(Looper.getMainLooper()).postDelayed(() -> startListening(false), 180L);
+                        return;
+                    }
                     callback.onError("speech_error_" + error);
                 }
                 @Override public void onResults(Bundle results) {
@@ -98,7 +112,7 @@ final class CiVoiceController {
         intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
         intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "uk-UA");
         intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "uk-UA");
-        intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true);
+        intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, preferOffline);
         intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false);
         recognizer.startListening(intent);
     }

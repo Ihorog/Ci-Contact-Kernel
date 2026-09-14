@@ -15,8 +15,8 @@
     },
     {
       "path": "operator-node/ci_orchestrator.py",
-      "bytes": 6666,
-      "sha256": "9b4fc2f5b7c6ac15083b8f4427c67c043fba3132407c955d402910bb063d408a"
+      "bytes": 6989,
+      "sha256": "59f8df8da6bbadf8cfe8e238bd552f77083f76b9b61bd0717e1960e3d4aab20e"
     },
     {
       "path": "operator-node/ci_pipeline.py",
@@ -30,8 +30,13 @@
     },
     {
       "path": "operator-node/executor_mesh.py",
-      "bytes": 4856,
-      "sha256": "d8b777d3e96fe3b9b7803231eb6754b532982bddc24316bc2ac28297862957fe"
+      "bytes": 5993,
+      "sha256": "b70925e2179a9c38ec7ac7ed0aafefad299d09dd548d446d21bd63d9f24d028e"
+    },
+    {
+      "path": "operator-node/executor_queue_server.py",
+      "bytes": 4070,
+      "sha256": "d530be205f33df6fff300ac713bf2c59a4bde12ea72e4fb8c5fd5bd0e435ed44"
     },
     {
       "path": "operator-node/install_orange.py",
@@ -45,8 +50,8 @@
     },
     {
       "path": "operator-node/local_selftest.py",
-      "bytes": 989,
-      "sha256": "53be3487c68f3150dc5e97d074a36a45f4c227b9c499856f83da3484cb2887b8"
+      "bytes": 1402,
+      "sha256": "16e0500548d35e7b2ece733d79b4712195d3c6175dc955fea248cc10a76f7def"
     },
     {
       "path": "operator-node/mcp_probe.py",
@@ -75,13 +80,13 @@
     },
     {
       "path": "operator-node/release_manager.py",
-      "bytes": 7347,
-      "sha256": "3079570836af2badf8af788bee80bf22995c979ea46e581f6bac1efba6b735df"
+      "bytes": 8605,
+      "sha256": "e36a4f3f5afecdf381a6e7a553c6d44a1933d178deea228bef0c1e9f9a804d17"
     },
     {
       "path": "operator-node/self_update.py",
-      "bytes": 4224,
-      "sha256": "dccbef91e98bff5448c06c9c9cdf24c335fa6454c1ec62290b9b2f52afe3e90e"
+      "bytes": 4887,
+      "sha256": "b9173afba8a5631fdba4259e676d02c6b5fff2a5c49848aa28016105b5c4794c"
     },
     {
       "path": "operator-node/selftest.py",

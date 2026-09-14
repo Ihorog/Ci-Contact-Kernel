@@ -28,7 +28,7 @@ jobs:
         run: >-
           python -m py_compile
           ci_operator.py ci_operator_runtime.py provider_adapters.py operator_telemetry.py
-          queue_contract.py release_manager.py self_update.py technical_model.py ci_pipeline.py organism_biology.py local_selftest.py executor_mesh.py evidence_aggregator.py ci_orchestrator.py install_orange.py install_provider_layer.py selftest.py mcp_probe.py
+          queue_contract.py release_manager.py self_update.py technical_model.py ci_pipeline.py organism_biology.py local_selftest.py executor_mesh.py evidence_aggregator.py ci_orchestrator.py executor_queue_server.py install_orange.py install_provider_layer.py selftest.py mcp_probe.py
           test_chatgpt_action_schema.py test_delegation_contract.py test_ci_orchestrator.py
       - name: Run operator safety tests
         run: >-

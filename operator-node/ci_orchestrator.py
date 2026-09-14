@@ -9,18 +9,20 @@ from pathlib import Path
 import executor_mesh
 import evidence_aggregator
 
-VERSION='1.0.0'
+VERSION='1.1.0'
 CIT=Path('/home/kazkar/cit')
 STATE_DIR=CIT/'state/orchestration'
 LAST=CIT/'state/ci_orchestrator_last.json'
 LEDGER=CIT/'modules/ci_ledger/ci_ledger.py'
 
-READ_CAPS={'operator.health','vault.status','pipeline.status','ledger.audit','ci.link.contact'}
+READ_CAPS={'operator.health','vault.status','pipeline.status','ledger.audit','ci.link.contact','cihub.status','cihub.git.status','cihub.safety_tests'}
 
 TEMPLATES={
  'distributed_acceptance':[
    {'id':'operator','capability':'operator.health','depends':[]},
    {'id':'vault','capability':'vault.status','depends':[]},
+   {'id':'cihub','capability':'cihub.status','depends':[]},
+   {'id':'cihub_tests','capability':'cihub.safety_tests','depends':['cihub']},
    {'id':'remote','capability':'ci.link.contact','depends':[],
     'payload':{'message':'Ci distributed orchestration acceptance; contact only, no external write.'}},
    {'id':'pipeline','capability':'pipeline.status','depends':['operator']},

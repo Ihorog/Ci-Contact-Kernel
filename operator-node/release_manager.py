@@ -13,12 +13,15 @@ from urllib.parse import quote
 
 import self_update as updater
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 CONNECTOR = Path('/home/kazkar/cit/modules/ci_connector/ci_connector_server.py')
 REGISTRY_REPO_PATH = "public/ci-registry/v1.1.0/ci-registry.json"
 REGISTRY_TARGET = Path("/home/kazkar/cimeika/cit/registry/ci-registry/v1.1.0/ci-registry.json")
 INSTALLER_NAME = 'install_provider_layer.py'
 SERVICE = 'ci_mcp_server.service'
+QUEUE_SCRIPT = updater.TARGET / 'executor_queue_server.py'
+QUEUE_LOG = Path('/home/kazkar/cit/logs/executor_queue.log')
+QUEUE_PATTERN = r'^python3 /home/kazkar/cit/modules/ci_operator/executor_queue_server.py$'
 
 
 def _fetch_repo_file(repo_path, commit):
@@ -30,9 +33,12 @@ def _restore_runtime(backup):
     restored = []
     for name in updater.ALLOWED:
         src = backup / name
+        target = updater.TARGET / name
         if src.exists():
-            shutil.copy2(src, updater.TARGET / name)
+            shutil.copy2(src, target)
             restored.append(name)
+        elif target.exists():
+            target.unlink()
     return restored
 
 
@@ -62,6 +68,19 @@ def _schedule_restart():
         stderr=subprocess.DEVNULL,
     )
     return {'scheduled': True, 'pid': pid, 'method': 'systemd_supervised_term'}
+
+
+def _schedule_queue_state(present):
+    QUEUE_LOG.parent.mkdir(parents=True, exist_ok=True)
+    if present:
+        cmd=(f"sleep 2; pkill -f '{QUEUE_PATTERN}' || true; "
+             f"nohup python3 {QUEUE_SCRIPT} >>{QUEUE_LOG} 2>&1 </dev/null &")
+        desired='running'
+    else:
+        cmd=f"sleep 2; pkill -f '{QUEUE_PATTERN}' || true"
+        desired='stopped'
+    subprocess.Popen(['sh','-c',cmd],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    return {'scheduled':True,'desired':desired,'method':'fixed_local_auxiliary'}
 
 
 def deploy(commit, activate=False):
@@ -119,7 +138,9 @@ def deploy(commit, activate=False):
             raise RuntimeError('connector_patch_failed:' + (proc.stderr or proc.stdout or '')[:180])
         py_compile.compile(str(CONNECTOR), doraise=True)
 
+        queue_present = 'executor_queue_server.py' not in set(runtime_result.get('absent') or []) and QUEUE_SCRIPT.exists()
         restart = _schedule_restart() if activate else {'scheduled': False}
+        queue_state = _schedule_queue_state(queue_present) if activate else {'scheduled': False, 'desired': 'running' if queue_present else 'stopped'}
         return {
             'ok': True,
             'executed': True,
@@ -132,6 +153,7 @@ def deploy(commit, activate=False):
             'registry': {'file': REGISTRY_REPO_PATH, 'gitBlobSha': registry_blob, 'bytes': len(registry_content)},
             'connectorCompile': 'PASS',
             'restart': restart,
+            'auxiliaryRuntime': {'executorQueue': queue_state},
             'evidence': {
                 'canonicalRepository': updater.REPO,
                 'source': updater.SOURCE,
@@ -141,6 +163,7 @@ def deploy(commit, activate=False):
                 'registrySynced': True,
                 'connectorPatched': True,
                 'connectorCompiled': True,
+                'executorQueueTargetPresent': queue_present,
             },
         }
     except Exception as exc:

@@ -1,8 +1,8 @@
 {
   "schema": "ci.pipeline.provenance/v2",
-  "release_id": "ci-release-20260914T135456Z-7ecb16a0424f",
-  "commit": "7ecb16a0424fe7c0d42bc991077a5c4d1cc0a96d",
-  "created_at": "20260914T135456Z",
+  "release_id": "ci-release-20260914T172728Z-ab774f1d74d0",
+  "commit": "ab774f1d74d03c99ca3feea840f14067e02adbec",
+  "created_at": "20260914T172728Z",
   "source": "local-orange",
   "github_required": false,
   "tests": [
@@ -38,6 +38,11 @@
     },
     {
       "name": "compile:executor_mesh.py",
+      "blocking": true,
+      "ok": true
+    },
+    {
+      "name": "compile:executor_queue_server.py",
       "blocking": true,
       "ok": true
     },
@@ -129,10 +134,10 @@
   ],
   "artifact": {
     "ok": true,
-    "commit": "7ecb16a0424fe7c0d42bc991077a5c4d1cc0a96d",
-    "artifact": "/home/kazkar/cit/artifacts/ci-technical-model-20260914T135451Z-7ecb16a0424f.tar.gz",
-    "vault": "/mnt/cimeika_vault/92482E5D482E3FF9/ci/backups/orangepi3-lts/ci-technical-model-20260914T135451Z-7ecb16a0424f.tar.gz",
-    "sha256": "3dd776e765c86aa3846f25a3d851315f5a053b0b23be64782d83dc2df35e2532",
-    "bytes": 44823
+    "commit": "ab774f1d74d03c99ca3feea840f14067e02adbec",
+    "artifact": "/home/kazkar/cit/artifacts/ci-technical-model-20260914T172724Z-ab774f1d74d0.tar.gz",
+    "vault": "/mnt/cimeika_vault/92482E5D482E3FF9/ci/backups/orangepi3-lts/ci-technical-model-20260914T172724Z-ab774f1d74d0.tar.gz",
+    "sha256": "df12c7a4df5d489e7c08b96a84154b01c569eb1ec2f3c1c85619291b7dc2ea1a",
+    "bytes": 46970
   }
 }

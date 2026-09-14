@@ -40,6 +40,16 @@ class QueueContractTests(unittest.TestCase):
         item = queue_contract.build("operator.metrics", {"limit": 250})
         self.assertIn("metrics(250)", item["legacyShell"])
 
+    def test_orchestrator_status_is_fixed_surface(self):
+        item = queue_contract.build("orchestrator.status")
+        self.assertEqual(item["risk"], "read")
+        self.assertIn("ci_orchestrator", item["legacyShell"])
+        self.assertIn("status", item["legacyShell"])
+
+    def test_orchestrator_acceptance_is_fixed_surface(self):
+        item = queue_contract.build("orchestrator.acceptance")
+        self.assertEqual(item["risk"], "local_write")
+        self.assertIn("distributed_acceptance", item["legacyShell"])
     def test_request_id_must_be_uuid(self):
         with self.assertRaisesRegex(ValueError, "invalid_request_id"):
             queue_contract.build("operator.health", request_id="../../bad")

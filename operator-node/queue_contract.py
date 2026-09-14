@@ -13,6 +13,8 @@ ACTIONS = {
     "operator.metrics": {"risk": "read"},
     "operator.self_update": {"risk": "elevated_write"},
     "operator.release": {"risk": "elevated_write"},
+    "orchestrator.status": {"risk": "read"},
+    "orchestrator.acceptance": {"risk": "local_write"},
 }
 
 
@@ -58,6 +60,18 @@ def build(action, args=None, request_id=None):
 
     if action == "operator.health":
         argv = list(cfg["argv"])
+    elif action == "orchestrator.status":
+        code = (
+            "import sys;sys.path.insert(0,'/home/kazkar/cit/modules/ci_operator');"
+            "import ci_orchestrator as o;import json;print(json.dumps(o.status(),separators=(',',':')))"
+        )
+        argv = ["python3", "-c", code]
+    elif action == "orchestrator.acceptance":
+        code = (
+            "import sys;sys.path.insert(0,'/home/kazkar/cit/modules/ci_operator');"
+            "import ci_orchestrator as o;import json;print(json.dumps(o.run_template('distributed_acceptance'),separators=(',',':')))"
+        )
+        argv = ["python3", "-c", code]
     elif action == "operator.metrics":
         limit = _bounded_limit(args.get("limit", 500))
         code = (

@@ -22,6 +22,7 @@ class SelfUpdateTests(unittest.TestCase):
                 'operator_telemetry.py', 'queue_contract.py', 'vault_node.py', 'release_manager.py',
                 'self_update.py', 'mcp_probe.py', 'technical_model.py', 'ci_pipeline.py',
                 'organism_biology.py', 'local_selftest.py',
+                'executor_mesh.py', 'evidence_aggregator.py', 'ci_orchestrator.py',
             ],
         )
         self.assertIn('self_update.py', self_update.ALLOWED)

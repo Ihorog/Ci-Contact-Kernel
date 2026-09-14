@@ -2,6 +2,7 @@
 import time
 
 import ci_operator as base
+import ci_orchestrator
 import operator_telemetry as telemetry
 import provider_adapters
 import release_manager
@@ -47,6 +48,7 @@ def status():
     value = dict(base.status())
     value["version"] = VERSION
     value["providerAdapters"] = provider_adapters.probe_all()
+    value["orchestration"] = ci_orchestrator.status()
     value["selfUpdate"] = {**updater.source_status(),
         "repository": updater.REPO, "exactCommitRequired": True,
         "allowlistedFiles": list(updater.ALLOWED)}
@@ -122,7 +124,7 @@ def operator_update(commit: str, activate=False):
     result = updater.apply(commit, bool(activate))
     result["node"] = NODE_ID
     result["operatorRuntimeVersion"] = VERSION
-    _record("operator_update", started, result, coordinate="CI.ORANGE", route="PINNED_GITHUB_UPDATE")
+    _record("operator_update", started, result, coordinate="CI.ORANGE", route="LOCAL_MODEL_UPDATE")
     return result
 
 
@@ -131,7 +133,16 @@ def operator_release(commit: str, activate=False):
     result = release_manager.deploy(commit, activate)
     result["node"] = NODE_ID
     result["operatorRuntimeVersion"] = VERSION
-    _record("operator_release", started, result, coordinate="CI.ORANGE", route="PINNED_GITHUB_RELEASE")
+    _record("operator_release", started, result, coordinate="CI.ORANGE", route="LOCAL_MODEL_RELEASE")
+    return result
+
+
+def orchestrate(template="distributed_acceptance"):
+    started = time.perf_counter()
+    result = ci_orchestrator.run_template(template)
+    result["node"] = NODE_ID
+    result["operatorRuntimeVersion"] = VERSION
+    _record("orchestrate", started, result, coordinate="CI.ORANGE", route="EXECUTOR_MESH")
     return result
 
 

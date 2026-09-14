@@ -15,6 +15,7 @@ checks['model_clean']=model.get('dirty') is False
 source=self_update.source_status()
 checks['local_source']=source.get('source') == 'local'
 checks['github_not_required']=source.get('githubRequired') is False
+checks['orchestrator_ready']=status.get('orchestration',{}).get('ok') is True
 ok=all(checks.values())
 print(json.dumps({'ok':ok,'checks':checks,'model':model,'source':source},ensure_ascii=False,indent=2))
 print('CI_LOCAL_SELFTEST='+('PASS' if ok else 'FAIL'))

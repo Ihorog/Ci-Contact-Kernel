@@ -10,13 +10,28 @@
     },
     {
       "path": "operator-node/ci_operator_runtime.py",
-      "bytes": 5103,
-      "sha256": "4ab2111db1ad50329110cf17b85e0cf642544dc9342ef08f7b820987463f1714"
+      "bytes": 5359,
+      "sha256": "d82819aa67c1b2741dafef7b94262f6a19bd2ff79ba1215468efcf91854159c4"
+    },
+    {
+      "path": "operator-node/ci_orchestrator.py",
+      "bytes": 6666,
+      "sha256": "9b4fc2f5b7c6ac15083b8f4427c67c043fba3132407c955d402910bb063d408a"
     },
     {
       "path": "operator-node/ci_pipeline.py",
       "bytes": 9519,
       "sha256": "99450be0cf2bfae33e0d5fad6f7cfa73e13a750aae5feef4f09fbbf6b58b23a5"
+    },
+    {
+      "path": "operator-node/evidence_aggregator.py",
+      "bytes": 1299,
+      "sha256": "9ef25d37c74fd508f6b360112b8fc0e830e3537f3aeaf34f5a5590e8148ee93f"
+    },
+    {
+      "path": "operator-node/executor_mesh.py",
+      "bytes": 4856,
+      "sha256": "d8b777d3e96fe3b9b7803231eb6754b532982bddc24316bc2ac28297862957fe"
     },
     {
       "path": "operator-node/install_orange.py",
@@ -30,8 +45,8 @@
     },
     {
       "path": "operator-node/local_selftest.py",
-      "bytes": 915,
-      "sha256": "4fa563074b929d4f3df54d3eae65219ed7f3db4ba775de7e3a4f83e6345118b6"
+      "bytes": 989,
+      "sha256": "53be3487c68f3150dc5e97d074a36a45f4c227b9c499856f83da3484cb2887b8"
     },
     {
       "path": "operator-node/mcp_probe.py",
@@ -55,8 +70,8 @@
     },
     {
       "path": "operator-node/queue_contract.py",
-      "bytes": 2702,
-      "sha256": "fc1339250d94568b8073b39a5895b3db8556b98c5099d4e3cf08c32f53214e42"
+      "bytes": 3431,
+      "sha256": "5fb7f25ff743f6d7aa386501d7f562ac68acd6bb4c9a0b4e05a2d97e01be4ab0"
     },
     {
       "path": "operator-node/release_manager.py",
@@ -65,8 +80,8 @@
     },
     {
       "path": "operator-node/self_update.py",
-      "bytes": 4153,
-      "sha256": "3dac8463e519cddfca9a5817a397f796cb899a8f2f674d3cfba806bad08ba7b3"
+      "bytes": 4224,
+      "sha256": "dccbef91e98bff5448c06c9c9cdf24c335fa6454c1ec62290b9b2f52afe3e90e"
     },
     {
       "path": "operator-node/selftest.py",
@@ -77,6 +92,11 @@
       "path": "operator-node/technical_model.py",
       "bytes": 5434,
       "sha256": "e35d63b907c86c92cd80d09df1782e4e861dcd276b55a35be1a10ebd9e83278f"
+    },
+    {
+      "path": "operator-node/test_ci_orchestrator.py",
+      "bytes": 1199,
+      "sha256": "65b24d15416c2d02002a50b267eb619be125e0947b21a903f15fda48fcb93804"
     },
     {
       "path": "operator-node/vault_node.py",

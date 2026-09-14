@@ -1,0 +1,12 @@
+{
+    "schema":  "ci.technical-model.mirror/v1",
+    "source":  "CI.OPERATOR.ORANGE",
+    "local_commit":  "e3a3b9649b692d55db463179f675030fc256a574",
+    "local_release_id":  "ci-release-20260914T110143Z-e3a3b9649b69",
+    "runtime_independent":  true,
+    "github_required":  false,
+    "artifact_sha256":  "81ce9aa8b8e979f712d3aff98ada116e248895bbb81950c4a55e37d5b1e8ad1e",
+    "provenance_sha256":  "c2b812372a4d3fe503daae59cc2502191c76c5ba28b20af3ecea7765844e5f58",
+    "release_manifest_sha256":  "43a2b06ac36f6b2e0dd37352e9df60cff51ceb12b80dc2607e2b18cf2a838c95",
+    "ledger_head":  "5d096f92588ee7702a2abf6002b7d5e0a771adee834950d9144d3af7d2362e67"
+}

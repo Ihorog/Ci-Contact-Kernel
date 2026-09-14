@@ -1,0 +1,112 @@
+{
+  "kind": "CI_LOCAL_TECHNICAL_MODEL",
+  "version": "1.0.0",
+  "source": "Orange runtime",
+  "files": [
+    {
+      "path": "operator-node/ci_operator.py",
+      "bytes": 16449,
+      "sha256": "445f56145978bacbcee88316d667af9a8b987b613f3d0c5671d10bede5a71112"
+    },
+    {
+      "path": "operator-node/ci_operator_runtime.py",
+      "bytes": 5103,
+      "sha256": "4ab2111db1ad50329110cf17b85e0cf642544dc9342ef08f7b820987463f1714"
+    },
+    {
+      "path": "operator-node/ci_pipeline.py",
+      "bytes": 9519,
+      "sha256": "99450be0cf2bfae33e0d5fad6f7cfa73e13a750aae5feef4f09fbbf6b58b23a5"
+    },
+    {
+      "path": "operator-node/install_orange.py",
+      "bytes": 4849,
+      "sha256": "85623745198f3ca553fbb249e4a7283b33a4239df062ad4e47b1d029390ae406"
+    },
+    {
+      "path": "operator-node/install_provider_layer.py",
+      "bytes": 5338,
+      "sha256": "9380bfeea6361665e76ebc27495f2c37f0ba4fb8d6594370d714cfff4dfc3a1a"
+    },
+    {
+      "path": "operator-node/local_selftest.py",
+      "bytes": 915,
+      "sha256": "4fa563074b929d4f3df54d3eae65219ed7f3db4ba775de7e3a4f83e6345118b6"
+    },
+    {
+      "path": "operator-node/mcp_probe.py",
+      "bytes": 2670,
+      "sha256": "94a807d3460b98878da5f0809f54d879f3746b1f711b2d2601ec7b84bab1dcd0"
+    },
+    {
+      "path": "operator-node/operator_telemetry.py",
+      "bytes": 4984,
+      "sha256": "e7d292c22a0333d7a3ffb5f10566256a07865a77a5279332c7a4201e6f09e59c"
+    },
+    {
+      "path": "operator-node/organism_biology.py",
+      "bytes": 1907,
+      "sha256": "653437de423d77a192bc1c435586d4c113ecc2de453ce120886f7e79353abaa5"
+    },
+    {
+      "path": "operator-node/provider_adapters.py",
+      "bytes": 4498,
+      "sha256": "cd828f3f9635dcb5a03fde7eb0c9c82124c075c92d4b63ceb79fff17c39eadd8"
+    },
+    {
+      "path": "operator-node/queue_contract.py",
+      "bytes": 2702,
+      "sha256": "fc1339250d94568b8073b39a5895b3db8556b98c5099d4e3cf08c32f53214e42"
+    },
+    {
+      "path": "operator-node/release_manager.py",
+      "bytes": 7347,
+      "sha256": "3079570836af2badf8af788bee80bf22995c979ea46e581f6bac1efba6b735df"
+    },
+    {
+      "path": "operator-node/self_update.py",
+      "bytes": 4106,
+      "sha256": "2ce9039aae463a5537f03b3fd7221863ec9e330126f8fec5287eb47c1f56313e"
+    },
+    {
+      "path": "operator-node/selftest.py",
+      "bytes": 1019,
+      "sha256": "f37bee3125ef53de84b3465d095fbd1029d4f5828b2e9fca9e237d913d047b5a"
+    },
+    {
+      "path": "operator-node/technical_model.py",
+      "bytes": 5434,
+      "sha256": "e35d63b907c86c92cd80d09df1782e4e861dcd276b55a35be1a10ebd9e83278f"
+    },
+    {
+      "path": "operator-node/vault_node.py",
+      "bytes": 6738,
+      "sha256": "c5f1b340893cfcb05dd146681c35b2da527d22a93ada97e381c7f84b1bf08e21"
+    },
+    {
+      "path": "operator-node/CI_UNIVERSAL_AI_BINDING.md",
+      "bytes": 13245,
+      "sha256": "5706a9485ce1d4666e8519c50d6fe90973564d99f5a2b3f838e77fd9b904d289"
+    },
+    {
+      "path": "operator-node/SHA256SUMS.txt",
+      "bytes": 526,
+      "sha256": "0695502234718030683d0242f17b30e8cf5d5a2e4abbf332a07c99b55416880f"
+    },
+    {
+      "path": "connector/ci_connector_server.py",
+      "bytes": 24541,
+      "sha256": "2c235cfc0597bb2eea1becd5b1ae1a35c9b51633eec6c3feca6ed2ecf19ce337"
+    },
+    {
+      "path": "local-runtime/ci_ledger.py",
+      "bytes": 6764,
+      "sha256": "e525c64e3665a4f922b1c03dfa78718c562a78e451407f9620d0e9484f88c86a"
+    },
+    {
+      "path": "public/ci-registry/v1.1.0/ci-registry.json",
+      "bytes": 6818,
+      "sha256": "2c9a32ace8a02faaea9e6458b8d59efc7bf1bd5f11b98bb2492a9adc8ce46f70"
+    }
+  ]
+}

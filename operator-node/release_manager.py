@@ -22,17 +22,7 @@ SERVICE = 'ci_mcp_server.service'
 
 
 def _fetch_repo_file(repo_path, commit):
-    url = f"https://api.github.com/repos/{updater.REPO}/contents/{quote(repo_path, safe='/')}?ref={commit}"
-    meta = updater._fetch_json(url)
-    encoded = meta.get("content")
-    if not encoded or meta.get("encoding") != "base64":
-        raise RuntimeError(f"missing_base64_content:{repo_path}")
-    content = base64.b64decode(encoded)
-    actual = updater._git_blob_sha(content)
-    expected = meta.get("sha")
-    if actual != expected:
-        raise RuntimeError(f"blob_sha_mismatch:{repo_path}")
-    return content, expected
+    return updater._fetch_repo_path(repo_path, commit)
 
 
 def _restore_runtime(backup):
@@ -144,6 +134,8 @@ def deploy(commit, activate=False):
             'restart': restart,
             'evidence': {
                 'canonicalRepository': updater.REPO,
+                'source': updater.SOURCE,
+                'githubRequired': False,
                 'exactCommit': commit,
                 'runtimePreparedAndApplied': True,
                 'registrySynced': True,

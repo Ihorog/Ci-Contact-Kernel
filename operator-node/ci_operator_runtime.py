@@ -47,11 +47,9 @@ def status():
     value = dict(base.status())
     value["version"] = VERSION
     value["providerAdapters"] = provider_adapters.probe_all()
-    value["selfUpdate"] = {
-        "repository": updater.REPO,
-        "exactCommitRequired": True,
-        "allowlistedFiles": list(updater.ALLOWED),
-    }
+    value["selfUpdate"] = {**updater.source_status(),
+        "repository": updater.REPO, "exactCommitRequired": True,
+        "allowlistedFiles": list(updater.ALLOWED)}
     value["releaseManager"] = {
         "version": release_manager.VERSION,
         "canonicalRepository": updater.REPO,

@@ -6,8 +6,14 @@ Replace Orange `cit-pwa` sidebar modules/dashboard/admin launcher with Ci intent
 ## Apply on Orange (LAN/SSH)
 
 ```bash
-cp -a /home/kazkar/cit/cit-pwa/index.html /home/kazkar/cit/cit-pwa/index.html.bak-widgetize-$(date +%Y%m%d_%H%M%S)
+set -euo pipefail
+backup="/home/kazkar/cit/cit-pwa/index.html.bak-widgetize-$(date +%Y%m%d_%H%M%S)"
+cp -a /home/kazkar/cit/cit-pwa/index.html "$backup"
 python3 /home/kazkar/cit/bin/orange-widgetize.py
+grep -q 'CI_WIDGETIZE_V1' /home/kazkar/cit/cit-pwa/index.html
+! grep -q 'Модулі Cimeika' /home/kazkar/cit/cit-pwa/index.html
+! grep -q 'Dashboard' /home/kazkar/cit/cit-pwa/index.html
+! grep -q 'admin\.html' /home/kazkar/cit/cit-pwa/index.html
 # optional: sudo -n /usr/bin/systemctl restart cimeika-orange-ui.service
 curl -fsS http://127.0.0.1:8080/health
 ```

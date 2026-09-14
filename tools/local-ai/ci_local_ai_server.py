@@ -162,15 +162,25 @@ def search_media(query, kind="any"):
     }
 
 
-def _executor_for(action):
+def _executor_for(action, context=None):
+    context = context or {}
+    platform = str(context.get("platform") or "").strip().lower()
+    source = str(context.get("source") or "").strip().lower()
+    device = str(context.get("device") or "device").strip()
+    is_android = platform == "android" or "android" in source
+    is_windows = platform in {"windows", "win32"} or "cihub" in source or "desktop" in source
+
     if action in {"vault_list", "media_search"}:
         return {"id": "CI.VAULT", "location": "CiHub", "mode": "local"}
     if action == "open_gpt":
-        return {"id": "ANDROID", "location": "device", "mode": "client", "target": "com.openai.chatgpt"}
+        if is_android:
+            return {"id": "ANDROID", "location": device, "platform": "android", "mode": "client", "target": "com.openai.chatgpt"}
+        if is_windows:
+            return {"id": "CIHUB", "location": device or "CiHub", "platform": "windows", "mode": "client", "target": "https://chatgpt.com/"}
+        return {"id": "CI.CLIENT", "location": device, "platform": platform or "unknown", "mode": "client", "target": "chatgpt"}
     if action in {"previous", "next", "tools", "collapse_current", "collapse_all", "restore_context"}:
-        return {"id": "CI.POINT", "location": "device", "mode": "local"}
+        return {"id": "CI.POINT", "location": device, "platform": platform or "unknown", "mode": "local"}
     return {"id": "CI.LOCAL_AI", "location": "CiHub", "mode": "local"}
-
 
 def _projection_for(result):
     action = result.get("action") or "answer"
@@ -211,15 +221,17 @@ def _evidence_for(result):
     return {"state": "resolved", "verified": False, "source": result.get("processor") or "CI.LOCAL_AI"}
 
 
-def _finalize_result(result):
-    result["executor"] = _executor_for(result.get("action") or "answer")
+def _finalize_result(result, context=None):
+    context = context or {}
+    result["executor"] = _executor_for(result.get("action") or "answer", context)
+    result["execution_context"] = {k: v for k, v in context.items() if v}
     result["evidence"] = _evidence_for(result)
     result["projection"] = _projection_for(result)
     result["result_id"] = f"ci-{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
     result["protocol"] = "ci-intent-v0.4"
     return result
 
-def process_intent(text):
+def process_intent(text, context=None):
     result = resolve_intent(text)
     action = result.get("action")
     if action == "vault_list":
@@ -241,7 +253,7 @@ def process_intent(text):
             result["answer"] = "Збігів не знайшов, але перевірка сховища неповна."
         else:
             result["answer"] = "За поточним файловим індексом збігів не знайшов."
-    return _finalize_result(result)
+    return _finalize_result(result, context)
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "CiLocalAI/0.4"
@@ -282,7 +294,12 @@ class Handler(BaseHTTPRequestHandler):
             if not text:
                 self._send(400, {"ok": False, "error": "text_required"})
                 return
-            result = process_intent(text)
+            raw_context = payload.get("context")
+            context = dict(raw_context) if isinstance(raw_context, dict) else {}
+            for key in ("source", "platform", "device", "surface"):
+                if payload.get(key) and not context.get(key):
+                    context[key] = payload.get(key)
+            result = process_intent(text, context)
             self._send(200, {"ok": True, **result})
         except Exception as exc:
             self._send(500, {"ok": False, "error": str(exc)[:300]})

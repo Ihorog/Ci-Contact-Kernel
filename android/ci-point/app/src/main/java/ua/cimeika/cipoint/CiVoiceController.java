@@ -164,6 +164,9 @@ final class CiVoiceController {
                 JSONObject body = new JSONObject();
                 body.put("text", text);
                 body.put("source", "ci-android-overlay");
+                body.put("platform", "android");
+                body.put("device", android.os.Build.MODEL);
+                body.put("surface", "ci-point");
                 body.put("locale", "uk-UA");
                 JSONObject result = postJson(endpoint, body);
                 if (closed) return;

@@ -2,9 +2,9 @@
   "_schema": "ci-repo-registry-v1",
   "_integrity": {
     "algorithm": "sha256",
-    "hash": "b50293c56e97ad1dd6e65b74344348366d3108e5c6f3e322921a10b38765ba07",
+    "hash": "34c2f1d79979bb416b4fdb2fdf227ddd8ad6384768d62261d1c63f0a404bfb3c",
     "source": "RepoRegistry.updateVerification",
-    "updated_at": "2026-09-14T14:41:03.846Z"
+    "updated_at": "2026-09-14T15:35:09.169Z"
   },
   "repositories": [
     {
@@ -51,8 +51,8 @@
           "unrecoverable_blocker"
         ]
       },
-      "last_verified_sha": "abcdef1234567",
-      "last_verified_at": "2026-09-14T14:41:03.846Z",
+      "last_verified_sha": "d166370bd92cb",
+      "last_verified_at": "2026-09-14T15:35:09.169Z",
       "known_external_gates": [
         "EXTERNAL_GATE_NOTIFICATION_SETTINGS",
         "EXTERNAL_GATE_CROSS_REPO_PERMISSIONS"

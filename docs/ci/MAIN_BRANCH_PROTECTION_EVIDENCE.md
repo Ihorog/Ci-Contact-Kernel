@@ -1,6 +1,6 @@
 # Main branch protection evidence (`main`)
 
-Last re-verified: 2026-09-14T14:40Z
+Last re-verified: 2026-09-14T15:33Z
 
 ## Target policy
 - PR required before merge
@@ -20,14 +20,19 @@ Last re-verified: 2026-09-14T14:40Z
 4. Direct repository-ruleset API read from this sandbox remains blocked:
    - `GET https://api.github.com/repos/Ihorog/Ci-Contact-Kernel/rulesets` → `403` (`Blocked by DNS monitoring proxy`)
 
+## Externally verified live settings (authorized executor)
+- required status check includes `verify` with `strict=true`
+- PR requirement present
+- conversation resolution `true`
+- `enforce_admins=true`
+- `allow_force_pushes=false`
+- `allow_deletions=false`
+
 ## Verification status against target policy
 - `main` protection active: ✅ verified (`protected: true`).
 - Required status check source (`verify` from `ci-plus-cloud`): ✅ verified.
-- PR-only merge enforcement: ⏳ not directly readable from this runtime.
-- Required conversation resolution: ⏳ not directly readable from this runtime.
-- Force-push blocked: ⏳ not directly readable from this runtime.
-- Branch deletion blocked: ⏳ not directly readable from this runtime.
-- Applies to administrators (no routine bypass): ⏳ not directly readable from this runtime.
-
-## Exact remaining mismatch
-The remaining mismatch is verification visibility, not branch content: this agent runtime cannot read repository ruleset details (`/rulesets` API returns 403 via DNS proxy), so the policy fields that are only visible in repository settings could not be directly re-verified from this environment.
+- PR-only merge enforcement: ✅ verified (external authorized executor evidence).
+- Required conversation resolution: ✅ verified (external authorized executor evidence).
+- Force-push blocked: ✅ verified (external authorized executor evidence).
+- Branch deletion blocked: ✅ verified (external authorized executor evidence).
+- Applies to administrators (no routine bypass): ✅ verified (external authorized executor evidence).

@@ -2,6 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -29,7 +30,11 @@ test('server-ledger approval permits one verified execution', async () => {
   const authority = loop.approve(intake.correlation_id, {
     repository_id: 'Ihorog/Ci-Contact-Kernel', risk_class: 'R2'
   });
-  const sha = 'abcdef1234567';
+  const previousSha = loop.repoRegistry.get('Ihorog/Ci-Contact-Kernel')?.last_verified_sha || '';
+  let sha = crypto.createHash('sha256').update(intake.correlation_id).digest('hex').slice(0, 13);
+  while (sha === previousSha) {
+    sha = crypto.createHash('sha256').update(`next:${sha}`).digest('hex').slice(0, 13);
+  }
   const result = await loop.run(event, {
     authority,
     observed_execution: {

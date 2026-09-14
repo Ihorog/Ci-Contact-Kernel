@@ -22,6 +22,11 @@ final class CiResultProjection {
     private final List<TextView> cards = new ArrayList<>();
     private final List<WindowManager.LayoutParams> params = new ArrayList<>();
     private final List<String> values = new ArrayList<>();
+    private static final int CARD_WIDTH_DP = 220;
+    private static final int CARD_GAP_DP = 18;
+    private static final int CARD_STACK_TOP_DP = 72;
+    private static final int CARD_STACK_STEP_DP = 68;
+    private static final int CARD_EDGE_DP = 12;
 
     private int anchorX;
     private int anchorY;
@@ -52,7 +57,7 @@ final class CiResultProjection {
             if (!message.trim().isEmpty()) values.add(message.trim());
         }
         for (int i = 0; i < values.size(); i++) {
-            addCard(values.get(i), i, screenWidth, screenHeight);
+            addCard(values.get(i), i, values.size(), screenWidth, screenHeight);
         }
     }
 
@@ -62,7 +67,7 @@ final class CiResultProjection {
         pointSize = size;
         for (int i = 0; i < cards.size(); i++) {
             WindowManager.LayoutParams p = params.get(i);
-            place(p, i, screenWidth, screenHeight);
+            place(p, i, cards.size(), screenWidth, screenHeight);
             try { windowManager.updateViewLayout(cards.get(i), p); } catch (Exception ignored) { }
         }
     }
@@ -80,7 +85,7 @@ final class CiResultProjection {
         return !cards.isEmpty();
     }
 
-    private void addCard(String text, int index, int screenWidth, int screenHeight) {
+    private void addCard(String text, int index, int totalCount, int screenWidth, int screenHeight) {
         TextView card = new TextView(context);
         card.setText(text);
         card.setTextColor(Color.WHITE);
@@ -100,7 +105,7 @@ final class CiResultProjection {
         card.setElevation(dp(8));
 
         WindowManager.LayoutParams p = new WindowManager.LayoutParams(
-                dp(220), WindowManager.LayoutParams.WRAP_CONTENT,
+                dp(CARD_WIDTH_DP), WindowManager.LayoutParams.WRAP_CONTENT,
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                         ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                         : WindowManager.LayoutParams.TYPE_PHONE,
@@ -110,20 +115,23 @@ final class CiResultProjection {
                 PixelFormat.TRANSLUCENT
         );
         p.gravity = Gravity.TOP | Gravity.START;
-        place(p, index, screenWidth, screenHeight);
+        place(p, index, totalCount, screenWidth, screenHeight);
         cards.add(card);
         params.add(p);
         windowManager.addView(card, p);
     }
 
-    private void place(WindowManager.LayoutParams p, int index, int screenWidth, int screenHeight) {
-        int cardWidth = dp(220);
-        int gap = dp(18);
+    private void place(WindowManager.LayoutParams p, int index, int totalCount, int screenWidth, int screenHeight) {
+        int cardWidth = dp(CARD_WIDTH_DP);
+        int gap = dp(CARD_GAP_DP);
         boolean placeLeft = anchorX + pointSize / 2 > screenWidth / 2;
         int x = placeLeft ? anchorX - cardWidth - gap : anchorX + pointSize + gap;
-        x = Math.max(dp(12), Math.min(x, screenWidth - cardWidth - dp(12)));
-        int y = anchorY - dp(72) + index * dp(68);
-        y = Math.max(dp(12), Math.min(y, screenHeight - dp(72)));
+        x = Math.max(dp(CARD_EDGE_DP), Math.min(x, screenWidth - cardWidth - dp(CARD_EDGE_DP)));
+        int step = dp(CARD_STACK_STEP_DP);
+        int baseY = anchorY - dp(CARD_STACK_TOP_DP);
+        int maxBaseY = screenHeight - dp(CARD_STACK_TOP_DP) - Math.max(0, totalCount - 1) * step;
+        baseY = Math.max(dp(CARD_EDGE_DP), Math.min(baseY, Math.max(dp(CARD_EDGE_DP), maxBaseY)));
+        int y = baseY + index * step;
         p.x = x;
         p.y = y;
     }

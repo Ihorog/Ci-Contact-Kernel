@@ -63,7 +63,7 @@ public final class CiOverlayService extends Service {
     private SharedPreferences prefs;
     private CiVoiceController voiceController;
     private CiResultProjection resultProjection;
-    private org.json.JSONObject lastResult;
+    private org.json.JSONObject lastDisplayableResult;
 
     private enum OverlayState { PASSIVE, CONTEXT, MOVE, DOCKED, PULSE, HIDDEN }
     private OverlayState overlayState = OverlayState.PASSIVE;
@@ -650,7 +650,7 @@ public final class CiOverlayService extends Service {
     }
 
     private void handleVoiceResult(org.json.JSONObject result) {
-        lastResult = result;
+        if (isDisplayableResult(result)) lastDisplayableResult = result;
         String action = result.optString("action", "answer");
         Intent event = new Intent(ACTION_CI_RESULT);
         event.putExtra("timestamp", System.currentTimeMillis());
@@ -691,12 +691,13 @@ public final class CiOverlayService extends Service {
             animateCircularGesture(false);
             emitExecutionEvidence(action, "verified", "context_collapsed", result);
         } else if ("restore_context".equals(action)) {
-            if (lastResult != null) showResultProjection(lastResult);
+            if (lastDisplayableResult != null) showResultProjection(lastDisplayableResult);
             animateCircularGesture(true);
             emitExecutionEvidence(action, "verified", "context_restored", result);
         } else {
             pulseResult();
-            emitExecutionEvidence(action, result.optJSONObject("evidence") != null ? "verified" : "resolved", "local_result", result);
+            org.json.JSONObject evidence = result.optJSONObject("evidence");
+            emitExecutionEvidence(action, evidence != null && evidence.optBoolean("verified", false) ? "verified" : "resolved", "local_result", result);
         }
     }
 
@@ -718,6 +719,17 @@ public final class CiOverlayService extends Service {
         windowManager.getDefaultDisplay().getRealMetrics(metrics);
         resultProjection.show(result, pointParams.x, pointParams.y, pointSize, metrics.widthPixels, metrics.heightPixels);
         if (resultProjection.isVisible()) setState(OverlayState.CONTEXT);
+    }
+
+    private boolean isDisplayableResult(org.json.JSONObject result) {
+        if (result == null) return false;
+        org.json.JSONObject projection = result.optJSONObject("projection");
+        if (projection != null) {
+            org.json.JSONArray items = projection.optJSONArray("items");
+            if (items != null && items.length() > 0) return true;
+            if (!projection.optString("message", "").trim().isEmpty()) return true;
+        }
+        return !result.optString("answer", "").trim().isEmpty();
     }
 
     private void clearResultProjection() {
@@ -864,4 +876,3 @@ public final class CiOverlayService extends Service {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 }
-

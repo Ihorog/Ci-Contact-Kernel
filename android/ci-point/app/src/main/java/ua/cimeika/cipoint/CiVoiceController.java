@@ -40,10 +40,14 @@ final class CiVoiceController {
     private final Context context;
     private final Callback callback;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private SpeechRecognizer recognizer;
     private TextToSpeech tts;
     private boolean listening;
     private boolean preferOfflineActive;
+    private boolean closed;
+    private int listenRequestId;
+    private Runnable pendingFallbackRetry;
 
     CiVoiceController(Context context, Callback callback) {
         this.context = context;
@@ -70,6 +74,9 @@ final class CiVoiceController {
     }
 
     private void startListening(boolean preferOffline) {
+        if (closed) return;
+        cancelPendingFallbackRetry();
+        listenRequestId++;
         preferOfflineActive = preferOffline;
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
             callback.onError("speech_recognizer_unavailable");
@@ -84,16 +91,18 @@ final class CiVoiceController {
                 @Override public void onBufferReceived(byte[] buffer) { }
                 @Override public void onEndOfSpeech() { setListening(false); }
                 @Override public void onError(int error) {
+                    if (closed) return;
                     setListening(false);
                     if ((error == SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED
                             || error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE) && preferOfflineActive) {
                         try { recognizer.cancel(); } catch (Exception ignored) { }
-                        new Handler(Looper.getMainLooper()).postDelayed(() -> startListening(false), 180L);
+                        scheduleFallbackRetry(listenRequestId);
                         return;
                     }
                     callback.onError("speech_error_" + error);
                 }
                 @Override public void onResults(Bundle results) {
+                    if (closed) return;
                     setListening(false);
                     ArrayList<String> values = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                     if (values == null || values.isEmpty()) {
@@ -118,6 +127,7 @@ final class CiVoiceController {
     }
 
     private void stopListening() {
+        cancelPendingFallbackRetry();
         if (recognizer != null) {
             try { recognizer.stopListening(); } catch (Exception ignored) { }
         }
@@ -130,6 +140,22 @@ final class CiVoiceController {
         callback.onListeningChanged(next);
     }
 
+    private void scheduleFallbackRetry(int requestId) {
+        cancelPendingFallbackRetry();
+        pendingFallbackRetry = () -> {
+            pendingFallbackRetry = null;
+            if (closed || requestId != listenRequestId || listening) return;
+            startListening(false);
+        };
+        mainHandler.postDelayed(pendingFallbackRetry, 180L);
+    }
+
+    private void cancelPendingFallbackRetry() {
+        if (pendingFallbackRetry == null) return;
+        mainHandler.removeCallbacks(pendingFallbackRetry);
+        pendingFallbackRetry = null;
+    }
+
     private void submit(String text) {
         executor.execute(() -> {
             try {
@@ -140,10 +166,12 @@ final class CiVoiceController {
                 body.put("source", "ci-android-overlay");
                 body.put("locale", "uk-UA");
                 JSONObject result = postJson(endpoint, body);
+                if (closed) return;
                 callback.onResult(result);
                 String answer = result.optString("answer", "").trim();
                 if (!answer.isEmpty()) speak(answer);
             } catch (Exception exc) {
+                if (closed) return;
                 callback.onError("local_ai_error:" + exc.getClass().getSimpleName());
             }
         });
@@ -177,6 +205,7 @@ final class CiVoiceController {
     }
 
     void close() {
+        closed = true;
         stopListening();
         if (recognizer != null) {
             recognizer.destroy();

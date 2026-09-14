@@ -10,20 +10,20 @@ API=f'https://api.github.com/repos/{REPO}/contents'
 TARGET=Path('/home/kazkar/cit/modules/ci_operator')
 BACKUPS=TARGET/'.backups'
 SOURCE=os.getenv('CI_OPERATOR_UPDATE_SOURCE','local').strip().lower()
-ALLOWED=['ci_operator.py','provider_adapters.py','ci_operator_runtime.py','operator_telemetry.py',
-         'queue_contract.py','vault_node.py','release_manager.py','self_update.py','mcp_probe.py',
-         'technical_model.py','ci_pipeline.py','organism_biology.py','local_selftest.py',
-         'executor_mesh.py','evidence_aggregator.py','ci_orchestrator.py']
+CORE=['ci_operator.py','provider_adapters.py','ci_operator_runtime.py','operator_telemetry.py',
+      'queue_contract.py','vault_node.py','release_manager.py','self_update.py','mcp_probe.py',
+      'technical_model.py','ci_pipeline.py','organism_biology.py','local_selftest.py']
+OPTIONAL=['executor_mesh.py','evidence_aggregator.py','ci_orchestrator.py','executor_queue_server.py']
+ALLOWED=CORE+OPTIONAL
 SHA_RE=re.compile(r'^[0-9a-f]{40}$')
 
 def _git_blob_sha(content:bytes):
     return hashlib.sha1(f'blob {len(content)}\0'.encode()+content).hexdigest()
 
 def _fetch_json(url):
-    req=Request(url,headers={'accept':'application/vnd.github+json','user-agent':'ci-operator-self-update/2'})
+    req=Request(url,headers={'accept':'application/vnd.github+json','user-agent':'ci-operator-self-update/3'})
     with urlopen(req,timeout=15) as response:
         return json.loads(response.read().decode('utf-8'))
-
 def _fetch_github(repo_path,commit):
     meta=_fetch_json(f'{API}/{quote(repo_path,safe="/")}?ref={commit}')
     encoded=meta.get('content')
@@ -39,6 +39,10 @@ def _fetch_repo_path(repo_path,commit):
 def _fetch_file(name,commit):
     return _fetch_repo_path('operator-node/'+name,commit)
 
+def _is_missing(exc):
+    text=str(exc)
+    return 'local_model_missing:' in text or 'HTTP Error 404' in text or 'Not Found' in text
+
 def source_status():
     return {'source':SOURCE,'localModel':technical_model.status(),'githubRepository':REPO,
             'githubRequired':False,'githubFallbackAvailable':True}
@@ -48,14 +52,19 @@ def prepare(commit):
         return {'ok':False,'error':'exact_40_hex_commit_required','executed':False}
     TARGET.mkdir(parents=True,exist_ok=True)
     stage=Path(tempfile.mkdtemp(prefix='ci-operator-stage-',dir=str(TARGET)))
-    evidence=[]
+    evidence=[]; absent=[]
     try:
         for name in ALLOWED:
-            content,blob=_fetch_file(name,commit)
+            try:
+                content,blob=_fetch_file(name,commit)
+            except Exception as exc:
+                if name in OPTIONAL and _is_missing(exc):
+                    absent.append(name); continue
+                raise
             path=stage/name; path.write_bytes(content); py_compile.compile(str(path),doraise=True)
             evidence.append({'file':name,'blobSha':blob,'bytes':len(content),'source':SOURCE})
         return {'ok':True,'executed':False,'prepared':True,'commit':commit,
-                'stage':str(stage),'files':evidence,'source':SOURCE}
+                'stage':str(stage),'files':evidence,'absent':absent,'source':SOURCE}
     except Exception as exc:
         shutil.rmtree(stage,ignore_errors=True)
         return {'ok':False,'executed':False,'error':str(exc)[:300],'source':SOURCE}
@@ -65,17 +74,22 @@ def apply(commit,activate=False):
     if not prepared.get('ok'): return prepared
     stage=Path(prepared['stage']); stamp=time.strftime('%Y%m%dT%H%M%SZ',time.gmtime())
     backup=BACKUPS/f'{stamp}-{commit[:12]}'; backup.mkdir(parents=True,exist_ok=True)
+    present={x['file'] for x in prepared['files']}; absent=set(prepared.get('absent') or [])
     try:
         for name in ALLOWED:
             current=TARGET/name
             if current.exists(): shutil.copy2(current,backup/name)
-        for name in ALLOWED: os.replace(stage/name,TARGET/name)
+        for name in present: os.replace(stage/name,TARGET/name)
+        for name in absent:
+            current=TARGET/name
+            if current.exists(): current.unlink()
         shutil.rmtree(stage,ignore_errors=True)
     except Exception as exc:
+        shutil.rmtree(stage,ignore_errors=True)
         return {'ok':False,'executed':False,'error':'apply_failed','message':str(exc)[:300],
                 'backup':str(backup),'source':SOURCE}
     result={'ok':True,'executed':True,'commit':commit,'backup':str(backup),
-            'files':prepared['files'],'activationScheduled':False,'source':SOURCE,
+            'files':prepared['files'],'absent':sorted(absent),'activationScheduled':False,'source':SOURCE,
             'evidence':{'exactCommit':commit,'source':SOURCE,'githubRequired':False}}
     if activate:
         subprocess.Popen(['sh','-c',f'sleep 2; kill -TERM {os.getpid()}'],

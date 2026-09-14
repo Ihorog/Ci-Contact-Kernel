@@ -2,16 +2,20 @@
 import json
 import subprocess
 import time
+import urllib.request
 from pathlib import Path
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 CIT = Path('/home/kazkar/cit')
 LEDGER = CIT / 'modules/ci_ledger/ci_ledger.py'
 PIPELINE = CIT / 'modules/ci_operator/ci_pipeline.py'
+QUEUE_URL = 'http://127.0.0.1:8798/execute'
 
 EXECUTORS = [
     {'id':'orange.local','driver':'local','trust':100,'locality':100,'cost':1,'latency':1,
      'capabilities':['operator.health','vault.status','pipeline.status','ledger.audit']},
+    {'id':'cihub.rdc','driver':'cihub_queue','trust':95,'locality':90,'cost':1,'latency':2,
+     'capabilities':['cihub.status','cihub.git.status','cihub.safety_tests']},
     {'id':'ci.link','driver':'ci_link','trust':80,'locality':20,'cost':3,'latency':4,
      'capabilities':['ci.link.contact']},
 ]
@@ -44,8 +48,7 @@ def _compact(capability, body):
                 'githubRequired':su.get('githubRequired')}
     if capability=='pipeline.status':
         return {'ok':body.get('ok'),'localAuthority':body.get('local_authority'),
-                'githubRequired':body.get('github_required'),
-                'head':((body.get('model') or {}).get('head')),
+                'githubRequired':body.get('github_required'),'head':((body.get('model') or {}).get('head')),
                 'release':((body.get('current_release') or {}).get('release_id'))}
     if capability=='ledger.audit':
         return {'ok':body.get('ok'),'mode':body.get('mode'),'ciTotal':body.get('ci_total'),
@@ -65,6 +68,21 @@ def _local(capability):
         rc,out,err=_run(argv)
     body=_json(out)
     return {'ok':rc==0 and bool(body.get('ok',True)),'evidence':_compact(capability,body),'error':err[:240] or None}
+
+def _cihub_queue(capability, payload=None):
+    data=json.dumps({'capability':capability,'payload':payload or {}},separators=(',',':')).encode('utf-8')
+    req=urllib.request.Request(QUEUE_URL,data=data,method='POST',
+        headers={'Content-Type':'application/json','User-Agent':'ci-orchestrator/1'})
+    try:
+        with urllib.request.urlopen(req,timeout=130) as response:
+            body=json.loads(response.read().decode('utf-8'))
+    except Exception as exc:
+        return {'ok':False,'error':'cihub_queue:'+str(exc)[:180]}
+    evidence=body.get('evidence') or {}
+    return {'ok':bool(body.get('ok')),'evidence':evidence,
+            'workerVersion':body.get('workerVersion'),
+            'error':None if body.get('ok') else evidence.get('error') or body.get('error')}
+
 def _ci_link(payload):
     message=str((payload or {}).get('message') or 'Ci distributed executor verification; contact only, no external write.')[:500]
     code=("import sys,json;sys.path.insert(0,'/home/kazkar/cit/modules/ci_operator');"
@@ -85,8 +103,12 @@ def execute(executor_id, capability, payload=None):
     if not meta or capability not in meta['capabilities']:
         return {'ok':False,'executor':executor_id,'capability':capability,'error':'executor_capability_mismatch'}
     try:
-        result=_local(capability) if meta['driver']=='local' else _ci_link(payload) if meta['driver']=='ci_link' else {'ok':False,'error':'driver_unknown'}
+        if meta['driver']=='local': result=_local(capability)
+        elif meta['driver']=='cihub_queue': result=_cihub_queue(capability,payload)
+        elif meta['driver']=='ci_link': result=_ci_link(payload)
+        else: result={'ok':False,'error':'driver_unknown'}
     except Exception as exc:
         result={'ok':False,'error':str(exc)[:240]}
-    result.update({'executor':executor_id,'capability':capability,'elapsedMs':round((time.perf_counter()-started)*1000,2)})
+    result.update({'executor':executor_id,'capability':capability,
+                   'elapsedMs':round((time.perf_counter()-started)*1000,2)})
     return result

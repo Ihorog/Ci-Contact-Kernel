@@ -1,32 +1,32 @@
 {
   "ok": true,
   "schema": "ci.pipeline.release/v2",
-  "release_id": "ci-release-20260914T135456Z-7ecb16a0424f",
-  "released_at": "20260914T135456Z",
-  "commit": "7ecb16a0424fe7c0d42bc991077a5c4d1cc0a96d",
+  "release_id": "ci-release-20260914T172728Z-ab774f1d74d0",
+  "released_at": "20260914T172728Z",
+  "commit": "ab774f1d74d03c99ca3feea840f14067e02adbec",
   "previous": {
-    "release_id": "ci-release-20260914T111440Z-b62d44b085c4",
-    "commit": "b62d44b085c42d2f0438095ada2dbe586098106b"
+    "release_id": "ci-release-20260914T171410Z-21b72c67a1a4",
+    "commit": "21b72c67a1a4c272b83716d8cb9d673b098d2ddc"
   },
   "source": "local-orange",
   "github_required": false,
   "artifact": {
     "ok": true,
-    "commit": "7ecb16a0424fe7c0d42bc991077a5c4d1cc0a96d",
-    "artifact": "/home/kazkar/cit/artifacts/ci-technical-model-20260914T135451Z-7ecb16a0424f.tar.gz",
-    "vault": "/mnt/cimeika_vault/92482E5D482E3FF9/ci/backups/orangepi3-lts/ci-technical-model-20260914T135451Z-7ecb16a0424f.tar.gz",
-    "sha256": "3dd776e765c86aa3846f25a3d851315f5a053b0b23be64782d83dc2df35e2532",
-    "bytes": 44823
+    "commit": "ab774f1d74d03c99ca3feea840f14067e02adbec",
+    "artifact": "/home/kazkar/cit/artifacts/ci-technical-model-20260914T172724Z-ab774f1d74d0.tar.gz",
+    "vault": "/mnt/cimeika_vault/92482E5D482E3FF9/ci/backups/orangepi3-lts/ci-technical-model-20260914T172724Z-ab774f1d74d0.tar.gz",
+    "sha256": "df12c7a4df5d489e7c08b96a84154b01c569eb1ec2f3c1c85619291b7dc2ea1a",
+    "bytes": 46970
   },
-  "provenance": "/mnt/cimeika_vault/92482E5D482E3FF9/ci/backups/orangepi3-lts/ci-technical-model-20260914T135451Z-7ecb16a0424f.tar.gz.provenance.json",
-  "provenance_sha256": "895a0f4ca10f3743101029bfa384f9283393d043ca0573ac85a34b352e58ae67",
+  "provenance": "/mnt/cimeika_vault/92482E5D482E3FF9/ci/backups/orangepi3-lts/ci-technical-model-20260914T172724Z-ab774f1d74d0.tar.gz.provenance.json",
+  "provenance_sha256": "8f263f60aa36306b97474728f70b2abc807ca995d0fd4f91617cc1a7648d7d37",
   "deploy": {
     "ok": true,
     "executed": true,
-    "commit": "7ecb16a0424fe7c0d42bc991077a5c4d1cc0a96d",
-    "runtimeBackup": "/home/kazkar/cit/modules/ci_operator/.backups/20260914T135457Z-7ecb16a0424f",
-    "connectorBackup": "/home/kazkar/cit/modules/ci_connector/ci_connector_server.py.release.20260914T135456Z.7ecb16a0424f.bak",
-    "registryBackup": "/home/kazkar/cimeika/cit/registry/ci-registry/v1.1.0/ci-registry.json.release.20260914T135456Z.7ecb16a0424f.bak",
+    "commit": "ab774f1d74d03c99ca3feea840f14067e02adbec",
+    "runtimeBackup": "/home/kazkar/cit/modules/ci_operator/.backups/20260914T172729Z-ab774f1d74d0",
+    "connectorBackup": "/home/kazkar/cit/modules/ci_connector/ci_connector_server.py.release.20260914T172729Z.ab774f1d74d0.bak",
+    "registryBackup": "/home/kazkar/cimeika/cit/registry/ci-registry/v1.1.0/ci-registry.json.release.20260914T172729Z.ab774f1d74d0.bak",
     "runtimeFiles": [
       {
         "file": "ci_operator.py",
@@ -66,14 +66,14 @@
       },
       {
         "file": "release_manager.py",
-        "blobSha": "0eef4827dbd290aa28549ef0e7cef3f01889bec1",
-        "bytes": 7347,
+        "blobSha": "0ad8d4c3217e3a79d031dc9c9a73113f891d196d",
+        "bytes": 8605,
         "source": "local"
       },
       {
         "file": "self_update.py",
-        "blobSha": "8395ce74190f27b554d06422a8420e785de54150",
-        "bytes": 4224,
+        "blobSha": "95c4faad71ea359dcc3776f850a97b7ced911766",
+        "bytes": 4887,
         "source": "local"
       },
       {
@@ -102,14 +102,14 @@
       },
       {
         "file": "local_selftest.py",
-        "blobSha": "858900dd9221047694eaebcd9ef88f4e117e0dd7",
-        "bytes": 989,
+        "blobSha": "6bc1921904c0b3c624f1912a3fcdd8ccbeba6763",
+        "bytes": 1402,
         "source": "local"
       },
       {
         "file": "executor_mesh.py",
-        "blobSha": "e78a56124f21db0c5918461f905aeda5d6154bce",
-        "bytes": 4856,
+        "blobSha": "8ee8d9236c401117d10427ce8c7446d35bbeb11c",
+        "bytes": 5993,
         "source": "local"
       },
       {
@@ -120,8 +120,14 @@
       },
       {
         "file": "ci_orchestrator.py",
-        "blobSha": "86662a57c21f0f9d7e5769a5ca09eabaee8d5209",
-        "bytes": 6666,
+        "blobSha": "e4b8100560bca97730b663e586a3c589afdb33d1",
+        "bytes": 6989,
+        "source": "local"
+      },
+      {
+        "file": "executor_queue_server.py",
+        "blobSha": "f3392ef65cdfcd729cbb31c0945c10f37fda6918",
+        "bytes": 4070,
         "source": "local"
       }
     ],
@@ -138,18 +144,26 @@
     "connectorCompile": "PASS",
     "restart": {
       "scheduled": true,
-      "pid": 978456,
+      "pid": 1041627,
       "method": "systemd_supervised_term"
+    },
+    "auxiliaryRuntime": {
+      "executorQueue": {
+        "scheduled": true,
+        "desired": "running",
+        "method": "fixed_local_auxiliary"
+      }
     },
     "evidence": {
       "canonicalRepository": "Ihorog/Ci-Contact-Kernel",
       "source": "local",
       "githubRequired": false,
-      "exactCommit": "7ecb16a0424fe7c0d42bc991077a5c4d1cc0a96d",
+      "exactCommit": "ab774f1d74d03c99ca3feea840f14067e02adbec",
       "runtimePreparedAndApplied": true,
       "registrySynced": true,
       "connectorPatched": true,
-      "connectorCompiled": true
+      "connectorCompiled": true,
+      "executorQueueTargetPresent": true
     }
   },
   "tests": {
@@ -159,7 +173,7 @@
   "ledger": {
     "ok": true,
     "rc": 0,
-    "out": "{\n  \"ok\": true,\n  \"ci\": 1,\n  \"event_id\": \"ci.orange.local_cicd.release-20260914T135457Z\",\n  \"hash\": \"6332edeefe0486de3090559cfb27116029f0bc689de541c46bdb2ac1ea67b4dc\"\n}",
+    "out": "{\n  \"ok\": true,\n  \"ci\": 1,\n  \"event_id\": \"ci.orange.local_cicd.release-20260914T172729Z\",\n  \"hash\": \"9eef12ce8a5108fa23f29ce3bc5680a5dd290a56e3c94a951a018ab861ea0e49\"\n}",
     "err": ""
   }
 }

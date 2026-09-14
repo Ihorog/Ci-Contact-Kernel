@@ -3,6 +3,8 @@ import json
 import os
 import re
 import subprocess
+import time
+import uuid
 import urllib.request
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -24,7 +26,7 @@ SYSTEM_PROMPT = """Ти локальний процесор намірів Сі.
 action: answer|open_gpt|media_search|vault_list|previous|next|tools|collapse_current|collapse_all|restore_context.
 Для фото/відео/фільмів використовуй media_search і media_kind: photo|video|movie|any.
 Якщо користувач прямо просить GPT/ChatGPT — open_gpt. Для звичайної розмови — answer.
-Поля: action, answer, query, media_kind, requires_confirmation.
+Поля: action, answer, query, media_kind, requires_confirmation. Не додавай executor/evidence/projection — їх формує сервер.
 requires_confirmation=true для видалення, фінансової, публічної або незворотної дії."""
 
 def _json_request(url, payload, timeout=45):
@@ -117,6 +119,7 @@ def search_media(query, kind="any"):
     seen = set()
     matches = []
     scanned_dirs = 0
+    failed_dirs = 0
     while queue and scanned_dirs < MAX_MEDIA_DIRS and len(matches) < MAX_MEDIA_ITEMS:
         current = queue.popleft()
         if current in seen:
@@ -126,6 +129,7 @@ def search_media(query, kind="any"):
         try:
             listing = _vault_list(current)
         except Exception:
+            failed_dirs += 1
             continue
         for item in listing.get("items", []):
             name = str(item.get("name") or "")
@@ -143,8 +147,77 @@ def search_media(query, kind="any"):
                 "modified": item.get("modified"), "score": score,
             })
     matches.sort(key=lambda row: (row["score"], str(row.get("modified") or "")), reverse=True)
-    return matches[:MAX_MEDIA_ITEMS], scanned_dirs
+    checked_dirs = scanned_dirs - failed_dirs
+    if failed_dirs == 0 and checked_dirs > 0:
+        scan_status = "verified"
+    elif checked_dirs > 0:
+        scan_status = "partial"
+    else:
+        scan_status = "failed"
+    return matches[:MAX_MEDIA_ITEMS], {
+        "scannedDirectories": scanned_dirs,
+        "checkedDirectories": checked_dirs,
+        "failedDirectories": failed_dirs,
+        "scanStatus": scan_status,
+    }
 
+
+def _executor_for(action):
+    if action in {"vault_list", "media_search"}:
+        return {"id": "CI.VAULT", "location": "CiHub", "mode": "local"}
+    if action == "open_gpt":
+        return {"id": "ANDROID", "location": "device", "mode": "client", "target": "com.openai.chatgpt"}
+    if action in {"previous", "next", "tools", "collapse_current", "collapse_all", "restore_context"}:
+        return {"id": "CI.POINT", "location": "device", "mode": "local"}
+    return {"id": "CI.LOCAL_AI", "location": "CiHub", "mode": "local"}
+
+
+def _projection_for(result):
+    action = result.get("action") or "answer"
+    if result.get("requires_confirmation"):
+        return {"state": "confirm", "message": result.get("answer") or "Потрібне підтвердження.", "items": []}
+    if action in {"vault_list", "media_search"}:
+        payload = result.get("result") or {}
+        items = []
+        for item in (payload.get("items") or [])[:3]:
+            items.append({"label": str(item.get("name") or item.get("path") or "").strip(), "path": item.get("path")})
+        return {"state": "result", "message": result.get("answer") or "", "items": items}
+    if action == "answer":
+        return {"state": "result", "message": result.get("answer") or "", "items": []}
+    return {"state": "context", "message": "", "items": []}
+
+
+def _evidence_for(result):
+    action = result.get("action") or "answer"
+    if result.get("requires_confirmation"):
+        return {"state": "confirmation_required", "verified": False, "source": "CI.LOCAL_AI"}
+    if action == "vault_list":
+        items = (result.get("result") or {}).get("items") or []
+        return {"state": "verified", "verified": True, "source": "CI.VAULT", "itemCount": len(items)}
+    if action == "media_search":
+        payload = result.get("result") or {}
+        items = payload.get("items") or []
+        verified = payload.get("scanStatus") == "verified"
+        return {
+            "state": "verified" if verified else "resolved",
+            "verified": verified,
+            "source": "CI.VAULT",
+            "matchCount": len(items),
+            "scannedDirectories": payload.get("scannedDirectories", 0),
+            "checkedDirectories": payload.get("checkedDirectories", 0),
+            "failedDirectories": payload.get("failedDirectories", 0),
+            "scanStatus": payload.get("scanStatus") or "failed",
+        }
+    return {"state": "resolved", "verified": False, "source": result.get("processor") or "CI.LOCAL_AI"}
+
+
+def _finalize_result(result):
+    result["executor"] = _executor_for(result.get("action") or "answer")
+    result["evidence"] = _evidence_for(result)
+    result["projection"] = _projection_for(result)
+    result["result_id"] = f"ci-{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
+    result["protocol"] = "ci-intent-v0.4"
+    return result
 
 def process_intent(text):
     result = resolve_intent(text)
@@ -154,16 +227,24 @@ def process_intent(text):
         result["result"] = listing
         result["answer"] = result.get("answer") or f"У сховищі бачу {len(listing.get('items', []))} елементів верхнього рівня."
     elif action == "media_search":
-        items, scanned = search_media(result.get("query") or text, result.get("media_kind") or "any")
-        result["result"] = {"items": items, "scannedDirectories": scanned}
+        items, scan_meta = search_media(result.get("query") or text, result.get("media_kind") or "any")
+        result["result"] = {"items": items, **scan_meta}
         if items:
-            result["answer"] = f"Знайшов {len(items)} медіафайлів."
+            result["answer"] = (
+                f"Знайшов {len(items)} медіафайлів."
+                if scan_meta["scanStatus"] == "verified"
+                else f"Знайшов {len(items)} медіафайлів, але перевірка сховища неповна."
+            )
+        elif scan_meta["scanStatus"] == "failed":
+            result["answer"] = "Не вдалося перевірити сховище для пошуку медіа."
+        elif scan_meta["scanStatus"] == "partial":
+            result["answer"] = "Збігів не знайшов, але перевірка сховища неповна."
         else:
             result["answer"] = "За поточним файловим індексом збігів не знайшов."
-    return result
+    return _finalize_result(result)
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "CiLocalAI/0.1"
+    server_version = "CiLocalAI/0.4"
 
     def _send(self, status, payload):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -185,6 +266,7 @@ class Handler(BaseHTTPRequestHandler):
                 "model": MODEL,
                 "ollama": OLLAMA_URL,
                 "tokenRequired": False,
+                "protocol": "ci-intent-v0.4",
             })
             return
         self._send(404, {"ok": False, "error": "not_found"})

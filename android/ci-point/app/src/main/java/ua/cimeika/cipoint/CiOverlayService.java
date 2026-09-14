@@ -47,7 +47,7 @@ public final class CiOverlayService extends Service {
     private static final String PREF_DOCK_SIDE = "dock_side";
     private static final long LONG_PRESS_MS = 420L;
     private static final long SWIPE_MAX_MS = 520L;
-    private static final long DOUBLE_TAP_MS = 320L;
+    private static final long DOUBLE_TAP_MS = 550L;
     private static final int HIDDEN_VISIBLE_DP = 12;
 
     private WindowManager windowManager;
@@ -62,6 +62,8 @@ public final class CiOverlayService extends Service {
     private Handler handler;
     private SharedPreferences prefs;
     private CiVoiceController voiceController;
+    private CiResultProjection resultProjection;
+    private org.json.JSONObject lastDisplayableResult;
 
     private enum OverlayState { PASSIVE, CONTEXT, MOVE, DOCKED, PULSE, HIDDEN }
     private OverlayState overlayState = OverlayState.PASSIVE;
@@ -101,6 +103,7 @@ public final class CiOverlayService extends Service {
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         handler = new Handler(Looper.getMainLooper());
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        resultProjection = new CiResultProjection(this, windowManager);
         voiceController = new CiVoiceController(this, new CiVoiceController.Callback() {
             @Override public void onListeningChanged(boolean listening) { handler.post(() -> handleVoiceListening(listening)); }
             @Override public void onTranscript(String text) { handler.post(() -> handleVoiceTranscript(text)); }
@@ -150,6 +153,8 @@ public final class CiOverlayService extends Service {
         if (pendingSingleTap != null && handler != null) handler.removeCallbacks(pendingSingleTap);
         if (voiceController != null) voiceController.close();
         voiceController = null;
+        clearResultProjection();
+        resultProjection = null;
         removeOverlay(activePoint);
         removeOverlay(ciLogo);
         activePoint = null;
@@ -329,6 +334,7 @@ public final class CiOverlayService extends Service {
         logoParams.y = y;
         windowManager.updateViewLayout(activePoint, pointParams);
         windowManager.updateViewLayout(ciLogo, logoParams);
+        repositionProjection(x, y);
     }
 
     private int clampX(int value, int width) {
@@ -429,6 +435,7 @@ public final class CiOverlayService extends Service {
             try {
                 windowManager.updateViewLayout(activePoint, pointParams);
                 windowManager.updateViewLayout(ciLogo, logoParams);
+                repositionProjection(x, y);
             } catch (Exception ignored) { }
         });
         if (endAction != null) animator.addListener(new android.animation.AnimatorListenerAdapter() {
@@ -643,30 +650,97 @@ public final class CiOverlayService extends Service {
     }
 
     private void handleVoiceResult(org.json.JSONObject result) {
+        if (isDisplayableResult(result)) lastDisplayableResult = result;
         String action = result.optString("action", "answer");
         Intent event = new Intent(ACTION_CI_RESULT);
         event.putExtra("timestamp", System.currentTimeMillis());
-        event.putExtra("source", "ci-overlay-v3");
+        event.putExtra("source", "ci-overlay-v4");
+        event.putExtra("phase", "resolved");
         event.putExtra("action", action);
         event.putExtra("result", result.toString());
         sendBroadcast(event);
+
+        showResultProjection(result);
+        if (result.optBoolean("requires_confirmation", false)) {
+            setState(OverlayState.CONTEXT);
+            emitExecutionEvidence(action, "confirmation_required", "not_executed", result);
+            return;
+        }
+        executeResolvedAction(action, result);
+    }
+
+    private void executeResolvedAction(String action, org.json.JSONObject result) {
         if ("open_gpt".equals(action)) {
-            launchCiGpt();
+            String status = launchCiGpt();
+            emitExecutionEvidence(action, status, CHATGPT_PACKAGE, result);
         } else if ("previous".equals(action)) {
             animateSemanticNudge("right", "previous");
+            emitExecutionEvidence(action, "verified", "overlay_previous", result);
         } else if ("next".equals(action)) {
             animateSemanticNudge("left", "next");
+            emitExecutionEvidence(action, "verified", "overlay_next", result);
         } else if ("tools".equals(action)) {
             animateSemanticNudge("up", "tools");
+            emitExecutionEvidence(action, "verified", "overlay_tools", result);
         } else if ("collapse_current".equals(action)) {
+            clearResultProjection();
             animateSemanticNudge("down", "collapse_current");
+            emitExecutionEvidence(action, "verified", "projection_collapsed", result);
         } else if ("collapse_all".equals(action)) {
+            clearResultProjection();
             animateCircularGesture(false);
+            emitExecutionEvidence(action, "verified", "context_collapsed", result);
         } else if ("restore_context".equals(action)) {
+            if (lastDisplayableResult != null) showResultProjection(lastDisplayableResult);
             animateCircularGesture(true);
+            emitExecutionEvidence(action, "verified", "context_restored", result);
         } else {
             pulseResult();
+            org.json.JSONObject evidence = result.optJSONObject("evidence");
+            emitExecutionEvidence(action, evidence != null && evidence.optBoolean("verified", false) ? "verified" : "resolved", "local_result", result);
         }
+    }
+
+    private void emitExecutionEvidence(String action, String status, String detail, org.json.JSONObject result) {
+        Intent event = new Intent(ACTION_CI_RESULT);
+        event.putExtra("timestamp", System.currentTimeMillis());
+        event.putExtra("source", "ci-overlay-v4");
+        event.putExtra("phase", "execution");
+        event.putExtra("action", action);
+        event.putExtra("status", status);
+        event.putExtra("detail", detail);
+        event.putExtra("result", result != null ? result.toString() : "{}");
+        sendBroadcast(event);
+    }
+
+    private void showResultProjection(org.json.JSONObject result) {
+        if (resultProjection == null || pointParams == null || result == null) return;
+        DisplayMetrics metrics = new DisplayMetrics();
+        windowManager.getDefaultDisplay().getRealMetrics(metrics);
+        resultProjection.show(result, pointParams.x, pointParams.y, pointSize, metrics.widthPixels, metrics.heightPixels);
+        if (resultProjection.isVisible()) setState(OverlayState.CONTEXT);
+    }
+
+    private boolean isDisplayableResult(org.json.JSONObject result) {
+        if (result == null) return false;
+        org.json.JSONObject projection = result.optJSONObject("projection");
+        if (projection != null) {
+            org.json.JSONArray items = projection.optJSONArray("items");
+            if (items != null && items.length() > 0) return true;
+            if (!projection.optString("message", "").trim().isEmpty()) return true;
+        }
+        return !result.optString("answer", "").trim().isEmpty();
+    }
+
+    private void clearResultProjection() {
+        if (resultProjection != null) resultProjection.clear();
+    }
+
+    private void repositionProjection(int x, int y) {
+        if (resultProjection == null || !resultProjection.isVisible()) return;
+        DisplayMetrics metrics = new DisplayMetrics();
+        windowManager.getDefaultDisplay().getRealMetrics(metrics);
+        resultProjection.reposition(x, y, pointSize, metrics.widthPixels, metrics.heightPixels);
     }
 
     private void handleVoiceError(String error) {
@@ -700,22 +774,28 @@ public final class CiOverlayService extends Service {
         launchCiGpt();
     }
 
-    private void launchCiGpt() {
+    private String launchCiGpt() {
         Intent app = new Intent(Intent.ACTION_VIEW, Uri.parse(CI_GPT_URL));
         app.setPackage(CHATGPT_PACKAGE);
         app.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         try {
             startActivity(app);
-            return;
+            return "accepted_app";
         } catch (Exception ignored) {
         }
-        Intent web = new Intent(Intent.ACTION_VIEW, Uri.parse(CI_GPT_URL));
-        web.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        startActivity(web);
+        try {
+            Intent web = new Intent(Intent.ACTION_VIEW, Uri.parse(CI_GPT_URL));
+            web.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(web);
+            return "accepted_web";
+        } catch (Exception ignored) {
+            return "failed";
+        }
     }
 
     private void hideCi() {
         if (pointParams == null || ciLogo == null) return;
+        clearResultProjection();
         if (prefs != null) prefs.edit().putBoolean(PREF_HIDDEN, true).apply();
         cancelLongPress();
         cancelPassiveBreath();
@@ -734,6 +814,7 @@ public final class CiOverlayService extends Service {
     }
 
     private void detachCiViews() {
+        clearResultProjection();
         removeOverlay(activePoint);
         removeOverlay(ciLogo);
         activePoint = null;
@@ -795,4 +876,3 @@ public final class CiOverlayService extends Service {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 }
-

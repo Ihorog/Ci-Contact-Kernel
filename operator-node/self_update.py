@@ -23,6 +23,7 @@ ALLOWED = [
     "ci_operator_runtime.py",
     "operator_telemetry.py",
     "queue_contract.py",
+    "vault_node.py",
     "release_manager.py",
     "self_update.py",
     "mcp_probe.py",

@@ -44,6 +44,14 @@ Ci+ interaction model:
 
 The AI is not Ci+ itself. The AI is a client/operator that may use Ci+.
 
+Execution placement invariant:
+
+`user device = thin Ci surface`
+
+The user device captures intent and renders results. Ci operations execute on external Ci nodes (including Orange and provider nodes), not on the client device. The client may keep only a small support package for input, rendering, ephemeral cache, connectivity, secure authorization handoff and presence.
+
+For a registered operation with a known live node, reuse the bound node without a new executor search. Safe/read operations may execute automatically with evidence. Gated operations keep the same bound node and pause only for the required permission.
+
 ## 2. Primary direct connection
 
 The primary transport is a direct remote MCP connection:

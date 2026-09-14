@@ -4,3 +4,7 @@ data/cigrafin/
 test/tmp-memory.jsonl
 android/**/.gradle/
 android/**/build/
+android/ci-point/local.properties
+android/ci-point/app/src/main/res/drawable/ci_logo.png
+android/ci-point/app/src/main/res/drawable/ci_notification.png
+android/ci-point/app/src/main/res/drawable/ci_app_icon.png

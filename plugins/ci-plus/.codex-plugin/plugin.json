@@ -1,0 +1,20 @@
+{
+  "name": "ci-plus",
+  "version": "0.1.0",
+  "description": "Result-first Ci+ operator access through the canonical remote MCP control plane.",
+  "repository": "https://github.com/Ihorog/Ci-Contact-Kernel",
+  "keywords": ["ci", "cimeika", "mcp", "operator", "automation"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Ci+",
+    "shortDescription": "Intent to verified result through Ci+",
+    "longDescription": "Routes intent through the Ci+ operator, live executor readiness, permissions, execution and evidence before reporting a result.",
+    "developerName": "Cimeika",
+    "category": "Productivity",
+    "defaultPrompt": [
+      "Use Ci+ to resolve this intent and return only a verified result or the exact blocker.",
+      "Check the live Ci+ operator and executor state before acting."
+    ]
+  }
+}

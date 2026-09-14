@@ -34,7 +34,7 @@ init_status, init = post('/mcp', {
 tools_status, tools = post('/mcp', {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/list', 'params': {}})
 names = sorted(t.get('name') for t in tools.get('result', {}).get('tools', []))
 required = {
-    'ci_operator_status', 'ci_resolve', 'ci_dispatch',
+    'ci_operator_status', 'ci_resolve', 'ci_delegate', 'ci_dispatch',
     'ci_executor_status', 'ci_execute_read',
     'ci_operator_metrics', 'ci_operator_release',
 }
@@ -55,7 +55,7 @@ result = {
 print(json.dumps(result, ensure_ascii=False, indent=2))
 ok = (
     health_status == 200 and health.get('node') == 'CI.OPERATOR.ORANGE'
-    and health.get('registry', {}).get('connections') == 28
+    and health.get('registry', {}).get('connections') == 29
     and oauth_status == 200 and oauth.get('resource') == BASE
     and init_status == 200 and init.get('result', {}).get('serverInfo', {}).get('name') == 'ci-operator'
     and tools_status == 200 and required.issubset(names)

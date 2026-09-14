@@ -2,12 +2,14 @@
 import time
 
 import ci_operator as base
+import ci_orchestrator
 import operator_telemetry as telemetry
 import provider_adapters
 import release_manager
 import self_update as updater
+import vault_node
 
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 NODE_ID = base.NODE_ID
 
 
@@ -46,11 +48,10 @@ def status():
     value = dict(base.status())
     value["version"] = VERSION
     value["providerAdapters"] = provider_adapters.probe_all()
-    value["selfUpdate"] = {
-        "repository": updater.REPO,
-        "exactCommitRequired": True,
-        "allowlistedFiles": list(updater.ALLOWED),
-    }
+    value["orchestration"] = ci_orchestrator.status()
+    value["selfUpdate"] = {**updater.source_status(),
+        "repository": updater.REPO, "exactCommitRequired": True,
+        "allowlistedFiles": list(updater.ALLOWED)}
     value["releaseManager"] = {
         "version": release_manager.VERSION,
         "canonicalRepository": updater.REPO,
@@ -80,6 +81,14 @@ def resolve(intent: str, target=None):
     return value
 
 
+def delegate(intent: str, operation: str, target=None):
+    started = time.perf_counter()
+    result = base.delegate(intent, operation, target)
+    result["operatorRuntimeVersion"] = VERSION
+    _record("delegate", started, result, route="EXTERNAL_NODE")
+    return result
+
+
 def dispatch(intent: str, target=None, mode="contact"):
     started = time.perf_counter()
     result = base.dispatch(intent, target, mode)
@@ -90,7 +99,15 @@ def dispatch(intent: str, target=None, mode="contact"):
 
 
 def executor_status():
-    return {"ok": True, "node": NODE_ID, "operatorRuntimeVersion": VERSION, "adapters": provider_adapters.probe_all()}
+    return {"ok": True, "node": NODE_ID, "operatorRuntimeVersion": VERSION, "adapters": provider_adapters.probe_all(), "vault": vault_node.status()}
+
+
+def vault(action: str, **kwargs):
+    started = time.perf_counter()
+    result = vault_node.execute(action, **kwargs)
+    result["operatorRuntimeVersion"] = VERSION
+    _record("vault_" + str(action), started, result, coordinate="CI.VAULT", route="ORANGE_VAULT")
+    return result
 
 
 def execute_read(coordinate: str, operation: str):
@@ -107,7 +124,7 @@ def operator_update(commit: str, activate=False):
     result = updater.apply(commit, bool(activate))
     result["node"] = NODE_ID
     result["operatorRuntimeVersion"] = VERSION
-    _record("operator_update", started, result, coordinate="CI.ORANGE", route="PINNED_GITHUB_UPDATE")
+    _record("operator_update", started, result, coordinate="CI.ORANGE", route="LOCAL_MODEL_UPDATE")
     return result
 
 
@@ -116,7 +133,16 @@ def operator_release(commit: str, activate=False):
     result = release_manager.deploy(commit, activate)
     result["node"] = NODE_ID
     result["operatorRuntimeVersion"] = VERSION
-    _record("operator_release", started, result, coordinate="CI.ORANGE", route="PINNED_GITHUB_RELEASE")
+    _record("operator_release", started, result, coordinate="CI.ORANGE", route="LOCAL_MODEL_RELEASE")
+    return result
+
+
+def orchestrate(template="distributed_acceptance"):
+    started = time.perf_counter()
+    result = ci_orchestrator.run_template(template)
+    result["node"] = NODE_ID
+    result["operatorRuntimeVersion"] = VERSION
+    _record("orchestrate", started, result, coordinate="CI.ORANGE", route="EXECUTOR_MESH")
     return result
 
 

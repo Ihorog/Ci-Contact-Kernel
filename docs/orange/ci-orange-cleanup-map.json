@@ -1,0 +1,32 @@
+{
+  "schema": "ci.orange.cit.cleanup-map/v1",
+  "updated_at": "2026-09-11T10:13:45.340761+00:00",
+  "roots": {
+    "runtime": "/home/kazkar/cit",
+    "registry": "/home/kazkar/cimeika/cit"
+  },
+  "leave": [
+    "cit/modules/ci_operator",
+    "cit/modules/orange-pi-mcp",
+    "cit/state/.ci-secrets",
+    "cit/state/ci-exec-node.json",
+    "cit/state/ci-access-manager.json",
+    "cit/docs/ci-canon",
+    "cit/cit-pwa/index.html (after widgetize)",
+    "cit/runtime/ci_ui_chat_bridge_8080.py",
+    "cimeika/cit/registry/ci-registry/v1.1.0"
+  ],
+  "freeze": [
+    "cit/cit-pwa/index.html.bak*",
+    "cit/cit-pwa/index.before_*",
+    "cit/backups/",
+    "cit/orange_home youtube lounge (executor, not UI menu)",
+    "cit/*.py.bak*"
+  ],
+  "delete_candidates": [
+    "cit/cit-pwa/*.bak* after retention",
+    "duplicate registry mirrors under cit/registry if superseded",
+    "obsolete cit/state/ci_gpt_bridge_*.lock.txt (archive first)"
+  ],
+  "policy": "DELETE only with backup + evidence"
+}

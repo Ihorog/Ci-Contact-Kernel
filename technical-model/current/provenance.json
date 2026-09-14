@@ -1,0 +1,138 @@
+{
+  "schema": "ci.pipeline.provenance/v2",
+  "release_id": "ci-release-20260914T135456Z-7ecb16a0424f",
+  "commit": "7ecb16a0424fe7c0d42bc991077a5c4d1cc0a96d",
+  "created_at": "20260914T135456Z",
+  "source": "local-orange",
+  "github_required": false,
+  "tests": [
+    {
+      "name": "git_fsck",
+      "blocking": true,
+      "ok": true
+    },
+    {
+      "name": "compile:ci_operator.py",
+      "blocking": true,
+      "ok": true
+    },
+    {
+      "name": "compile:ci_operator_runtime.py",
+      "blocking": true,
+      "ok": true
+    },
+    {
+      "name": "compile:ci_orchestrator.py",
+      "blocking": true,
+      "ok": true
+    },
+    {
+      "name": "compile:ci_pipeline.py",
+      "blocking": true,
+      "ok": true
+    },
+    {
+      "name": "compile:evidence_aggregator.py",
+      "blocking": true,
+      "ok": true
+    },
+    {
+      "name": "compile:executor_mesh.py",
+      "blocking": true,
+      "ok": true
+    },
+    {
+      "name": "compile:install_orange.py",
+      "blocking": true,
+      "ok": true
+    },
+    {
+      "name": "compile:install_provider_layer.py",
+      "blocking": true,
+      "ok": true
+    },
+    {
+      "name": "compile:local_selftest.py",
+      "blocking": true,
+      "ok": true
+    },
+    {
+      "name": "compile:mcp_probe.py",
+      "blocking": true,
+      "ok": true
+    },
+    {
+      "name": "compile:operator_telemetry.py",
+      "blocking": true,
+      "ok": true
+    },
+    {
+      "name": "compile:organism_biology.py",
+      "blocking": true,
+      "ok": true
+    },
+    {
+      "name": "compile:provider_adapters.py",
+      "blocking": true,
+      "ok": true
+    },
+    {
+      "name": "compile:queue_contract.py",
+      "blocking": true,
+      "ok": true
+    },
+    {
+      "name": "compile:release_manager.py",
+      "blocking": true,
+      "ok": true
+    },
+    {
+      "name": "compile:self_update.py",
+      "blocking": true,
+      "ok": true
+    },
+    {
+      "name": "compile:selftest.py",
+      "blocking": true,
+      "ok": true
+    },
+    {
+      "name": "compile:technical_model.py",
+      "blocking": true,
+      "ok": true
+    },
+    {
+      "name": "compile:test_ci_orchestrator.py",
+      "blocking": true,
+      "ok": true
+    },
+    {
+      "name": "compile:vault_node.py",
+      "blocking": true,
+      "ok": true
+    },
+    {
+      "name": "local_selftest",
+      "blocking": true,
+      "ok": true
+    },
+    {
+      "name": "ledger_audit",
+      "blocking": true,
+      "ok": true
+    },
+    {
+      "name": "integration_selftest",
+      "blocking": false,
+      "ok": false
+    }
+  ],
+  "artifact": {
+    "ok": true,
+    "commit": "7ecb16a0424fe7c0d42bc991077a5c4d1cc0a96d",
+    "artifact": "/home/kazkar/cit/artifacts/ci-technical-model-20260914T135451Z-7ecb16a0424f.tar.gz",
+    "vault": "/mnt/cimeika_vault/92482E5D482E3FF9/ci/backups/orangepi3-lts/ci-technical-model-20260914T135451Z-7ecb16a0424f.tar.gz",
+    "sha256": "3dd776e765c86aa3846f25a3d851315f5a053b0b23be64782d83dc2df35e2532",
+    "bytes": 44823
+  }
+}

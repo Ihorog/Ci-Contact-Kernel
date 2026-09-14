@@ -34,8 +34,8 @@ test('Ci plugin package contract', () => {
     assert.ok(skill.includes(token), `skill missing ${token}`);
   }
 
-  const entry = marketplace.plugins?.find((p) => p.name === 'ci');
-  assert.equal(entry?.source?.path, './plugins/ci');
+  const entry = marketplace.plugins?.find((p) => p.name === 'ci-plus');
+  assert.equal(entry?.source?.path, './plugins/ci-plus');
   assert.equal(entry?.policy?.installation, 'AVAILABLE');
   assert.equal(entry?.policy?.authentication, 'ON_INSTALL');
 

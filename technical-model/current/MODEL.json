@@ -65,8 +65,8 @@
     },
     {
       "path": "operator-node/self_update.py",
-      "bytes": 4106,
-      "sha256": "2ce9039aae463a5537f03b3fd7221863ec9e330126f8fec5287eb47c1f56313e"
+      "bytes": 4153,
+      "sha256": "3dac8463e519cddfca9a5817a397f796cb899a8f2f674d3cfba806bad08ba7b3"
     },
     {
       "path": "operator-node/selftest.py",

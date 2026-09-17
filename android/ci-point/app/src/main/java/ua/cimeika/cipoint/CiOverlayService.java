@@ -63,6 +63,8 @@ public final class CiOverlayService extends Service {
     private SharedPreferences prefs;
     private CiVoiceController voiceController;
     private CiResultProjection resultProjection;
+    private CiContextClient contextClient;
+    private CiContextHalo contextHalo;
     private org.json.JSONObject lastDisplayableResult;
 
     private enum OverlayState { PASSIVE, CONTEXT, MOVE, DOCKED, PULSE, HIDDEN }
@@ -104,6 +106,11 @@ public final class CiOverlayService extends Service {
         handler = new Handler(Looper.getMainLooper());
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         resultProjection = new CiResultProjection(this, windowManager);
+        contextClient = new CiContextClient(this);
+        contextHalo = new CiContextHalo(this, windowManager, new CiContextHalo.Callback() {
+            @Override public void onCardTap(CiContextCard card) { handler.post(() -> handleContextCardTap(card)); }
+            @Override public void onCardSwipe(CiContextCard card, String direction) { handler.post(() -> handleContextCardSwipe(card, direction)); }
+        });
         voiceController = new CiVoiceController(this, new CiVoiceController.Callback() {
             @Override public void onListeningChanged(boolean listening) { handler.post(() -> handleVoiceListening(listening)); }
             @Override public void onTranscript(String text) { handler.post(() -> handleVoiceTranscript(text)); }
@@ -153,6 +160,10 @@ public final class CiOverlayService extends Service {
         if (pendingSingleTap != null && handler != null) handler.removeCallbacks(pendingSingleTap);
         if (voiceController != null) voiceController.close();
         voiceController = null;
+        if (contextClient != null) contextClient.close();
+        contextClient = null;
+        clearContextHalo();
+        contextHalo = null;
         clearResultProjection();
         resultProjection = null;
         removeOverlay(activePoint);
@@ -289,7 +300,7 @@ public final class CiOverlayService extends Service {
             lastTapUpTime = 0;
             if (pendingSingleTap != null) handler.removeCallbacks(pendingSingleTap);
             pendingSingleTap = null;
-            performVoiceDoubleClick();
+            resetToZeroState();
             return;
         }
         lastTapUpTime = now;
@@ -335,6 +346,7 @@ public final class CiOverlayService extends Service {
         windowManager.updateViewLayout(activePoint, pointParams);
         windowManager.updateViewLayout(ciLogo, logoParams);
         repositionProjection(x, y);
+        repositionContextHalo(x, y);
     }
 
     private int clampX(int value, int width) {
@@ -436,6 +448,7 @@ public final class CiOverlayService extends Service {
                 windowManager.updateViewLayout(activePoint, pointParams);
                 windowManager.updateViewLayout(ciLogo, logoParams);
                 repositionProjection(x, y);
+                repositionContextHalo(x, y);
             } catch (Exception ignored) { }
         });
         if (endAction != null) animator.addListener(new android.animation.AnimatorListenerAdapter() {
@@ -519,6 +532,13 @@ public final class CiOverlayService extends Service {
                         .scaleX(1f).scaleY(1f).setDuration(180)
                         .withEndAction(() -> setState(returnState)).start()).start();
         emitGesture(dx, dy, duration, direction);
+        if ("left".equals(direction)) requestContext("swipe_left", "left");
+        else if ("right".equals(direction)) {
+            clearContextHalo();
+            clearResultProjection();
+            emitSemanticGesture("reset_context", "right");
+        } else if ("up".equals(direction)) requestContext("context_newer", "up");
+        else requestContext("context_older", "down");
     }
 
     private void updateCircularGesture(float rawX, float rawY) {
@@ -541,7 +561,7 @@ public final class CiOverlayService extends Service {
 
     private void animateCircularGesture(boolean clockwise) {
         if (ciLogo == null) return;
-        String semantic = clockwise ? "restore_context" : "collapse_all";
+        String semantic = clockwise ? "next_stage" : "previous_state";
         setState(OverlayState.PULSE);
         float rotation = clockwise ? 180f : -180f;
         float midScale = clockwise ? 1.14f : 0.76f;
@@ -551,6 +571,7 @@ public final class CiOverlayService extends Service {
                         .rotation(0f).scaleX(1f).scaleY(1f).alpha(0.96f).translationZ(dp(8))
                         .setDuration(280).withEndAction(() -> setState(stableStateFromPrefs())).start()).start();
         emitSemanticGesture(semantic, clockwise ? "clockwise" : "counterclockwise");
+        requestContext(semantic, clockwise ? "clockwise" : "counterclockwise");
     }
 
     private void animateSemanticNudge(String direction, String semantic) {
@@ -596,10 +617,10 @@ public final class CiOverlayService extends Service {
         }
         Intent event = new Intent(ACTION_CI_CLICK);
         event.putExtra("timestamp", System.currentTimeMillis());
-        event.putExtra("source", "ci-overlay-v3");
+        event.putExtra("source", "ci-overlay-v5");
         event.putExtra("action", "invoke-ci-context");
         sendBroadcast(event);
-        handler.postDelayed(() -> setState(stableStateFromPrefs()), 420L);
+        requestContext("tap", "");
     }
 
     private void emitGesture(float dx, float dy, long duration, String direction) {
@@ -608,13 +629,111 @@ public final class CiOverlayService extends Service {
         event.putExtra("dy", dy);
         event.putExtra("duration", duration);
         event.putExtra("direction", direction);
-        String semantic = "right".equals(direction) ? "previous"
-                : ("left".equals(direction) ? "next"
-                : ("up".equals(direction) ? "tools" : "collapse_current"));
+        String semantic = "right".equals(direction) ? "reset_context"
+                : ("left".equals(direction) ? "materialize_context"
+                : ("up".equals(direction) ? "context_newer" : "context_older"));
         event.putExtra("semantic", semantic);
         event.putExtra("timestamp", System.currentTimeMillis());
         event.putExtra("source", "ci-active-point");
         sendBroadcast(event);
+    }
+
+    private void requestContext(String gesture, String direction) {
+        requestContext(gesture, direction, currentContextState());
+    }
+
+    private void requestContext(String gesture, String direction, org.json.JSONObject state) {
+        if (contextClient == null || pointParams == null) return;
+        setState(OverlayState.CONTEXT);
+        contextClient.requestContext(gesture, direction, state, new CiContextClient.Callback() {
+            @Override public void onSuccess(org.json.JSONObject payload) {
+                showContextHalo(payload);
+            }
+            @Override public void onError(String error) {
+                handleVoiceError(error);
+            }
+        });
+    }
+
+    private org.json.JSONObject currentContextState() {
+        org.json.JSONObject state = new org.json.JSONObject();
+        try {
+            state.put("overlay_state", overlayState.name().toLowerCase(java.util.Locale.ROOT));
+            state.put("dock_side", dockSide);
+            state.put("halo_visible", contextHalo != null && contextHalo.isVisible());
+            state.put("timestamp", System.currentTimeMillis());
+            if (lastDisplayableResult != null) state.put("last_result", lastDisplayableResult);
+        } catch (Exception ignored) { }
+        return state;
+    }
+
+    private void showContextHalo(org.json.JSONObject payload) {
+        if (contextHalo == null || pointParams == null || payload == null) return;
+        DisplayMetrics metrics = new DisplayMetrics();
+        windowManager.getDefaultDisplay().getRealMetrics(metrics);
+        contextHalo.show(payload, pointParams.x, pointParams.y, pointSize, metrics.widthPixels, metrics.heightPixels);
+        if (contextHalo.isVisible()) setState(OverlayState.CONTEXT);
+        else setState(stableStateFromPrefs());
+    }
+
+    private void handleContextCardTap(CiContextCard card) {
+        if (contextClient == null || card == null) return;
+        vibrate();
+        clearContextHalo();
+        setState(OverlayState.PULSE);
+        contextClient.execute(card, currentContextState(), new CiContextClient.Callback() {
+            @Override public void onSuccess(org.json.JSONObject payload) { handleContextActionPayload(payload); }
+            @Override public void onError(String error) { handleVoiceError(error); }
+        });
+    }
+
+    private void handleContextCardSwipe(CiContextCard card, String direction) {
+        org.json.JSONObject state = currentContextState();
+        try { state.put("parent_card", card != null ? card.toJson() : new org.json.JSONObject()); }
+        catch (Exception ignored) { }
+        requestContext("card_branch", direction, state);
+    }
+
+    private void handleContextActionPayload(org.json.JSONObject payload) {
+        if (payload == null) return;
+        org.json.JSONObject result = payload.optJSONObject("result");
+        if (result != null) {
+            if (isDisplayableResult(result)) lastDisplayableResult = result;
+            showResultProjection(result);
+            String action = result.optString("action", "answer");
+            if (result.optBoolean("requires_confirmation", false)) {
+                emitExecutionEvidence(action, "confirmation_required", "not_executed", result);
+            } else {
+                executeResolvedAction(action, result);
+            }
+        }
+        org.json.JSONArray next = payload.optJSONArray("next_cards");
+        if (next != null && next.length() > 0) {
+            org.json.JSONObject halo = new org.json.JSONObject();
+            try { halo.put("cards", next); } catch (Exception ignored) { }
+            handler.postDelayed(() -> showContextHalo(halo), 180L);
+        } else {
+            handler.postDelayed(() -> requestContext("after_action", ""), 220L);
+        }
+    }
+
+    private void clearContextHalo() {
+        if (contextHalo != null) contextHalo.clear();
+    }
+
+    private void repositionContextHalo(int x, int y) {
+        if (contextHalo == null || !contextHalo.isVisible()) return;
+        DisplayMetrics metrics = new DisplayMetrics();
+        windowManager.getDefaultDisplay().getRealMetrics(metrics);
+        contextHalo.reposition(x, y, pointSize, metrics.widthPixels, metrics.heightPixels);
+    }
+
+    private void resetToZeroState() {
+        clearContextHalo();
+        clearResultProjection();
+        lastDisplayableResult = null;
+        setState(OverlayState.PASSIVE);
+        emitSemanticGesture("zero_state", "double_tap");
     }
 
     private void performVoiceDoubleClick() {
@@ -795,6 +914,7 @@ public final class CiOverlayService extends Service {
 
     private void hideCi() {
         if (pointParams == null || ciLogo == null) return;
+        clearContextHalo();
         clearResultProjection();
         if (prefs != null) prefs.edit().putBoolean(PREF_HIDDEN, true).apply();
         cancelLongPress();

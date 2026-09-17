@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'android/ci-point/**'
+      - 'tools/local-ai/**'
       - 'Cipole (2).png'
       - '.github/workflows/ci-point-android.yml'
   workflow_dispatch:
@@ -23,6 +24,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+
+      - name: Verify context action runtime
+        run: python3 -m unittest discover -s tools/local-ai -p 'test_*.py'
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4

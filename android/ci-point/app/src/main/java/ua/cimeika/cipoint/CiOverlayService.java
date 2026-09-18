@@ -738,8 +738,8 @@ public final class CiOverlayService extends Service {
         requestContext("card_branch", "left", state);
     }
 
-    private void handleContextActionPayload(org.json.JSONObject payload) {
-        if (payload == null) return;
+    private void handleContextActionPayload(org.json.JSONObject payload, long generation) {
+        if (payload == null || generation != contextGeneration) return;
         org.json.JSONObject result = payload.optJSONObject("result");
         if (result != null) {
             if (isDisplayableResult(result)) lastDisplayableResult = result;
@@ -751,14 +751,35 @@ public final class CiOverlayService extends Service {
                 executeResolvedAction(action, result);
             }
         }
+        if (generation != contextGeneration) return;
         org.json.JSONArray next = payload.optJSONArray("next_cards");
         if (next != null && next.length() > 0) {
             org.json.JSONObject halo = new org.json.JSONObject();
             try { halo.put("cards", next); } catch (Exception ignored) { }
-            handler.postDelayed(() -> showContextHalo(halo), 180L);
+            handler.postDelayed(() -> {
+                if (generation == contextGeneration && overlayState != OverlayState.HIDDEN) {
+                    showContextHalo(halo);
+                }
+            }, 180L);
         } else {
-            handler.postDelayed(() -> requestContext("after_action", ""), 220L);
+            handler.postDelayed(() -> {
+                if (generation == contextGeneration && overlayState != OverlayState.HIDDEN) {
+                    requestContext("after_action", "");
+                }
+            }, 220L);
         }
+    }
+
+    private void invalidateContextRequests() {
+        contextGeneration++;
+    }
+
+    private void dismissContextHalo(String direction) {
+        invalidateContextRequests();
+        clearContextHalo();
+        clearResultProjection();
+        setState(stableStateFromPrefs());
+        emitSemanticGesture("reset_context", direction == null ? "" : direction);
     }
 
     private void clearContextHalo() {
@@ -773,6 +794,7 @@ public final class CiOverlayService extends Service {
     }
 
     private void resetToZeroState() {
+        invalidateContextRequests();
         clearContextHalo();
         clearResultProjection();
         lastDisplayableResult = null;
@@ -958,6 +980,7 @@ public final class CiOverlayService extends Service {
 
     private void hideCi() {
         if (pointParams == null || ciLogo == null) return;
+        invalidateContextRequests();
         clearContextHalo();
         clearResultProjection();
         if (prefs != null) prefs.edit().putBoolean(PREF_HIDDEN, true).apply();

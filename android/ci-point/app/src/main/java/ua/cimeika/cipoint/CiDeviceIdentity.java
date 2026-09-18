@@ -36,7 +36,7 @@ final class CiDeviceIdentity {
                     .digest(certificate.getPublicKey().getEncoded());
             StringBuilder value = new StringBuilder("ci-key-");
             for (int i = 0; i < 12 && i < digest.length; i++) {
-                value.append(String.format(java.util.Locale.ROOT, "%02x", digest[i]));
+                value.append(String.format(java.util.Locale.ROOT, "%02x", digest[i] & 0xff));
             }
             return value.toString();
         } catch (Exception ignored) {

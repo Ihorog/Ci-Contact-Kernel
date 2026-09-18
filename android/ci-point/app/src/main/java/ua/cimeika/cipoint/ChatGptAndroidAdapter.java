@@ -6,7 +6,7 @@ import android.net.Uri;
 
 final class ChatGptAndroidAdapter implements CiExternalAssistantAdapter {
     private static final String PACKAGE_NAME = "com.openai.chatgpt";
-    private static final String WEB_URL = "https://chatgpt.com/";
+    private static final String CI_GPT_URL = "https://chatgpt.com/g/g-Uc7qoEi2e";
     private final Context context;
 
     ChatGptAndroidAdapter(Context context) {
@@ -23,15 +23,15 @@ final class ChatGptAndroidAdapter implements CiExternalAssistantAdapter {
 
     @Override public String open() {
         try {
-            Intent app = context.getPackageManager().getLaunchIntentForPackage(PACKAGE_NAME);
-            if (app != null) {
-                app.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-                context.startActivity(app);
-                return "accepted_app";
-            }
+            Intent app = new Intent(Intent.ACTION_VIEW, Uri.parse(CI_GPT_URL));
+            app.setPackage(PACKAGE_NAME);
+            app.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            context.startActivity(app);
+            return "accepted_app";
         } catch (Exception ignored) { }
+
         try {
-            Intent web = new Intent(Intent.ACTION_VIEW, Uri.parse(WEB_URL));
+            Intent web = new Intent(Intent.ACTION_VIEW, Uri.parse(CI_GPT_URL));
             web.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             context.startActivity(web);
             return "accepted_web";

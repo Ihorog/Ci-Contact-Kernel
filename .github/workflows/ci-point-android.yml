@@ -79,3 +79,31 @@ jobs:
           name: ci-point-debug-apk
           path: android/ci-point/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+  deliver-p0:
+    if: github.event_name == 'pull_request' && github.head_ref == 'ci/point-p0-install-smoke'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ci-point-debug-apk
+          path: delivery
+
+      - name: Publish verified APK prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ci-point-v0.5.1-p0
+          TARGET_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          mv delivery/app-debug.apk delivery/Ci-Point-v0.5.1-P0.apk
+          sha256sum delivery/Ci-Point-v0.5.1-P0.apk
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" delivery/Ci-Point-v0.5.1-P0.apk --clobber
+          else
+            gh release create "$TAG" delivery/Ci-Point-v0.5.1-P0.apk               --repo "$GITHUB_REPOSITORY"               --target "$TARGET_SHA"               --title "Ci Point v0.5.1 P0"               --notes "Verified P0 APK: Android lint/build green and Android 35 emulator install/start/service smoke passed."               --prerelease
+          fi

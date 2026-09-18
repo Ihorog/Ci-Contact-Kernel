@@ -534,6 +534,7 @@ public final class CiOverlayService extends Service {
         CiGestureRouter.Command command = gestureRouter != null
                 ? gestureRouter.routeOverlaySwipe(direction, haloVisible)
                 : CiGestureRouter.Command.RESERVED;
+        if (command != CiGestureRouter.Command.RESERVED) stopVoiceContact();
         if (command == CiGestureRouter.Command.MATERIALIZE_CONTEXT) {
             requestContext("materialize_context", "left");
         } else if (command == CiGestureRouter.Command.DISMISS_CONTEXT) {
@@ -565,6 +566,7 @@ public final class CiOverlayService extends Service {
 
     private void animateCircularGesture(boolean clockwise) {
         if (ciLogo == null) return;
+        stopVoiceContact();
         String semantic = clockwise ? "next_stage" : "previous_state";
         setState(OverlayState.PULSE);
         float rotation = clockwise ? 180f : -180f;
@@ -794,6 +796,7 @@ public final class CiOverlayService extends Service {
     }
 
     private void resetToZeroState() {
+        stopVoiceContact();
         invalidateContextRequests();
         clearContextHalo();
         clearResultProjection();
@@ -802,13 +805,10 @@ public final class CiOverlayService extends Service {
         emitSemanticGesture("zero_state", "double_tap");
     }
 
-    private void performVoiceDoubleClick() {
-        vibrate();
-        if (voiceController == null) {
-            handleVoiceError("voice_controller_unavailable");
-            return;
+    private void stopVoiceContact() {
+        if (voiceController != null && voiceController.isConversationActive()) {
+            voiceController.stop();
         }
-        voiceController.toggle();
     }
 
     private void handleVoiceListening(boolean listening) {
@@ -989,6 +989,7 @@ public final class CiOverlayService extends Service {
 
     private void hideCi() {
         if (pointParams == null || ciLogo == null) return;
+        stopVoiceContact();
         invalidateContextRequests();
         clearContextHalo();
         clearResultProjection();

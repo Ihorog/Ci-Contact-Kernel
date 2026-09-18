@@ -183,9 +183,8 @@ final class CiContextHalo {
         int cardWidth = dp(CARD_WIDTH_DP);
         int cardHeight = dp(CARD_HEIGHT_DP);
         int gap = dp(GAP_DP);
-        boolean left = anchorX + pointSize / 2 > screenWidth / 2;
-        int x = left ? anchorX - cardWidth - gap : anchorX + pointSize + gap;
-        if (index == 1) x += left ? -dp(10) : dp(10);
+        int x = anchorX - cardWidth - gap;
+        if (index == 1) x -= dp(10);
         int yOffset = (index - 1) * dp(ARC_STEP_DP);
         int y = anchorY + pointSize / 2 - cardHeight / 2 + yOffset;
         int edge = dp(EDGE_DP);

@@ -11,7 +11,6 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.PixelFormat;
-import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.Handler;
@@ -37,8 +36,6 @@ public final class CiOverlayService extends Service {
 
     private static final String CHANNEL_ID = "ci_active_point";
     private static final int NOTIFICATION_ID = 7;
-    private static final String CHATGPT_PACKAGE = "com.openai.chatgpt";
-    private static final String CI_GPT_URL = "https://chatgpt.com/g/g-Uc7qoEi2e";
     private static final String PREFS = "ci_point";
     private static final String PREF_X = "x";
     private static final String PREF_Y = "y";
@@ -47,7 +44,7 @@ public final class CiOverlayService extends Service {
     private static final String PREF_DOCK_SIDE = "dock_side";
     private static final long LONG_PRESS_MS = 420L;
     private static final long SWIPE_MAX_MS = 520L;
-    private static final long DOUBLE_TAP_MS = 550L;
+    private static final long DOUBLE_TAP_MS = 360L;
     private static final int HIDDEN_VISIBLE_DP = 12;
 
     private WindowManager windowManager;
@@ -63,7 +60,12 @@ public final class CiOverlayService extends Service {
     private SharedPreferences prefs;
     private CiVoiceController voiceController;
     private CiResultProjection resultProjection;
+    private CiContextProvider contextProvider;
+    private CiContextHalo contextHalo;
+    private CiGestureRouter gestureRouter;
+    private CiExternalAssistantAdapter externalAssistant;
     private org.json.JSONObject lastDisplayableResult;
+    private long contextGeneration;
 
     private enum OverlayState { PASSIVE, CONTEXT, MOVE, DOCKED, PULSE, HIDDEN }
     private OverlayState overlayState = OverlayState.PASSIVE;
@@ -90,13 +92,6 @@ public final class CiOverlayService extends Service {
     public void onCreate() {
         super.onCreate();
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
-                != PackageManager.PERMISSION_GRANTED) {
-            stopSelf();
-            return;
-        }
-
         createNotificationChannel();
         startForeground(NOTIFICATION_ID, buildNotification());
 
@@ -104,6 +99,13 @@ public final class CiOverlayService extends Service {
         handler = new Handler(Looper.getMainLooper());
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         resultProjection = new CiResultProjection(this, windowManager);
+        contextProvider = new CiContextClient(this);
+        gestureRouter = new CiGestureRouter();
+        externalAssistant = new ChatGptAndroidAdapter(this);
+        contextHalo = new CiContextHalo(this, windowManager, new CiContextHalo.Callback() {
+            @Override public void onCardTap(CiContextCard card) { handler.post(() -> handleContextCardTap(card)); }
+            @Override public void onCardSwipe(CiContextCard card, String direction) { handler.post(() -> handleContextCardSwipe(card, direction)); }
+        });
         voiceController = new CiVoiceController(this, new CiVoiceController.Callback() {
             @Override public void onListeningChanged(boolean listening) { handler.post(() -> handleVoiceListening(listening)); }
             @Override public void onTranscript(String text) { handler.post(() -> handleVoiceTranscript(text)); }
@@ -153,6 +155,13 @@ public final class CiOverlayService extends Service {
         if (pendingSingleTap != null && handler != null) handler.removeCallbacks(pendingSingleTap);
         if (voiceController != null) voiceController.close();
         voiceController = null;
+        invalidateContextRequests();
+        if (contextProvider != null) contextProvider.close();
+        contextProvider = null;
+        gestureRouter = null;
+        externalAssistant = null;
+        clearContextHalo();
+        contextHalo = null;
         clearResultProjection();
         resultProjection = null;
         removeOverlay(activePoint);
@@ -289,7 +298,7 @@ public final class CiOverlayService extends Service {
             lastTapUpTime = 0;
             if (pendingSingleTap != null) handler.removeCallbacks(pendingSingleTap);
             pendingSingleTap = null;
-            performVoiceDoubleClick();
+            resetToZeroState();
             return;
         }
         lastTapUpTime = now;
@@ -335,6 +344,7 @@ public final class CiOverlayService extends Service {
         windowManager.updateViewLayout(activePoint, pointParams);
         windowManager.updateViewLayout(ciLogo, logoParams);
         repositionProjection(x, y);
+        repositionContextHalo(x, y);
     }
 
     private int clampX(int value, int width) {
@@ -436,6 +446,7 @@ public final class CiOverlayService extends Service {
                 windowManager.updateViewLayout(activePoint, pointParams);
                 windowManager.updateViewLayout(ciLogo, logoParams);
                 repositionProjection(x, y);
+                repositionContextHalo(x, y);
             } catch (Exception ignored) { }
         });
         if (endAction != null) animator.addListener(new android.animation.AnimatorListenerAdapter() {
@@ -519,6 +530,20 @@ public final class CiOverlayService extends Service {
                         .scaleX(1f).scaleY(1f).setDuration(180)
                         .withEndAction(() -> setState(returnState)).start()).start();
         emitGesture(dx, dy, duration, direction);
+        boolean haloVisible = contextHalo != null && contextHalo.isVisible();
+        CiGestureRouter.Command command = gestureRouter != null
+                ? gestureRouter.routeOverlaySwipe(direction, haloVisible)
+                : CiGestureRouter.Command.RESERVED;
+        if (command != CiGestureRouter.Command.RESERVED) stopVoiceContact();
+        if (command == CiGestureRouter.Command.MATERIALIZE_CONTEXT) {
+            requestContext("materialize_context", "left");
+        } else if (command == CiGestureRouter.Command.DISMISS_CONTEXT) {
+            dismissContextHalo("right");
+        } else if (command == CiGestureRouter.Command.BROWSE_NEWER) {
+            requestContext("context_newer", "up");
+        } else if (command == CiGestureRouter.Command.BROWSE_OLDER) {
+            requestContext("context_older", "down");
+        }
     }
 
     private void updateCircularGesture(float rawX, float rawY) {
@@ -541,7 +566,8 @@ public final class CiOverlayService extends Service {
 
     private void animateCircularGesture(boolean clockwise) {
         if (ciLogo == null) return;
-        String semantic = clockwise ? "restore_context" : "collapse_all";
+        stopVoiceContact();
+        String semantic = clockwise ? "next_stage" : "previous_state";
         setState(OverlayState.PULSE);
         float rotation = clockwise ? 180f : -180f;
         float midScale = clockwise ? 1.14f : 0.76f;
@@ -551,6 +577,7 @@ public final class CiOverlayService extends Service {
                         .rotation(0f).scaleX(1f).scaleY(1f).alpha(0.96f).translationZ(dp(8))
                         .setDuration(280).withEndAction(() -> setState(stableStateFromPrefs())).start()).start();
         emitSemanticGesture(semantic, clockwise ? "clockwise" : "counterclockwise");
+        requestContext(semantic, clockwise ? "clockwise" : "counterclockwise");
     }
 
     private void animateSemanticNudge(String direction, String semantic) {
@@ -588,6 +615,9 @@ public final class CiOverlayService extends Service {
 
     private void performCiClick() {
         vibrate();
+        invalidateContextRequests();
+        clearContextHalo();
+        clearResultProjection();
         setState(OverlayState.CONTEXT);
         if (ciLogo != null) {
             ciLogo.animate().alpha(0.48f).scaleX(0.90f).scaleY(0.90f).translationZ(dp(2)).setDuration(80)
@@ -596,10 +626,21 @@ public final class CiOverlayService extends Service {
         }
         Intent event = new Intent(ACTION_CI_CLICK);
         event.putExtra("timestamp", System.currentTimeMillis());
-        event.putExtra("source", "ci-overlay-v3");
-        event.putExtra("action", "invoke-ci-context");
+        event.putExtra("source", "ci-overlay-v5");
+        event.putExtra("action", "voice-contact");
         sendBroadcast(event);
-        handler.postDelayed(() -> setState(stableStateFromPrefs()), 420L);
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            Intent onboarding = new Intent(this, MainActivity.class);
+            onboarding.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(onboarding);
+            handleVoiceError("microphone_permission_required");
+            return;
+        }
+        if (voiceController == null) {
+            handleVoiceError("voice_controller_unavailable");
+            return;
+        }
+        voiceController.toggle();
     }
 
     private void emitGesture(float dx, float dy, long duration, String direction) {
@@ -608,22 +649,166 @@ public final class CiOverlayService extends Service {
         event.putExtra("dy", dy);
         event.putExtra("duration", duration);
         event.putExtra("direction", direction);
-        String semantic = "right".equals(direction) ? "previous"
-                : ("left".equals(direction) ? "next"
-                : ("up".equals(direction) ? "tools" : "collapse_current"));
+        String semantic = "right".equals(direction) ? "reset_context"
+                : ("left".equals(direction) ? "materialize_context"
+                : ("up".equals(direction) ? "context_newer" : "context_older"));
         event.putExtra("semantic", semantic);
         event.putExtra("timestamp", System.currentTimeMillis());
         event.putExtra("source", "ci-active-point");
         sendBroadcast(event);
     }
 
-    private void performVoiceDoubleClick() {
+    private void requestContext(String gesture, String direction) {
+        requestContext(gesture, direction, currentContextState());
+    }
+
+    private void requestContext(String gesture, String direction, org.json.JSONObject state) {
+        if (contextProvider == null || pointParams == null) return;
+        final long generation = ++contextGeneration;
+        setState(OverlayState.CONTEXT);
+        contextProvider.requestContext(gesture, direction, state, new CiContextProvider.Callback() {
+            @Override public void onSuccess(org.json.JSONObject payload) {
+                if (generation != contextGeneration || overlayState == OverlayState.HIDDEN) return;
+                showContextHalo(payload);
+            }
+            @Override public void onError(String error) {
+                if (generation != contextGeneration) return;
+                handleVoiceError(error);
+            }
+        });
+    }
+
+    private org.json.JSONObject currentContextState() {
+        org.json.JSONObject state = new org.json.JSONObject();
+        try {
+            state.put("overlay_state", overlayState.name().toLowerCase(java.util.Locale.ROOT));
+            state.put("dock_side", dockSide);
+            state.put("halo_visible", contextHalo != null && contextHalo.isVisible());
+            state.put("timestamp", System.currentTimeMillis());
+            if (lastDisplayableResult != null) state.put("last_result", lastDisplayableResult);
+        } catch (Exception ignored) { }
+        return state;
+    }
+
+    private void showContextHalo(org.json.JSONObject payload) {
+        if (contextHalo == null || pointParams == null || payload == null) return;
+        DisplayMetrics metrics = new DisplayMetrics();
+        windowManager.getDefaultDisplay().getRealMetrics(metrics);
+        contextHalo.show(payload, pointParams.x, pointParams.y, pointSize, metrics.widthPixels, metrics.heightPixels);
+        if (contextHalo.isVisible()) setState(OverlayState.CONTEXT);
+        else setState(stableStateFromPrefs());
+    }
+
+    private void handleContextCardTap(CiContextCard card) {
+        if (contextProvider == null || card == null) return;
         vibrate();
-        if (voiceController == null) {
-            handleVoiceError("voice_controller_unavailable");
+        final long generation = ++contextGeneration;
+        clearContextHalo();
+        setState(OverlayState.PULSE);
+        contextProvider.execute(card, currentContextState(), new CiContextProvider.Callback() {
+            @Override public void onSuccess(org.json.JSONObject payload) {
+                if (generation != contextGeneration) return;
+                handleContextActionPayload(payload, generation);
+            }
+            @Override public void onError(String error) {
+                if (generation != contextGeneration) return;
+                handleVoiceError(error);
+            }
+        });
+    }
+
+    private void handleContextCardSwipe(CiContextCard card, String direction) {
+        CiGestureRouter.Command command = gestureRouter != null
+                ? gestureRouter.routeCardSwipe(direction)
+                : CiGestureRouter.Command.RESERVED;
+        if (command == CiGestureRouter.Command.DISMISS_CONTEXT) {
+            dismissContextHalo("card_right");
             return;
         }
-        voiceController.toggle();
+        if (command == CiGestureRouter.Command.BROWSE_NEWER) {
+            requestContext("context_newer", "up");
+            return;
+        }
+        if (command == CiGestureRouter.Command.BROWSE_OLDER) {
+            requestContext("context_older", "down");
+            return;
+        }
+        if (command != CiGestureRouter.Command.BRANCH_CONTEXT) return;
+        org.json.JSONObject state = currentContextState();
+        try { state.put("parent_card", card != null ? card.toJson() : new org.json.JSONObject()); }
+        catch (Exception ignored) { }
+        requestContext("card_branch", "left", state);
+    }
+
+    private void handleContextActionPayload(org.json.JSONObject payload, long generation) {
+        if (payload == null || generation != contextGeneration) return;
+        org.json.JSONObject result = payload.optJSONObject("result");
+        if (result != null) {
+            if (isDisplayableResult(result)) lastDisplayableResult = result;
+            showResultProjection(result);
+            String action = result.optString("action", "answer");
+            if (result.optBoolean("requires_confirmation", false)) {
+                emitExecutionEvidence(action, "confirmation_required", "not_executed", result);
+            } else {
+                executeResolvedAction(action, result);
+            }
+        }
+        if (generation != contextGeneration) return;
+        org.json.JSONArray next = payload.optJSONArray("next_cards");
+        if (next != null && next.length() > 0) {
+            org.json.JSONObject halo = new org.json.JSONObject();
+            try { halo.put("cards", next); } catch (Exception ignored) { }
+            handler.postDelayed(() -> {
+                if (generation == contextGeneration && overlayState != OverlayState.HIDDEN) {
+                    showContextHalo(halo);
+                }
+            }, 180L);
+        } else {
+            handler.postDelayed(() -> {
+                if (generation == contextGeneration && overlayState != OverlayState.HIDDEN) {
+                    requestContext("after_action", "");
+                }
+            }, 220L);
+        }
+    }
+
+    private void invalidateContextRequests() {
+        contextGeneration++;
+    }
+
+    private void dismissContextHalo(String direction) {
+        invalidateContextRequests();
+        clearContextHalo();
+        clearResultProjection();
+        setState(stableStateFromPrefs());
+        emitSemanticGesture("reset_context", direction == null ? "" : direction);
+    }
+
+    private void clearContextHalo() {
+        if (contextHalo != null) contextHalo.clear();
+    }
+
+    private void repositionContextHalo(int x, int y) {
+        if (contextHalo == null || !contextHalo.isVisible()) return;
+        DisplayMetrics metrics = new DisplayMetrics();
+        windowManager.getDefaultDisplay().getRealMetrics(metrics);
+        contextHalo.reposition(x, y, pointSize, metrics.widthPixels, metrics.heightPixels);
+    }
+
+    private void resetToZeroState() {
+        stopVoiceContact();
+        invalidateContextRequests();
+        clearContextHalo();
+        clearResultProjection();
+        lastDisplayableResult = null;
+        setState(OverlayState.PASSIVE);
+        emitSemanticGesture("zero_state", "double_tap");
+    }
+
+    private void stopVoiceContact() {
+        if (voiceController != null && voiceController.isConversationActive()) {
+            voiceController.stop();
+        }
     }
 
     private void handleVoiceListening(boolean listening) {
@@ -672,7 +857,26 @@ public final class CiOverlayService extends Service {
     private void executeResolvedAction(String action, org.json.JSONObject result) {
         if ("open_gpt".equals(action)) {
             String status = launchCiGpt();
-            emitExecutionEvidence(action, status, CHATGPT_PACKAGE, result);
+            String detail = externalAssistant != null ? externalAssistant.id() : "external_assistant";
+            emitExecutionEvidence(action, status, detail, result);
+        } else if ("context_newer".equals(action)) {
+            requestContext("context_newer", "up");
+            emitExecutionEvidence(action, "resolved", "context_newer", result);
+        } else if ("context_older".equals(action)) {
+            requestContext("context_older", "down");
+            emitExecutionEvidence(action, "resolved", "context_older", result);
+        } else if ("next_stage".equals(action)) {
+            requestContext("next_stage", "clockwise");
+            emitExecutionEvidence(action, "resolved", "context_next_stage", result);
+        } else if ("previous_state".equals(action)) {
+            requestContext("previous_state", "counterclockwise");
+            emitExecutionEvidence(action, "resolved", "context_previous_state", result);
+        } else if ("materialize_context".equals(action)) {
+            requestContext("materialize_context", "left");
+            emitExecutionEvidence(action, "resolved", "context_materialized", result);
+        } else if ("reset_context".equals(action) || "zero_state".equals(action)) {
+            dismissContextHalo("action");
+            emitExecutionEvidence(action, "verified", "context_dismissed", result);
         } else if ("previous".equals(action)) {
             animateSemanticNudge("right", "previous");
             emitExecutionEvidence(action, "verified", "overlay_previous", result);
@@ -687,17 +891,21 @@ public final class CiOverlayService extends Service {
             animateSemanticNudge("down", "collapse_current");
             emitExecutionEvidence(action, "verified", "projection_collapsed", result);
         } else if ("collapse_all".equals(action)) {
-            clearResultProjection();
-            animateCircularGesture(false);
+            dismissContextHalo("collapse_all");
             emitExecutionEvidence(action, "verified", "context_collapsed", result);
         } else if ("restore_context".equals(action)) {
             if (lastDisplayableResult != null) showResultProjection(lastDisplayableResult);
-            animateCircularGesture(true);
-            emitExecutionEvidence(action, "verified", "context_restored", result);
+            requestContext("materialize_context", "left");
+            emitExecutionEvidence(action, "resolved", "context_restored", result);
         } else {
             pulseResult();
             org.json.JSONObject evidence = result.optJSONObject("evidence");
-            emitExecutionEvidence(action, evidence != null && evidence.optBoolean("verified", false) ? "verified" : "resolved", "local_result", result);
+            emitExecutionEvidence(
+                    action,
+                    evidence != null && evidence.optBoolean("verified", false) ? "verified" : "resolved",
+                    "local_result",
+                    result
+            );
         }
     }
 
@@ -775,26 +983,15 @@ public final class CiOverlayService extends Service {
     }
 
     private String launchCiGpt() {
-        Intent app = new Intent(Intent.ACTION_VIEW, Uri.parse(CI_GPT_URL));
-        app.setPackage(CHATGPT_PACKAGE);
-        app.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        try {
-            startActivity(app);
-            return "accepted_app";
-        } catch (Exception ignored) {
-        }
-        try {
-            Intent web = new Intent(Intent.ACTION_VIEW, Uri.parse(CI_GPT_URL));
-            web.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(web);
-            return "accepted_web";
-        } catch (Exception ignored) {
-            return "failed";
-        }
+        if (externalAssistant == null) return "failed";
+        return externalAssistant.open();
     }
 
     private void hideCi() {
         if (pointParams == null || ciLogo == null) return;
+        stopVoiceContact();
+        invalidateContextRequests();
+        clearContextHalo();
         clearResultProjection();
         if (prefs != null) prefs.edit().putBoolean(PREF_HIDDEN, true).apply();
         cancelLongPress();

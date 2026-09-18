@@ -10,6 +10,8 @@ from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from ci_context_runtime import resolve_context_cards, execute_context_card
+
 HOST = os.getenv("CI_LOCAL_AI_HOST", "0.0.0.0")
 PORT = int(os.getenv("CI_LOCAL_AI_PORT", "8791"))
 MODEL = os.getenv("CI_LOCAL_AI_MODEL", "qwen3:4b-instruct-2507-q4_K_M")
@@ -228,7 +230,7 @@ def _finalize_result(result, context=None):
     result["evidence"] = _evidence_for(result)
     result["projection"] = _projection_for(result)
     result["result_id"] = f"ci-{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
-    result["protocol"] = "ci-intent-v0.4"
+    result["protocol"] = "ci-context-action-v0.5"
     return result
 
 def process_intent(text, context=None):
@@ -255,8 +257,17 @@ def process_intent(text, context=None):
             result["answer"] = "За поточним файловим індексом збігів не знайшов."
     return _finalize_result(result, context)
 
+
+def resolve_si_context(payload):
+    return resolve_context_cards(payload, _json_request, OLLAMA_URL, MODEL)
+
+
+def execute_si_context_card(payload):
+    return execute_context_card(payload, process_intent, _finalize_result, resolve_si_context)
+
+
 class Handler(BaseHTTPRequestHandler):
-    server_version = "CiLocalAI/0.4"
+    server_version = "CiLocalAI/0.5"
 
     def _send(self, status, payload):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -278,18 +289,27 @@ class Handler(BaseHTTPRequestHandler):
                 "model": MODEL,
                 "ollama": OLLAMA_URL,
                 "tokenRequired": False,
-                "protocol": "ci-intent-v0.4",
+                "protocol": "ci-context-action-v0.5",
             })
             return
         self._send(404, {"ok": False, "error": "not_found"})
 
     def do_POST(self):
-        if self.path != "/ci/intent":
+        if self.path not in {"/ci/intent", "/ci/context", "/ci/action"}:
             self._send(404, {"ok": False, "error": "not_found"})
             return
         try:
             length = min(int(self.headers.get("Content-Length", "0")), 65536)
             payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            if self.path == "/ci/context":
+                cards = resolve_si_context(payload)
+                self._send(200, {"ok": True, "cards": cards, "protocol": "ci-context-action-v0.5"})
+                return
+            if self.path == "/ci/action":
+                result, next_cards = execute_si_context_card(payload)
+                self._send(200, {"ok": True, "result": result, "next_cards": next_cards,
+                                 "protocol": "ci-context-action-v0.5"})
+                return
             text = str(payload.get("text") or payload.get("message") or "").strip()
             if not text:
                 self._send(400, {"ok": False, "error": "text_required"})
@@ -301,6 +321,8 @@ class Handler(BaseHTTPRequestHandler):
                     context[key] = payload.get(key)
             result = process_intent(text, context)
             self._send(200, {"ok": True, **result})
+        except ValueError as exc:
+            self._send(400, {"ok": False, "error": str(exc)[:300]})
         except Exception as exc:
             self._send(500, {"ok": False, "error": str(exc)[:300]})
 

@@ -1,0 +1,12 @@
+[Unit]
+Description=Ci Keenetic LAN inventory sync every 10 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+AccuracySec=1min
+Unit=ci-keenetic-lan-sync.service
+Persistent=true
+
+[Install]
+WantedBy=timers.target

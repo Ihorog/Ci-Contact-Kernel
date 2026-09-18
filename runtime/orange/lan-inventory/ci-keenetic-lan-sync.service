@@ -1,0 +1,12 @@
+[Unit]
+Description=Ci Keenetic LAN inventory sync (once)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=kazkar
+Group=kazkar
+WorkingDirectory=/home/kazkar/cit
+ExecStart=/usr/bin/python3 /home/kazkar/cit/bin/ci_keenetic_lan_sync.py
+Nice=10

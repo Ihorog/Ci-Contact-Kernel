@@ -17,15 +17,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-final class CiContextClient {
-    interface Callback {
-        void onSuccess(JSONObject payload);
-        void onError(String error);
-    }
-
+final class CiContextClient implements CiContextProvider {
     private static final String PREFS = "ci_point";
     private static final String PREF_AI_ENDPOINT = "local_ai_endpoint";
     private static final String DEFAULT_AI_ENDPOINT = "http://192.168.1.38:8791/ci/intent";
+
     private final Context context;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -35,7 +31,8 @@ final class CiContextClient {
         this.context = context.getApplicationContext();
     }
 
-    void requestContext(String gesture, String direction, JSONObject state, Callback callback) {
+    @Override
+    public void requestContext(String gesture, String direction, JSONObject state, Callback callback) {
         JSONObject body = basePayload(state);
         try {
             body.put("gesture", gesture == null ? "tap" : gesture);
@@ -44,7 +41,8 @@ final class CiContextClient {
         submit("/ci/context", body, callback);
     }
 
-    void execute(CiContextCard card, JSONObject state, Callback callback) {
+    @Override
+    public void execute(CiContextCard card, JSONObject state, Callback callback) {
         JSONObject body = basePayload(state);
         try {
             body.put("card", card.toJson());
@@ -53,7 +51,8 @@ final class CiContextClient {
     }
 
     private JSONObject basePayload(JSONObject state) {
-        JSONObject body = new JSONObject();        try {
+        JSONObject body = new JSONObject();
+        try {
             body.put("source", "ci-android-overlay");
             body.put("platform", "android");
             body.put("device", android.os.Build.MODEL);
@@ -107,7 +106,8 @@ final class CiContextClient {
         }
         int status = connection.getResponseCode();
         InputStream stream = status >= 200 && status < 300
-                ? connection.getInputStream() : connection.getErrorStream();        StringBuilder raw = new StringBuilder();
+                ? connection.getInputStream() : connection.getErrorStream();
+        StringBuilder raw = new StringBuilder();
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(stream, StandardCharsets.UTF_8))) {
             for (String line = reader.readLine(); line != null; line = reader.readLine()) {
@@ -120,7 +120,8 @@ final class CiContextClient {
         return new JSONObject(raw.toString());
     }
 
-    void close() {
+    @Override
+    public void close() {
         closed = true;
         executor.shutdownNow();
     }

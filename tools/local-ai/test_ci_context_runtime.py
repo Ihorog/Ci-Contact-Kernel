@@ -18,11 +18,41 @@ class ContextRuntimeTest(unittest.TestCase):
         card = normalize_card({"label": "Наступний крок", "context": {"state": "predicted"}})
         self.assertTrue(card["label"].startswith("Ймовірно:"))
 
+    def test_fallback_context_newer_is_explicit(self):
+        cards = fallback_cards({"gesture": "context_newer", "context": {}})
+        self.assertEqual(cards[0]["routing"]["action"], "context_newer")
+        self.assertEqual(cards[0]["context"]["state"], "predicted")
+
+    def test_fallback_context_older_is_explicit(self):
+        cards = fallback_cards({"gesture": "context_older", "context": {}})
+        self.assertEqual(cards[0]["routing"]["action"], "context_older")
+        self.assertEqual(cards[0]["context"]["state"], "past")
+
+    def test_fallback_next_stage_is_explicit(self):
+        cards = fallback_cards({"gesture": "next_stage", "context": {}})
+        self.assertEqual(cards[0]["routing"]["action"], "next_stage")
+        self.assertEqual(cards[0]["context"]["state"], "predicted")
+
+    def test_fallback_previous_state_is_explicit(self):
+        cards = fallback_cards({"gesture": "previous_state", "context": {}})
+        self.assertEqual(cards[0]["routing"]["action"], "previous_state")
+        self.assertEqual(cards[0]["context"]["state"], "past")
+
+    def test_materialize_has_actual_current_card(self):
+        cards = fallback_cards({"gesture": "materialize_context", "context": {}})
+        self.assertEqual(cards[0]["context"]["state"], "actual")
+        self.assertEqual(cards[0]["routing"]["capability"], "materialize_context")
+
     def test_action_evolves_to_next_cards(self):
         card = fallback_cards({"gesture": "tap", "context": {}})[0]
 
         def process_intent(intent, context):
-            return {"action": "answer", "query": intent, "answer": "ok", "requires_confirmation": False}
+            return {
+                "action": "answer",
+                "query": intent,
+                "answer": "ok",
+                "requires_confirmation": False,
+            }
 
         def finalize(result, context):
             result["evidence"] = {"verified": True}

@@ -92,13 +92,6 @@ public final class CiOverlayService extends Service {
     public void onCreate() {
         super.onCreate();
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
-                != PackageManager.PERMISSION_GRANTED) {
-            stopSelf();
-            return;
-        }
-
         createNotificationChannel();
         startForeground(NOTIFICATION_ID, buildNotification());
 
@@ -634,6 +627,13 @@ public final class CiOverlayService extends Service {
         event.putExtra("source", "ci-overlay-v5");
         event.putExtra("action", "voice-contact");
         sendBroadcast(event);
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            Intent onboarding = new Intent(this, MainActivity.class);
+            onboarding.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(onboarding);
+            handleVoiceError("microphone_permission_required");
+            return;
+        }
         if (voiceController == null) {
             handleVoiceError("voice_controller_unavailable");
             return;

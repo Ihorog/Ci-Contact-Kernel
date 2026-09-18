@@ -11,7 +11,6 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.PixelFormat;
-import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.Handler;
@@ -37,8 +36,6 @@ public final class CiOverlayService extends Service {
 
     private static final String CHANNEL_ID = "ci_active_point";
     private static final int NOTIFICATION_ID = 7;
-    private static final String CHATGPT_PACKAGE = "com.openai.chatgpt";
-    private static final String CI_GPT_URL = "https://chatgpt.com/g/g-Uc7qoEi2e";
     private static final String PREFS = "ci_point";
     private static final String PREF_X = "x";
     private static final String PREF_Y = "y";
@@ -47,7 +44,7 @@ public final class CiOverlayService extends Service {
     private static final String PREF_DOCK_SIDE = "dock_side";
     private static final long LONG_PRESS_MS = 420L;
     private static final long SWIPE_MAX_MS = 520L;
-    private static final long DOUBLE_TAP_MS = 550L;
+    private static final long DOUBLE_TAP_MS = 360L;
     private static final int HIDDEN_VISIBLE_DP = 12;
 
     private WindowManager windowManager;
@@ -63,9 +60,12 @@ public final class CiOverlayService extends Service {
     private SharedPreferences prefs;
     private CiVoiceController voiceController;
     private CiResultProjection resultProjection;
-    private CiContextClient contextClient;
+    private CiContextProvider contextProvider;
     private CiContextHalo contextHalo;
+    private CiGestureRouter gestureRouter;
+    private CiExternalAssistantAdapter externalAssistant;
     private org.json.JSONObject lastDisplayableResult;
+    private long contextGeneration;
 
     private enum OverlayState { PASSIVE, CONTEXT, MOVE, DOCKED, PULSE, HIDDEN }
     private OverlayState overlayState = OverlayState.PASSIVE;
@@ -106,7 +106,9 @@ public final class CiOverlayService extends Service {
         handler = new Handler(Looper.getMainLooper());
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         resultProjection = new CiResultProjection(this, windowManager);
-        contextClient = new CiContextClient(this);
+        contextProvider = new CiContextClient(this);
+        gestureRouter = new CiGestureRouter();
+        externalAssistant = new ChatGptAndroidAdapter(this);
         contextHalo = new CiContextHalo(this, windowManager, new CiContextHalo.Callback() {
             @Override public void onCardTap(CiContextCard card) { handler.post(() -> handleContextCardTap(card)); }
             @Override public void onCardSwipe(CiContextCard card, String direction) { handler.post(() -> handleContextCardSwipe(card, direction)); }
@@ -160,8 +162,11 @@ public final class CiOverlayService extends Service {
         if (pendingSingleTap != null && handler != null) handler.removeCallbacks(pendingSingleTap);
         if (voiceController != null) voiceController.close();
         voiceController = null;
-        if (contextClient != null) contextClient.close();
-        contextClient = null;
+        invalidateContextRequests();
+        if (contextProvider != null) contextProvider.close();
+        contextProvider = null;
+        gestureRouter = null;
+        externalAssistant = null;
         clearContextHalo();
         contextHalo = null;
         clearResultProjection();

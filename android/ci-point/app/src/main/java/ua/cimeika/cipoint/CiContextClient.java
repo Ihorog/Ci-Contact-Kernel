@@ -147,6 +147,18 @@ final class CiContextClient implements CiContextProvider {
             JSONObject payload = new JSONObject(raw);
             JSONArray cards = payload.optJSONArray("cards");
             if (cards == null || cards.length() == 0) return null;
+            for (int i = 0; i < cards.length(); i++) {
+                JSONObject card = cards.optJSONObject(i);
+                if (card == null) continue;
+                JSONObject cardContext = card.optJSONObject("context");
+                if (cardContext != null && "actual".equals(cardContext.optString("state"))) {
+                    cardContext.put("state", "past");
+                    String label = card.optString("label", "").trim();
+                    if (!label.isEmpty() && !label.startsWith("Останнє:")) {
+                        card.put("label", "Останнє: " + label);
+                    }
+                }
+            }
             payload.put("fallback", true);
             payload.put("source", "ci-context-cache");
             long cachedAt = prefs.getLong(PREF_CONTEXT_CACHE_AT, 0L);

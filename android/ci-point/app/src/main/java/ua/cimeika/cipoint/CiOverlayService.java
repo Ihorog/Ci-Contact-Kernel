@@ -620,6 +620,9 @@ public final class CiOverlayService extends Service {
 
     private void performCiClick() {
         vibrate();
+        invalidateContextRequests();
+        clearContextHalo();
+        clearResultProjection();
         setState(OverlayState.CONTEXT);
         if (ciLogo != null) {
             ciLogo.animate().alpha(0.48f).scaleX(0.90f).scaleY(0.90f).translationZ(dp(2)).setDuration(80)
@@ -629,9 +632,13 @@ public final class CiOverlayService extends Service {
         Intent event = new Intent(ACTION_CI_CLICK);
         event.putExtra("timestamp", System.currentTimeMillis());
         event.putExtra("source", "ci-overlay-v5");
-        event.putExtra("action", "invoke-ci-context");
+        event.putExtra("action", "voice-contact");
         sendBroadcast(event);
-        requestContext("tap", "");
+        if (voiceController == null) {
+            handleVoiceError("voice_controller_unavailable");
+            return;
+        }
+        voiceController.toggle();
     }
 
     private void emitGesture(float dx, float dy, long duration, String direction) {
@@ -654,13 +661,16 @@ public final class CiOverlayService extends Service {
     }
 
     private void requestContext(String gesture, String direction, org.json.JSONObject state) {
-        if (contextClient == null || pointParams == null) return;
+        if (contextProvider == null || pointParams == null) return;
+        final long generation = ++contextGeneration;
         setState(OverlayState.CONTEXT);
-        contextClient.requestContext(gesture, direction, state, new CiContextClient.Callback() {
+        contextProvider.requestContext(gesture, direction, state, new CiContextProvider.Callback() {
             @Override public void onSuccess(org.json.JSONObject payload) {
+                if (generation != contextGeneration || overlayState == OverlayState.HIDDEN) return;
                 showContextHalo(payload);
             }
             @Override public void onError(String error) {
+                if (generation != contextGeneration) return;
                 handleVoiceError(error);
             }
         });
@@ -688,21 +698,44 @@ public final class CiOverlayService extends Service {
     }
 
     private void handleContextCardTap(CiContextCard card) {
-        if (contextClient == null || card == null) return;
+        if (contextProvider == null || card == null) return;
         vibrate();
+        final long generation = ++contextGeneration;
         clearContextHalo();
         setState(OverlayState.PULSE);
-        contextClient.execute(card, currentContextState(), new CiContextClient.Callback() {
-            @Override public void onSuccess(org.json.JSONObject payload) { handleContextActionPayload(payload); }
-            @Override public void onError(String error) { handleVoiceError(error); }
+        contextProvider.execute(card, currentContextState(), new CiContextProvider.Callback() {
+            @Override public void onSuccess(org.json.JSONObject payload) {
+                if (generation != contextGeneration) return;
+                handleContextActionPayload(payload, generation);
+            }
+            @Override public void onError(String error) {
+                if (generation != contextGeneration) return;
+                handleVoiceError(error);
+            }
         });
     }
 
     private void handleContextCardSwipe(CiContextCard card, String direction) {
+        CiGestureRouter.Command command = gestureRouter != null
+                ? gestureRouter.routeCardSwipe(direction)
+                : CiGestureRouter.Command.RESERVED;
+        if (command == CiGestureRouter.Command.DISMISS_CONTEXT) {
+            dismissContextHalo("card_right");
+            return;
+        }
+        if (command == CiGestureRouter.Command.BROWSE_NEWER) {
+            requestContext("context_newer", "up");
+            return;
+        }
+        if (command == CiGestureRouter.Command.BROWSE_OLDER) {
+            requestContext("context_older", "down");
+            return;
+        }
+        if (command != CiGestureRouter.Command.BRANCH_CONTEXT) return;
         org.json.JSONObject state = currentContextState();
         try { state.put("parent_card", card != null ? card.toJson() : new org.json.JSONObject()); }
         catch (Exception ignored) { }
-        requestContext("card_branch", direction, state);
+        requestContext("card_branch", "left", state);
     }
 
     private void handleContextActionPayload(org.json.JSONObject payload) {

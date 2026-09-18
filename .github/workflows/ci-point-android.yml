@@ -38,6 +38,9 @@ jobs:
         run: ./gradlew :app:lintDebug :app:assembleDebug --stacktrace
         working-directory: android/ci-point
 
+      - name: Hash APK
+        run: sha256sum android/ci-point/app/build/outputs/apk/debug/app-debug.apk
+
       - name: Enable KVM access
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules

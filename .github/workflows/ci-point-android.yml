@@ -68,6 +68,14 @@ jobs:
             adb shell dumpsys package ua.cimeika.ci | grep -q 'versionName=0.5.1'
             adb shell dumpsys activity services ua.cimeika.ci | grep -q 'CiOverlayService'
             adb shell pidof ua.cimeika.ci
+            adb shell input keyevent KEYCODE_HOME
+            sleep 2
+            adb shell dumpsys activity services ua.cimeika.ci | grep -q 'CiOverlayService'
+            adb shell am start -W -a android.settings.SETTINGS
+            sleep 2
+            adb shell dumpsys activity activities | grep -E 'topResumedActivity|mResumedActivity' | grep -q 'com.android.settings'
+            adb shell dumpsys activity services ua.cimeika.ci | grep -q 'CiOverlayService'
+            adb shell pidof ua.cimeika.ci
             if adb logcat -d -v brief | grep -E 'FATAL EXCEPTION|AndroidRuntime' | grep -q 'ua.cimeika.ci'; then
               echo "Ci-Point crash detected"
               exit 1

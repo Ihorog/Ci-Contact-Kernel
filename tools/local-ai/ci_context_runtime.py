@@ -102,19 +102,70 @@ def _last_result(payload):
     return last if isinstance(last, dict) else {}
 
 
+def _current_intent(payload):
+    last = _last_result(payload)
+    query = _clean(last.get("query") or last.get("answer"), 180)
+    if query:
+        return query
+    context = payload.get("context") if isinstance(payload.get("context"), dict) else {}
+    parent = context.get("parent_card") if isinstance(context.get("parent_card"), dict) else {}
+    parent_context = parent.get("context") if isinstance(parent.get("context"), dict) else {}
+    return _clean(parent_context.get("intent") or parent.get("label"), 180)
+
+
+def _navigation_cards(gesture, current):
+    current = current or "Продовжити поточний контекст"
+    if gesture in {"context_newer", "next_stage"}:
+        action = "next_stage" if gesture == "next_stage" else "context_newer"
+        capability = "context_next_stage" if gesture == "next_stage" else "context_newer"
+        label = "Наступний етап" if gesture == "next_stage" else "Новіший контекст"
+        return [
+            make_card(label, label, "predicted", 0.92, capability=capability, action=action),
+            make_card("Поточний контекст", current, "actual", 0.82),
+            make_card("Попередній стан", "Повернути попередній стан", "past", 0.54,
+                      capability="context_previous", action="previous_state"),
+        ]
+    if gesture in {"context_older", "previous_state"}:
+        action = "previous_state" if gesture == "previous_state" else "context_older"
+        capability = "context_previous_state" if gesture == "previous_state" else "context_older"
+        label = "Попередній стан" if gesture == "previous_state" else "Старіший контекст"
+        return [
+            make_card(label, label, "past", 0.92, capability=capability, action=action),
+            make_card("Поточний контекст", current, "actual", 0.82),
+            make_card("Ймовірно: наступний крок", "Наступний крок у поточному контексті",
+                      "predicted", 0.54, capability="context_newer", action="context_newer"),
+        ]
+    return None
+
+
 def fallback_cards(payload):
     gesture = str(payload.get("gesture") or "tap")
     direction = str(payload.get("direction") or "")
     context = payload.get("context") if isinstance(payload.get("context"), dict) else {}
     parent = context.get("parent_card") if isinstance(context.get("parent_card"), dict) else {}
     last = _last_result(payload)
+    current = _current_intent(payload)
+
+    explicit = _navigation_cards(gesture, current)
+    if explicit is not None:
+        return explicit[:3]
+
     cards = []
+    if gesture in {"swipe_left", "materialize_context"}:
+        cards.append(make_card(
+            "Поточний контекст",
+            current or "Матеріалізувати поточний контекст",
+            "actual", 0.94,
+            capability="materialize_context",
+            action="resolve_intent",
+        ))
 
     if parent:
         parent_context = parent.get("context") if isinstance(parent.get("context"), dict) else {}
         intent = _clean(parent_context.get("intent") or parent.get("label"), 180)
-        if intent:
+        if intent and len(cards) < 3:
             cards.append(make_card("Продовжити цей контекст", intent, "actual", 0.98))
+
     projection = last.get("projection") if isinstance(last.get("projection"), dict) else {}
     items = projection.get("items") if isinstance(projection.get("items"), list) else []
     for item in items:
@@ -125,26 +176,37 @@ def fallback_cards(payload):
         else:
             label = _clean(item, 72)
         if label:
-            cards.append(make_card(label, f"Відкрити {label}", "actual", 0.96 - len(cards) * 0.06,
-                                   task_type="file_operation", capability="resolve_intent"))
+            cards.append(make_card(
+                label,
+                f"Відкрити {label}",
+                "actual",
+                0.96 - len(cards) * 0.06,
+                task_type="file_operation",
+                capability="resolve_intent",
+            ))
 
-    query = _clean(last.get("query") or last.get("answer"), 180)
-    if len(cards) < 3 and query:
-        cards.append(make_card("Продовжити поточне", query, "actual", 0.92))
-
-    if len(cards) < 3 and gesture in {"context_older", "previous_state"}:
-        cards.append(make_card("Попередній стан", "Повернути попередній стан", "past", 0.84,
-                               capability="context_previous", action="previous"))
-    elif len(cards) < 3:
-        cards.append(make_card("Поточний контекст", query or "Продовжити поточний контекст", "actual", 0.84))
-
-    if len(cards) < 3:
-        predicted = "Наступний крок у поточному контексті"
-        cards.append(make_card("Ймовірно: наступний крок", predicted, "predicted", 0.58))
+    if len(cards) < 3 and current:
+        cards.append(make_card("Продовжити поточне", current, "actual", 0.88))
 
     if len(cards) < 3:
-        cards.append(make_card("Повернути попереднє", "Повернути попередній контекст", "past", 0.46,
-                               capability="context_previous", action="previous"))
+        cards.append(make_card(
+            "Ймовірно: наступний крок",
+            "Наступний крок у поточному контексті",
+            "predicted",
+            0.58,
+            capability="context_newer",
+            action="context_newer",
+        ))
+
+    if len(cards) < 3:
+        cards.append(make_card(
+            "Повернути попереднє",
+            "Повернути попередній контекст",
+            "past",
+            0.46,
+            capability="context_previous",
+            action="previous_state",
+        ))
 
     if direction == "right":
         cards.sort(key=lambda card: card["context"]["state"] != "past")
@@ -177,7 +239,11 @@ def resolve_context_cards(payload, json_request, ollama_url, model):
         incoming = parsed.get("cards") if isinstance(parsed, dict) else None
         if not isinstance(incoming, list):
             return fallback
-        cards = [normalize_card(card, i) for i, card in enumerate(incoming[:3]) if isinstance(card, dict)]
+        cards = [
+            normalize_card(card, i)
+            for i, card in enumerate(incoming[:3])
+            if isinstance(card, dict)
+        ]
         return cards or fallback
     except Exception:
         return fallback

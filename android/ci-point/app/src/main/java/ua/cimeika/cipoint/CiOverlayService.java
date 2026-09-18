@@ -537,13 +537,19 @@ public final class CiOverlayService extends Service {
                         .scaleX(1f).scaleY(1f).setDuration(180)
                         .withEndAction(() -> setState(returnState)).start()).start();
         emitGesture(dx, dy, duration, direction);
-        if ("left".equals(direction)) requestContext("swipe_left", "left");
-        else if ("right".equals(direction)) {
-            clearContextHalo();
-            clearResultProjection();
-            emitSemanticGesture("reset_context", "right");
-        } else if ("up".equals(direction)) requestContext("context_newer", "up");
-        else requestContext("context_older", "down");
+        boolean haloVisible = contextHalo != null && contextHalo.isVisible();
+        CiGestureRouter.Command command = gestureRouter != null
+                ? gestureRouter.routeOverlaySwipe(direction, haloVisible)
+                : CiGestureRouter.Command.RESERVED;
+        if (command == CiGestureRouter.Command.MATERIALIZE_CONTEXT) {
+            requestContext("materialize_context", "left");
+        } else if (command == CiGestureRouter.Command.DISMISS_CONTEXT) {
+            dismissContextHalo("right");
+        } else if (command == CiGestureRouter.Command.BROWSE_NEWER) {
+            requestContext("context_newer", "up");
+        } else if (command == CiGestureRouter.Command.BROWSE_OLDER) {
+            requestContext("context_older", "down");
+        }
     }
 
     private void updateCircularGesture(float rawX, float rawY) {

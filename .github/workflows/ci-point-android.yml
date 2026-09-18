@@ -31,8 +31,11 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build APK
-        run: ./gradlew :app:assembleDebug --stacktrace
+      - name: Static check local AI
+        run: python3 -m py_compile tools/local-ai/*.py
+
+      - name: Lint and build APK
+        run: ./gradlew :app:lintDebug :app:assembleDebug --stacktrace
         working-directory: android/ci-point
 
       - name: Upload APK

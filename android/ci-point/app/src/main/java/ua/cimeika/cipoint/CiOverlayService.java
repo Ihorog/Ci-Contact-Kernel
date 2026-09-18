@@ -857,7 +857,26 @@ public final class CiOverlayService extends Service {
     private void executeResolvedAction(String action, org.json.JSONObject result) {
         if ("open_gpt".equals(action)) {
             String status = launchCiGpt();
-            emitExecutionEvidence(action, status, CHATGPT_PACKAGE, result);
+            String detail = externalAssistant != null ? externalAssistant.id() : "external_assistant";
+            emitExecutionEvidence(action, status, detail, result);
+        } else if ("context_newer".equals(action)) {
+            requestContext("context_newer", "up");
+            emitExecutionEvidence(action, "resolved", "context_newer", result);
+        } else if ("context_older".equals(action)) {
+            requestContext("context_older", "down");
+            emitExecutionEvidence(action, "resolved", "context_older", result);
+        } else if ("next_stage".equals(action)) {
+            requestContext("next_stage", "clockwise");
+            emitExecutionEvidence(action, "resolved", "context_next_stage", result);
+        } else if ("previous_state".equals(action)) {
+            requestContext("previous_state", "counterclockwise");
+            emitExecutionEvidence(action, "resolved", "context_previous_state", result);
+        } else if ("materialize_context".equals(action)) {
+            requestContext("materialize_context", "left");
+            emitExecutionEvidence(action, "resolved", "context_materialized", result);
+        } else if ("reset_context".equals(action) || "zero_state".equals(action)) {
+            dismissContextHalo("action");
+            emitExecutionEvidence(action, "verified", "context_dismissed", result);
         } else if ("previous".equals(action)) {
             animateSemanticNudge("right", "previous");
             emitExecutionEvidence(action, "verified", "overlay_previous", result);
@@ -872,17 +891,21 @@ public final class CiOverlayService extends Service {
             animateSemanticNudge("down", "collapse_current");
             emitExecutionEvidence(action, "verified", "projection_collapsed", result);
         } else if ("collapse_all".equals(action)) {
-            clearResultProjection();
-            animateCircularGesture(false);
+            dismissContextHalo("collapse_all");
             emitExecutionEvidence(action, "verified", "context_collapsed", result);
         } else if ("restore_context".equals(action)) {
             if (lastDisplayableResult != null) showResultProjection(lastDisplayableResult);
-            animateCircularGesture(true);
-            emitExecutionEvidence(action, "verified", "context_restored", result);
+            requestContext("materialize_context", "left");
+            emitExecutionEvidence(action, "resolved", "context_restored", result);
         } else {
             pulseResult();
             org.json.JSONObject evidence = result.optJSONObject("evidence");
-            emitExecutionEvidence(action, evidence != null && evidence.optBoolean("verified", false) ? "verified" : "resolved", "local_result", result);
+            emitExecutionEvidence(
+                    action,
+                    evidence != null && evidence.optBoolean("verified", false) ? "verified" : "resolved",
+                    "local_result",
+                    result
+            );
         }
     }
 
@@ -960,22 +983,8 @@ public final class CiOverlayService extends Service {
     }
 
     private String launchCiGpt() {
-        Intent app = new Intent(Intent.ACTION_VIEW, Uri.parse(CI_GPT_URL));
-        app.setPackage(CHATGPT_PACKAGE);
-        app.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        try {
-            startActivity(app);
-            return "accepted_app";
-        } catch (Exception ignored) {
-        }
-        try {
-            Intent web = new Intent(Intent.ACTION_VIEW, Uri.parse(CI_GPT_URL));
-            web.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(web);
-            return "accepted_web";
-        } catch (Exception ignored) {
-            return "failed";
-        }
+        if (externalAssistant == null) return "failed";
+        return externalAssistant.open();
     }
 
     private void hideCi() {

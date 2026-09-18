@@ -260,6 +260,8 @@ final class CiVoiceController {
                 body.put("source", "ci-android-overlay");
                 body.put("platform", "android");
                 body.put("device", android.os.Build.MODEL);
+                String keyId = CiDeviceIdentity.keyId();
+                if (!keyId.isEmpty()) body.put("device_key_id", keyId);
                 body.put("surface", "ci-point");
                 body.put("locale", "uk-UA");
                 body.put("conversation", true);

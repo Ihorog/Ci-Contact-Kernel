@@ -43,6 +43,11 @@ function buildRecord(fields = {}) {
     confidence: typeof fields.confidence === 'number' ? fields.confidence : null,
     confidence_basis: fields.confidence_basis || null,
     verification_status: fields.verification_status || null,
+    authority: fields.authority && typeof fields.authority === 'object' && !Array.isArray(fields.authority) ? { ...fields.authority } : null,
+    route: Array.isArray(fields.route) ? [...fields.route] : (fields.route ? [fields.route] : []),
+    allowed_ops: Array.isArray(fields.allowed_ops) ? [...fields.allowed_ops] : [],
+    last_verified: fields.last_verified || null,
+    blocker: fields.blocker || null,
     provenance: fields.provenance || null,
     relations: Array.isArray(fields.relations) ? fields.relations : [],
     evidence_refs: Array.isArray(fields.evidence_refs) ? fields.evidence_refs : [],
@@ -113,6 +118,14 @@ function validateRecord(record) {
       errors.push('confidence must be a number between 0 and 1');
     }
   }
+
+  if (record.authority !== null && (typeof record.authority !== 'object' || Array.isArray(record.authority))) {
+    errors.push('authority must be an object or null');
+  }
+  if (!Array.isArray(record.route)) errors.push('route must be an array');
+  if (!Array.isArray(record.allowed_ops)) errors.push('allowed_ops must be an array');
+  if (record.last_verified !== null && typeof record.last_verified !== 'string') errors.push('last_verified must be an ISO timestamp string or null');
+  if (record.blocker !== null && typeof record.blocker !== 'string') errors.push('blocker must be a string or null');
 
   // Classifier version must be present
   if (!record.classifier_version) {

@@ -34,3 +34,28 @@ For any state-changing request, use this sequence:
 - Prefer semantic Ci identifiers and relationships; expose raw network/system identifiers only when the user explicitly requests diagnostics.
 - Do not expose the legacy user-facing names `Казкар`, `ПоДія`, `Маля`, or `Настрій`; use the neutral functional nodes `activity`, `context`, `care`, `calendar`, `gallery`, and `narrative`.
 - Keep responses concise and distinguish `FACT`, `PENDING`, and `TARGET` whenever status is material.
+
+
+## Verified personal resource surface
+
+Treat a resource as part of the user's trusted personal digital surface only when all of the following are true:
+
+1. It resolves to a stable Ci ID or registered connector route.
+2. Ownership or delegated authority is explicit in current state; naming, account presence, repository visibility, device discovery, or connector availability alone do not prove ownership.
+3. The resource has live or recently revalidated evidence with provenance.
+4. The requested operation is covered by the resource authority/capability and policy.
+5. For writes, the post-action verifier can independently confirm the resulting state.
+
+Use the classification:
+
+- `OWNED_VERIFIED` — explicit ownership/authority + current evidence.
+- `DELEGATED_VERIFIED` — explicit delegated authority + current evidence.
+- `AVAILABLE_UNVERIFIED` — callable or visible, but ownership/authority is not proven.
+- `STALE` — previously verified but outside the accepted freshness window.
+- `BLOCKED` — route exists but policy, auth, connectivity, or verifier prevents safe use.
+
+Routing rule: prefer `OWNED_VERIFIED` → `DELEGATED_VERIFIED` → verified external executor. Never silently promote `AVAILABLE_UNVERIFIED` to a personal resource.
+
+For audits, report at minimum: `ci_id / route / authority / verification_status / evidence / last_verified / allowed_ops / blocker`.
+
+Do not expose credentials, tokens, private keys, session secrets, or raw authentication artifacts as evidence. Evidence should identify the verifier and result, not secret material.

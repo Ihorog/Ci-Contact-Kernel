@@ -9,7 +9,7 @@ import release_manager
 import self_update as updater
 import vault_node
 
-VERSION = "1.5.0"
+VERSION = "1.6.0"
 NODE_ID = base.NODE_ID
 
 
@@ -98,6 +98,13 @@ def dispatch(intent: str, target=None, mode="contact"):
     return result
 
 
+def resource_audit(target=None):
+    value = base.resource_audit(target)
+    if isinstance(value, dict):
+        value["operatorRuntimeVersion"] = VERSION
+    return value
+
+
 def executor_status():
     return {"ok": True, "node": NODE_ID, "operatorRuntimeVersion": VERSION, "adapters": provider_adapters.probe_all(), "vault": vault_node.status()}
 
@@ -112,6 +119,21 @@ def vault(action: str, **kwargs):
 
 def execute_read(coordinate: str, operation: str):
     started = time.perf_counter()
+    audit = base.resource_audit(coordinate)
+    resource = audit.get("resource", {}) if isinstance(audit, dict) else {}
+    if resource.get("personal_resource") and not resource.get("trusted"):
+        result = {
+            "ok": False,
+            "executed": False,
+            "coordinate": coordinate,
+            "operation": operation,
+            "error": "personal_resource_unverified",
+            "resourceAudit": resource,
+        }
+        result["node"] = NODE_ID
+        result["operatorRuntimeVersion"] = VERSION
+        _record("provider_read", started, result, coordinate=coordinate, route="PERSONAL_TRUST_BLOCKED")
+        return result
     result = provider_adapters.execute_read(coordinate, operation)
     result["node"] = NODE_ID
     result["operatorRuntimeVersion"] = VERSION

@@ -47,6 +47,7 @@ TOOLS=[
  tooldef('ci_action','Безпечна дія Ci','Execute only an allowlisted low-risk action: refresh or verify.',{'type':'object','properties':{'action':{'type':'string','enum':['refresh','verify']},'target':{'type':'string'}},'required':['action']},scope='act',read_only=False),
  tooldef('ci_memory_append','Запис пам’яті Ci','Append durable Ci context; sensitive material is rejected.',{'type':'object','properties':{'content':{},'refs':{'type':'array','items':{'type':'string'}},'provenance':{'type':'string'}},'required':['content']},scope='act',read_only=False),
  tooldef('ci_operator_status','Стан Ci Operator','Get the live Orange operator node, registry, acceptance and executor status.',{'type':'object','properties':{}}),
+ tooldef('ci_resource_audit','Аудит власних ресурсів','Return the verified personal digital resource passport: authority, trust classification, evidence freshness, allowed operations and blockers.',{'type':'object','properties':{'target':{'type':'string'}}}),
  tooldef('ci_resolve','Маршрут Ci','Resolve a user intent to the canonical Ci coordinate and safest available executor route.',{'type':'object','properties':{'intent':{'type':'string'},'target':{'type':'string'}},'required':['intent']}),
  tooldef('ci_dispatch','Передати Ci','Dispatch an intent through the Orange operator and CI.LINK. Sensitive external writes remain permission-gated downstream.',{'type':'object','properties':{'intent':{'type':'string'},'target':{'type':'string'},'mode':{'type':'string','enum':['resolve','status','contact','sync'],'default':'contact'}},'required':['intent']},scope='act',read_only=False,open_world=True),
 
@@ -112,6 +113,7 @@ def call_tool(name,args):
     if name=='ci_memory_append': return ci_unified.ci_memory_append(args.get('content'),args.get('refs'),source='gpt.ci',provenance=args.get('provenance'))
 
     if name=='ci_operator_status': return ci_operator.status()
+    if name=='ci_resource_audit': return ci_operator.resource_audit(args.get('target'))
     if name=='ci_resolve': return ci_operator.resolve(args.get('intent',''),args.get('target'))
     if name=='ci_dispatch': return ci_operator.dispatch(args.get('intent',''),args.get('target'),args.get('mode','contact'))
 

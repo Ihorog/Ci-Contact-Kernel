@@ -11,7 +11,7 @@ from urllib.request import Request, urlopen
 
 import vault_node
 
-VERSION = "1.0.2"
+VERSION = "1.1.0"
 NODE_ID = "CI.OPERATOR.ORANGE"
 REGISTRY_PATH = Path(os.getenv("CI_REGISTRY_PATH", "/home/kazkar/cimeika/cit/registry/ci-registry/v1.1.0/ci-registry.json"))
 ACCEPTANCE_PATH = Path(os.getenv("CI_ACCEPTANCE_PATH", "/home/kazkar/cimeika/cit/registry/ci-registry/v1.1.0/acceptance/current.json"))
@@ -234,6 +234,127 @@ def _external_node_delegation(coordinate, capabilities, risk, fallback):
     }
 
 
+
+PERSONAL_TRUSTED_STATES = {"OWNED_VERIFIED", "DELEGATED_VERIFIED"}
+
+
+def _personal_resource_required(coordinate, connection):
+    if coordinate in LOCAL_COORDINATES:
+        return True
+    for route in connection.get("resolve", []):
+        if isinstance(route, str) and (route.startswith("connector:") or route.startswith("runtime_connector:")):
+            return True
+    return False
+
+
+def _resource_freshness(acceptance, reg):
+    trust = reg.get("policy", {}).get("personal_resource_trust", {}) if isinstance(reg, dict) else {}
+    freshness_policy = trust.get("freshness", {}) if isinstance(trust, dict) else {}
+    max_age = int(freshness_policy.get("max_age_seconds", 86400))
+    stamp_value = acceptance.get("last_verified") if isinstance(acceptance, dict) else None
+    if not stamp_value:
+        return {"status": "STALE", "lastVerified": None, "ageSeconds": None, "maxAgeSeconds": max_age, "reason": "missing_last_verified"}
+    try:
+        stamp = datetime.fromisoformat(str(stamp_value).replace("Z", "+00:00"))
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=timezone.utc)
+        age = max(0, int((datetime.now(timezone.utc) - stamp.astimezone(timezone.utc)).total_seconds()))
+        return {
+            "status": "FRESH" if age <= max_age else "STALE",
+            "lastVerified": stamp_value,
+            "ageSeconds": age,
+            "maxAgeSeconds": max_age,
+            "clock": "UTC",
+        }
+    except Exception:
+        return {"status": "STALE", "lastVerified": stamp_value, "ageSeconds": None, "maxAgeSeconds": max_age, "reason": "invalid_last_verified"}
+
+
+def _build_personal_resource_audit(coordinate, connection, acceptance, reg):
+    required = _personal_resource_required(coordinate, connection)
+    routes = list(connection.get("resolve", []))
+    allowed_ops = list(connection.get("capabilities", []))
+    if not required:
+        return {
+            "ci_id": coordinate,
+            "route": routes,
+            "authority": None,
+            "verification_status": "NOT_APPLICABLE",
+            "evidence": acceptance.get("evidence") if isinstance(acceptance, dict) else None,
+            "last_verified": acceptance.get("last_verified") if isinstance(acceptance, dict) else None,
+            "allowed_ops": allowed_ops,
+            "blocker": None,
+            "personal_resource": False,
+            "trusted": True,
+        }
+
+    authority = acceptance.get("authority") if isinstance(acceptance, dict) else None
+    authority = authority if isinstance(authority, dict) else {"kind": "unknown"}
+    evidence = acceptance.get("evidence") if isinstance(acceptance, dict) else None
+    provenance = acceptance.get("provenance") if isinstance(acceptance, dict) else None
+    state = str(acceptance.get("state", "UNKNOWN")).upper() if isinstance(acceptance, dict) else "UNKNOWN"
+    freshness = _resource_freshness(acceptance or {}, reg)
+
+    blocker = acceptance.get("blocker") if isinstance(acceptance, dict) else None
+    if state in {"BLOCKED", "UNAVAILABLE"}:
+        verification_status = "BLOCKED"
+        blocker = blocker or "resource_state_blocked"
+    elif freshness.get("status") != "FRESH":
+        verification_status = "STALE"
+        blocker = blocker or freshness.get("reason") or "verification_stale"
+    elif not evidence or not provenance:
+        verification_status = "AVAILABLE_UNVERIFIED"
+        blocker = blocker or "evidence_or_provenance_missing"
+    elif str(authority.get("kind", "")).lower() == "owner":
+        verification_status = "OWNED_VERIFIED"
+    elif str(authority.get("kind", "")).lower() == "delegated":
+        verification_status = "DELEGATED_VERIFIED"
+    else:
+        verification_status = "AVAILABLE_UNVERIFIED"
+        blocker = blocker or "explicit_authority_missing"
+
+    return {
+        "ci_id": coordinate,
+        "route": routes,
+        "authority": authority,
+        "verification_status": verification_status,
+        "evidence": evidence,
+        "last_verified": freshness.get("lastVerified"),
+        "allowed_ops": allowed_ops,
+        "blocker": blocker,
+        "personal_resource": True,
+        "trusted": verification_status in PERSONAL_TRUSTED_STATES,
+        "freshness": freshness,
+        "provenance": provenance,
+    }
+
+
+def resource_audit(target=None):
+    reg = _registry()
+    snapshot = _acceptance()
+    connections = _connections(reg)
+    states = _states(snapshot)
+    if target:
+        if target not in connections:
+            return {"ok": False, "error": "unknown_coordinate", "coordinate": target}
+        audit = _build_personal_resource_audit(target, connections.get(target, {}), states.get(target, {}), reg)
+        return {"ok": True, "resource": audit}
+    resources = []
+    for coordinate, connection in connections.items():
+        audit = _build_personal_resource_audit(coordinate, connection, states.get(coordinate, {}), reg)
+        if audit.get("personal_resource"):
+            resources.append(audit)
+    summary = {
+        "total": len(resources),
+        "owned_verified": sum(1 for row in resources if row.get("verification_status") == "OWNED_VERIFIED"),
+        "delegated_verified": sum(1 for row in resources if row.get("verification_status") == "DELEGATED_VERIFIED"),
+        "available_unverified": sum(1 for row in resources if row.get("verification_status") == "AVAILABLE_UNVERIFIED"),
+        "stale": sum(1 for row in resources if row.get("verification_status") == "STALE"),
+        "blocked": sum(1 for row in resources if row.get("verification_status") == "BLOCKED"),
+    }
+    return {"ok": True, "summary": summary, "resources": resources}
+
+
 def resolve(intent: str, target=None):
     reg = _registry()
     snapshot = _acceptance()
@@ -264,6 +385,10 @@ def resolve(intent: str, target=None):
         execution = "ORANGE_LOCAL_SAFE"
     else:
         execution = "DELEGATE_CONNECTOR"
+    personal_resource = _build_personal_resource_audit(selected, connection, acceptance, reg)
+    candidate_execution = execution
+    if personal_resource.get("personal_resource") and not personal_resource.get("trusted"):
+        execution = "PERSONAL_TRUST_BLOCKED"
     routes = connection.get("resolve", [])
     capabilities = connection.get("capabilities", [])
     fallback = connection.get("fallback", [])
@@ -275,7 +400,7 @@ def resolve(intent: str, target=None):
     else:
         delegation = None
     return {
-        "ok": state not in {"BLOCKED", "UNAVAILABLE"},
+        "ok": state not in {"BLOCKED", "UNAVAILABLE"} and execution != "PERSONAL_TRUST_BLOCKED",
         "node": NODE_ID,
         "intent": intent,
         "coordinate": selected,
@@ -284,6 +409,8 @@ def resolve(intent: str, target=None):
         "stateSource": state_source,
         "freshness": freshness,
         "execution": execution,
+        "candidateExecution": candidate_execution,
+        "personalResource": personal_resource,
         "route": routes,
         "fallback": fallback,
         "risk": risk,
@@ -319,7 +446,9 @@ def delegate(intent: str, operation: str, target=None):
             "requiresLiveCheck": True, "requiresEvidence": True,
             "executionPlane": "external_node", "clientExecution": False,
         }
-    route_usable = resolution.get("state") in LIVE_DELEGATION_STATES
+    personal_resource = resolution.get("personalResource", {})
+    personal_trusted = (not personal_resource.get("personal_resource")) or bool(personal_resource.get("trusted"))
+    route_usable = resolution.get("state") in LIVE_DELEGATION_STATES and personal_trusted
     freshness_status = resolution.get("freshness", {}).get("status", "UNKNOWN")
     automatic = bool(route_usable and operation in auto_ops and delegation)
     freshness_check_required = freshness_status != "FRESH"
@@ -346,7 +475,8 @@ def delegate(intent: str, operation: str, target=None):
             "onFailure": "BLOCKED_OR_DEGRADED",
         },
         "nextAction": (
-            "VERIFY_BOUND_NODE_THEN_EXECUTE" if automatic and freshness_check_required
+            "REVERIFY_PERSONAL_RESOURCE" if personal_resource.get("personal_resource") and not personal_trusted
+            else "VERIFY_BOUND_NODE_THEN_EXECUTE" if automatic and freshness_check_required
             else "EXECUTE_EXTERNAL_NODE" if automatic
             else "REQUEST_PERMISSION_FOR_BOUND_NODE"
         ),
@@ -363,6 +493,8 @@ def dispatch(intent: str, target=None, mode="contact"):
         return {"ok": False, "error": "unsupported_mode", "allowed": ["resolve", "status", "contact", "sync"]}
     if resolution.get("execution") == "BLOCKED":
         return {"ok": False, "mode": mode, "resolution": resolution, "executed": False, "error": "coordinate_blocked"}
+    if resolution.get("execution") == "PERSONAL_TRUST_BLOCKED":
+        return {"ok": False, "mode": mode, "resolution": resolution, "executed": False, "error": "personal_resource_unverified"}
     if resolution.get("execution") == "DELEGATE_CONNECTOR":
         delegation = resolution.get("delegation")
         return {

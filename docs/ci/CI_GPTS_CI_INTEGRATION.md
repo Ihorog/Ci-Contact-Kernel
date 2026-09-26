@@ -271,3 +271,50 @@ GPTs Ci
 ```
 
 Без ручного SSH, ручного редагування бази і без Desktop Commander у штатному контурі.
+
+
+## 13. Verified personal digital resource layer
+
+Ci separates connector availability from verified personal control.
+
+A repository, account, device, service, storage location, domain, or automation is not treated as an owned resource merely because Ci can see or call it. Personal-resource status requires explicit ownership or delegated authority plus current evidence and provenance.
+
+Canonical states:
+
+```text
+OWNED_VERIFIED
+DELEGATED_VERIFIED
+AVAILABLE_UNVERIFIED
+STALE
+BLOCKED
+```
+
+The preferred execution path is:
+
+```text
+intent
+→ resolve Ci ID
+→ ownership / authority check
+→ live verification
+→ capability + policy
+→ bound executor
+→ action
+→ independent verification
+→ evidence
+→ FACT
+```
+
+A personal-resource audit MUST return:
+
+```text
+ci_id
+route
+authority
+verification_status
+evidence
+last_verified
+allowed_ops
+blocker
+```
+
+Secrets are never proof of ownership and never appear in audit output. Credentials remain in the runtime secret store; evidence contains only non-secret verifier identity, timestamps, result hashes/IDs where safe, and the verified state.

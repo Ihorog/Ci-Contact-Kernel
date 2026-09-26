@@ -3,7 +3,7 @@ import hashlib
 import json
 import time
 
-VERSION='1.0.0'
+VERSION='1.1.0'
 
 def _canon(value):
     return json.dumps(value,ensure_ascii=False,sort_keys=True,separators=(',',':'))
@@ -17,7 +17,7 @@ def aggregate(run_id, graph, results):
         sid=step['id']; r=results.get(sid) or {'ok':False,'error':'missing_result'}
         evidence=r.get('evidence') or {}
         executors.add(str(r.get('executor') or 'none'))
-        if not r.get('ok'): complete=False
+        if not r.get('ok') or not evidence: complete=False
         ordered.append({'step':sid,'capability':step['capability'],'executor':r.get('executor'),
                         'ok':bool(r.get('ok')),'evidence':evidence,'evidenceSha256':sha256(evidence),
                         'elapsedMs':r.get('elapsedMs'),'error':r.get('error')})

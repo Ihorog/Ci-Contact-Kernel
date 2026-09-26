@@ -3,6 +3,7 @@ import importlib
 import os
 import sys
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import patch
 from pathlib import Path
 
@@ -14,68 +15,103 @@ import ci_operator
 importlib.reload(ci_operator)
 
 
+def trusted_snapshot(coordinate, authority_kind="owner"):
+    now = datetime.now(timezone.utc).isoformat()
+    return {
+        "kind": "CI_REGISTRY_ACCEPTANCE_SNAPSHOT",
+        "generated_at": now,
+        "coordinates": [{
+            "id": coordinate,
+            "state": "VERIFIED",
+            "evidence": "test-evidence",
+            "provenance": {"source": "unit-test"},
+            "authority": {"kind": authority_kind, "principal": "test-principal"},
+            "last_verified": now,
+        }],
+    }
+
+
 class DelegationContractTest(unittest.TestCase):
-    def test_github_resolves_to_connector_delegation(self):
-        result = ci_operator.resolve("перевір репозиторій GitHub")
+    def test_github_trusted_resolves_to_connector_delegation(self):
+        with patch.object(ci_operator, "_acceptance", return_value=trusted_snapshot("CI.GITHUB")):
+            result = ci_operator.resolve("перевір репозиторій GitHub")
         self.assertEqual(result["coordinate"], "CI.GITHUB")
         self.assertEqual(result["execution"], "DELEGATE_CONNECTOR")
+        self.assertEqual(result["personalResource"]["verification_status"], "OWNED_VERIFIED")
+        self.assertTrue(result["personalResource"]["trusted"])
         self.assertEqual(result["connectorHint"], "GitHub")
         self.assertEqual(result["delegation"]["kind"], "chatgpt_connector")
-        self.assertEqual(result["delegation"]["executor"], "GitHub")
-        self.assertTrue(result["delegation"]["requiresLiveCheck"])
-        self.assertTrue(result["delegation"]["requiresEvidence"])
 
-    def test_external_dispatch_does_not_claim_cilink_execution(self):
+    def test_unverified_visible_github_is_blocked(self):
+        result = ci_operator.resolve("перевір репозиторій GitHub")
+        self.assertEqual(result["coordinate"], "CI.GITHUB")
+        self.assertEqual(result["execution"], "PERSONAL_TRUST_BLOCKED")
+        self.assertFalse(result["ok"])
+        self.assertIsNone(result["delegation"])
+        self.assertIn(result["personalResource"]["verification_status"], {"STALE", "AVAILABLE_UNVERIFIED", "BLOCKED"})
+
+    def test_external_dispatch_does_not_claim_execution_without_verified_resource(self):
         result = ci_operator.dispatch("перевір репозиторій GitHub")
+        self.assertFalse(result["ok"])
+        self.assertFalse(result["executed"])
+        self.assertEqual(result["error"], "personal_resource_unverified")
+
+    def test_trusted_external_dispatch_delegates_to_caller_runtime(self):
+        with patch.object(ci_operator, "_acceptance", return_value=trusted_snapshot("CI.GITHUB")):
+            result = ci_operator.dispatch("перевір репозиторій GitHub")
         self.assertTrue(result["ok"])
         self.assertEqual(result["mode"], "delegate")
         self.assertFalse(result["executed"])
         self.assertEqual(result["executor"], "CALLER_RUNTIME")
         self.assertEqual(result["delegation"]["executor"], "GitHub")
-        self.assertNotIn("upstream", result)
 
-    def test_native_route_is_machine_readable(self):
+    def test_native_route_is_machine_readable_and_not_personal_gated(self):
         result = ci_operator.resolve("пошук в інтернеті")
         self.assertEqual(result["coordinate"], "CI.WEB")
         self.assertEqual(result["delegation"]["kind"], "native_tool")
         self.assertEqual(result["delegation"]["executor"], "web")
+        self.assertFalse(result["personalResource"]["personal_resource"])
 
-    def test_known_github_read_is_automatic_external_delegation(self):
-        result = ci_operator.delegate("перевір GitHub", "read_repo", "CI.GITHUB")
+    def test_known_github_read_is_automatic_only_when_trusted(self):
+        with patch.object(ci_operator, "_acceptance", return_value=trusted_snapshot("CI.GITHUB")):
+            result = ci_operator.delegate("перевір GitHub", "read_repo", "CI.GITHUB")
         self.assertTrue(result["ok"])
         self.assertTrue(result["automatic"])
         self.assertFalse(result["permissionRequired"])
-        self.assertFalse(result["searchRequired"])
         self.assertEqual(result["delegation"]["executor"], "GitHub")
-        self.assertFalse(result["client"]["executesOperation"])
 
-    def test_github_write_keeps_executor_but_requires_permission(self):
-        result = ci_operator.delegate("оновити GitHub", "repo_write_when_authorized", "CI.GITHUB")
+    def test_github_write_keeps_executor_but_requires_permission_when_trusted(self):
+        with patch.object(ci_operator, "_acceptance", return_value=trusted_snapshot("CI.GITHUB")):
+            result = ci_operator.delegate("оновити GitHub", "repo_write_when_authorized", "CI.GITHUB")
         self.assertTrue(result["ok"])
         self.assertFalse(result["automatic"])
         self.assertTrue(result["permissionRequired"])
-        self.assertFalse(result["searchRequired"])
         self.assertEqual(result["delegation"]["executor"], "GitHub")
 
-    def test_orange_status_executes_outside_client_device(self):
-        result = ci_operator.delegate("стан Orange", "status", "CI.ORANGE")
+    def test_orange_status_requires_verified_personal_authority(self):
+        with patch.object(ci_operator, "_acceptance", return_value=trusted_snapshot("CI.ORANGE")):
+            result = ci_operator.delegate("стан Orange", "status", "CI.ORANGE")
         self.assertTrue(result["automatic"])
         self.assertEqual(result["delegation"]["executor"], "CI.OPERATOR.ORANGE")
-        self.assertEqual(result["delegation"]["executionPlane"], "external_node")
-        self.assertFalse(result["delegation"]["clientExecution"])
 
-    def test_stale_snapshot_keeps_bound_executor_and_requires_live_check(self):
-        stale = {"status": "STALE", "generatedAt": "2000-01-01T00:00:00Z", "ageSeconds": 1, "maxAgeSeconds": 1}
-        with patch.object(ci_operator, '_snapshot_freshness', return_value=stale):
+    def test_stale_personal_resource_fails_closed_and_keeps_no_executor(self):
+        snapshot = trusted_snapshot("CI.GITHUB")
+        snapshot["coordinates"][0]["last_verified"] = "2000-01-01T00:00:00Z"
+        with patch.object(ci_operator, "_acceptance", return_value=snapshot):
             result = ci_operator.delegate("перевір GitHub", "read_repo", "CI.GITHUB")
-        self.assertTrue(result["automatic"])
-        self.assertFalse(result["permissionRequired"])
-        self.assertTrue(result["freshnessCheckRequired"])
-        self.assertFalse(result["searchRequired"])
-        self.assertEqual(result["delegation"]["executor"], "GitHub")
-        self.assertEqual(result["nextAction"], "VERIFY_BOUND_NODE_THEN_EXECUTE")
-        self.assertEqual(result["resolution"]["effectiveState"], "VERIFY_REQUIRED")
-        self.assertFalse(result["resolution"]["evidenceCurrent"])
+        self.assertFalse(result["ok"])
+        self.assertFalse(result["automatic"])
+        self.assertIsNone(result["delegation"])
+        self.assertEqual(result["nextAction"], "REVERIFY_PERSONAL_RESOURCE")
+        self.assertEqual(result["resolution"]["personalResource"]["verification_status"], "STALE")
+
+    def test_resource_audit_has_required_shape(self):
+        with patch.object(ci_operator, "_acceptance", return_value=trusted_snapshot("CI.GITHUB")):
+            result = ci_operator.resource_audit("CI.GITHUB")
+        resource = result["resource"]
+        for key in ("ci_id", "route", "authority", "verification_status", "evidence", "last_verified", "allowed_ops", "blocker"):
+            self.assertIn(key, resource)
+        self.assertEqual(resource["verification_status"], "OWNED_VERIFIED")
 
 
 if __name__ == "__main__":

@@ -97,6 +97,7 @@ function normalizeInput(raw) {
     'parent_claim_ids', 'transform_chain', 'source_actor_ci_id',
     'valid_from', 'valid_to', 'observed_at', 'recorded_at', 'supersedes_ci_id',
     'confidence_basis', 'verification_status',
+    'authority', 'route', 'allowed_ops', 'last_verified', 'blocker',
     'criticality', 'safety_impact', 'financial_impact', 'privacy_impact',
     'availability_impact', 'dependency_impact', 'time_sensitivity',
     'reversibility', 'execution_class',

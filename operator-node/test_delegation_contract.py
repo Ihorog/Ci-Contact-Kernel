@@ -31,6 +31,21 @@ def trusted_snapshot(coordinate, authority_kind="owner"):
     }
 
 
+def unverified_snapshot(coordinate):
+    now = datetime.now(timezone.utc).isoformat()
+    return {
+        "kind": "CI_REGISTRY_ACCEPTANCE_SNAPSHOT",
+        "generated_at": now,
+        "coordinates": [{
+            "id": coordinate,
+            "state": "VERIFIED",
+            "evidence": "test-evidence",
+            "provenance": {"source": "unit-test"},
+            "last_verified": now,
+        }],
+    }
+
+
 class DelegationContractTest(unittest.TestCase):
     def test_github_trusted_resolves_to_connector_delegation(self):
         with patch.object(ci_operator, "_acceptance", return_value=trusted_snapshot("CI.GITHUB")):
@@ -43,7 +58,8 @@ class DelegationContractTest(unittest.TestCase):
         self.assertEqual(result["delegation"]["kind"], "chatgpt_connector")
 
     def test_unverified_visible_github_is_blocked(self):
-        result = ci_operator.resolve("перевір репозиторій GitHub")
+        with patch.object(ci_operator, "_acceptance", return_value=unverified_snapshot("CI.GITHUB")):
+            result = ci_operator.resolve("перевір репозиторій GitHub")
         self.assertEqual(result["coordinate"], "CI.GITHUB")
         self.assertEqual(result["execution"], "PERSONAL_TRUST_BLOCKED")
         self.assertFalse(result["ok"])
@@ -51,7 +67,8 @@ class DelegationContractTest(unittest.TestCase):
         self.assertIn(result["personalResource"]["verification_status"], {"STALE", "AVAILABLE_UNVERIFIED", "BLOCKED"})
 
     def test_external_dispatch_does_not_claim_execution_without_verified_resource(self):
-        result = ci_operator.dispatch("перевір репозиторій GitHub")
+        with patch.object(ci_operator, "_acceptance", return_value=unverified_snapshot("CI.GITHUB")):
+            result = ci_operator.dispatch("перевір репозиторій GitHub")
         self.assertFalse(result["ok"])
         self.assertFalse(result["executed"])
         self.assertEqual(result["error"], "personal_resource_unverified")

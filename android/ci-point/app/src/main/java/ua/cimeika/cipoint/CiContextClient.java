@@ -81,7 +81,149 @@ final class CiContextClient implements CiContextProvider {
         executor.execute(() -> {
             try {
                 body.put("verified_resources", CiVerifiedResources.snapshot());
-                JSONObject payload = postJson(endpointFor(path), body);
+                JSONObject payload = null;
+                Exception lastError = null;
+                for (String endpoint : CiEndpointConfig.candidates(context, path)) {
+                    try {
+                        payload = postJson(endpoint, body);
+                        CiEndpointConfig.remember(context, endpoint);
+                        break;
+                    } catch (Exception exc) {
+                        lastError = exc;
+                    }
+                }
+                if (payload == null) {
+                    throw lastError != null ? lastError : new IllegalStateException("no_ci_endpoint");
+                }
+                if (closed) return;
+                if ("/ci/context".equals(path)) cacheContext(payload);
+                deliverSuccess(callback, payload);
+            } catch (Exception exc) {
+                if (closed) return;
+                JSONObject fallback = "/ci/action".equals(path)
+                        ? localActionFallback(body)
+                        : localContextFallback(body);
+                if (fallback != null) {
+                    deliverSuccess(callback, fallback);
+                } else {
+                    deliverError(
+                            callback,
+                            "context_runtime_error:" + exc.getClass().getSimpleName()
+                    );
+                }
+            }
+        });
+    }
+
+    private void deliverSuccess(Callback callback, JSONObject payload) {
+        mainHandler.post(() -> {
+            if (!closed) callback.onSuccess(payload);
+        });
+    }
+
+    private void deliverError(Callback callback, String error) {
+        mainHandler.post(() -> {
+            if (!closed) callback.onError(error);
+        });
+    }
+
+package ua.cimeika.cipoint;
+
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.os.Handler;
+import android.os.Looper;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+final class CiContextClient implements CiContextProvider {
+    private static final String PREFS = "ci_point";
+    private static final String PREF_AI_ENDPOINT = "local_ai_endpoint";
+    private static final String PREF_CONTEXT_CACHE = "context_cache_json";
+    private static final String PREF_CONTEXT_CACHE_AT = "context_cache_at";
+    private static final String DEFAULT_AI_ENDPOINT =
+            "http://192.168.1.38:8791/ci/intent";
+
+    private final Context context;
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private volatile boolean closed;
+
+    CiContextClient(Context context) {
+        this.context = context.getApplicationContext();
+    }
+
+    @Override
+    public void requestContext(
+            String gesture,
+            String direction,
+            JSONObject state,
+            Callback callback) {
+        JSONObject body = basePayload(state);
+        try {
+            body.put("gesture", gesture == null ? "materialize_context" : gesture);
+            body.put("direction", direction == null ? "" : direction);
+        } catch (Exception ignored) { }
+        submit("/ci/context", body, callback);
+    }
+
+    @Override
+    public void execute(
+            CiContextCard card,
+            JSONObject state,
+            Callback callback) {
+        JSONObject body = basePayload(state);
+        try {
+            body.put("card", card.toJson());
+        } catch (Exception ignored) { }
+        submit("/ci/action", body, callback);
+    }
+
+    private JSONObject basePayload(JSONObject state) {
+        JSONObject body = new JSONObject();
+        try {
+            body.put("source", "ci-android-overlay");
+            body.put("platform", "android");
+            body.put("device", android.os.Build.MODEL);
+            body.put("surface", "ci-point");
+            body.put("locale", "uk-UA");
+            String keyId = CiDeviceIdentity.keyId();
+            if (!keyId.isEmpty()) body.put("device_key_id", keyId);
+            body.put("context", state == null ? new JSONObject() : state);
+        } catch (Exception ignored) { }
+        return body;
+    }
+
+    private void submit(String path, JSONObject body, Callback callback) {
+        if (closed) return;
+        executor.execute(() -> {
+            try {
+                body.put("verified_resources", CiVerifiedResources.snapshot());
+                JSONObject payload = null;
+                Exception lastError = null;
+                for (String endpoint : CiEndpointConfig.candidates(context, path)) {
+                    try {
+                        payload = postJson(endpoint, body);
+                        CiEndpointConfig.remember(context, endpoint);
+                        break;
+                    } catch (Exception exc) {
+                        lastError = exc;
+                    }
+                }
+                if (payload == null) {
+                    throw lastError != null ? lastError : new IllegalStateException("no_ci_endpoint");
+                }
                 if (closed) return;
                 if ("/ci/context".equals(path)) cacheContext(payload);
                 deliverSuccess(callback, payload);

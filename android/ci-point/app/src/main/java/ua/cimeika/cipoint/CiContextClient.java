@@ -80,6 +80,7 @@ final class CiContextClient implements CiContextProvider {
         if (closed) return;
         executor.execute(() -> {
             try {
+                body.put("verified_resources", CiVerifiedResources.snapshot());
                 JSONObject payload = postJson(endpointFor(path), body);
                 if (closed) return;
                 if ("/ci/context".equals(path)) cacheContext(payload);

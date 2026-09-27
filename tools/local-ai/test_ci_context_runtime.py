@@ -4,6 +4,7 @@ from ci_context_runtime import (
     execute_context_card,
     fallback_cards,
     normalize_card,
+    runtime_context,
 )
 
 
@@ -42,6 +43,24 @@ class ContextRuntimeTest(unittest.TestCase):
         cards = fallback_cards({"gesture": "materialize_context", "context": {}})
         self.assertEqual(cards[0]["context"]["state"], "actual")
         self.assertEqual(cards[0]["routing"]["capability"], "materialize_context")
+
+    def test_verified_resource_context_is_preserved(self):
+        payload = {
+            "context": {"existing": True},
+            "device_key_id": "ci-key-test",
+            "verified_resources": {
+                "contract": "ci-personal-resource-trust/v1",
+                "passport_fresh": True,
+                "trusted_resources": 6,
+                "server_authoritative": True,
+            },
+            "source": "ci-android-overlay",
+        }
+        context = runtime_context(payload)
+        self.assertEqual(context["device_key_id"], "ci-key-test")
+        self.assertEqual(context["verified_resources"]["trusted_resources"], 6)
+        self.assertTrue(context["verified_resources"]["server_authoritative"])
+        self.assertEqual(context["source"], "ci-android-overlay")
 
     def test_action_evolves_to_next_cards(self):
         card = fallback_cards({"gesture": "tap", "context": {}})[0]

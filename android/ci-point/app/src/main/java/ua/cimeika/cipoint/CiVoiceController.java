@@ -265,6 +265,7 @@ final class CiVoiceController {
                 body.put("surface", "ci-point");
                 body.put("locale", "uk-UA");
                 body.put("conversation", true);
+                body.put("verified_resources", CiVerifiedResources.snapshot());
 
                 JSONObject result = postJson(endpoint, body);
                 if (closed || !conversationActive) return;

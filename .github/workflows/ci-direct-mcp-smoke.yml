@@ -25,7 +25,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --max-time 20             "$CI_MCP_BASE/operator/health"             -o /tmp/health.json
+          curl --fail --silent --show-error --max-time 20 -A 'Mozilla/5.0 CiOperatorMCPProbe/1.0'             "$CI_MCP_BASE/operator/health"             -o /tmp/health.json
           python - <<'PY'
           import json
           d=json.load(open('/tmp/health.json'))
@@ -41,7 +41,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --max-time 20             "$CI_MCP_BASE/.well-known/oauth-protected-resource"             -o /tmp/oauth.json
+          curl --fail --silent --show-error --max-time 20 -A 'Mozilla/5.0 CiOperatorMCPProbe/1.0'             "$CI_MCP_BASE/.well-known/oauth-protected-resource"             -o /tmp/oauth.json
           python - <<'PY'
           import json, os
           d=json.load(open('/tmp/oauth.json'))
@@ -60,7 +60,7 @@ jobs:
           cat >/tmp/init.json <<'JSON'
           {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci-direct-github-smoke","version":"1"}}}
           JSON
-          curl --fail --silent --show-error --max-time 20             -X POST "$CI_MCP_BASE/mcp"             -H 'content-type: application/json'             -H 'accept: application/json, text/event-stream'             --data-binary @/tmp/init.json             -o /tmp/init-response.json
+          curl --fail --silent --show-error --max-time 20 -A 'Mozilla/5.0 CiOperatorMCPProbe/1.0'             -X POST "$CI_MCP_BASE/mcp"             -H 'content-type: application/json'             -H 'accept: application/json, text/event-stream'             --data-binary @/tmp/init.json             -o /tmp/init-response.json
           python - <<'PY'
           import json
           d=json.load(open('/tmp/init-response.json'))
@@ -81,7 +81,7 @@ jobs:
           cat >/tmp/tools.json <<'JSON'
           {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
           JSON
-          curl --fail --silent --show-error --max-time 20             -X POST "$CI_MCP_BASE/mcp"             -H 'content-type: application/json'             -H 'accept: application/json, text/event-stream'             --data-binary @/tmp/tools.json             -o /tmp/tools-response.json
+          curl --fail --silent --show-error --max-time 20 -A 'Mozilla/5.0 CiOperatorMCPProbe/1.0'             -X POST "$CI_MCP_BASE/mcp"             -H 'content-type: application/json'             -H 'accept: application/json, text/event-stream'             --data-binary @/tmp/tools.json             -o /tmp/tools-response.json
           python - <<'PY'
           import json
           d=json.load(open('/tmp/tools-response.json'))

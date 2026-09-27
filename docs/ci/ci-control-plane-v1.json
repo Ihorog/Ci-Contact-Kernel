@@ -1,0 +1,29 @@
+{
+  "$schema": "ci-control-plane-v1",
+  "version": "1.0.0",
+  "authority": {"control_plane":"Ci","single_master":true},
+  "lifecycle":["intent","state","plan","route","execute","evidence","verify","reconcile","status"],
+  "states":["PLANNED","QUEUED","RUNNING","EXECUTED","VERIFIED","BLOCKED","FAILED"],
+  "completion":{"terminal_success":"VERIFIED","require_all_mandatory_evidence":true,"executor_self_promote":false},
+  "routing":{
+    "local":["Cihub","Orange Pi","Termux"],
+    "code":["GitHub","GitHub Actions"],
+    "data":["Supabase"],
+    "deploy":["Vercel"],
+    "files":["Google Drive","approved local archive"],
+    "communication":["Gmail"],
+    "schedule":["Calendar"],
+    "reasoning":["specialized AI executor"]
+  },
+  "orchestration":{"default":"direct_executor","complex":["router","executor","evidence","reviewer"],"scout":"only_if_required"},
+  "invariants":{
+    "no_fake_execution":true,
+    "no_duplicate_executor":true,
+    "no_completion_without_evidence":true,
+    "reuse_verified_rails":true,
+    "preserve_verified_baselines":true,
+    "offline_executor_state":"BLOCKED"
+  },
+  "orange_release_gate":["exact_release","strict_mcp_probe","ci_resource_audit","vault_live_status","VERIFIED"],
+  "vendor_policy":"executor_adapter_only"
+}

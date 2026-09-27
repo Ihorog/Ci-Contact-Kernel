@@ -151,11 +151,43 @@ def _http_json(url, method="GET", payload=None, timeout=8):
         }
 
 
+def _public_personal_resource_summary(reg, snapshot, freshness):
+    connections = _connections(reg)
+    states = _states(snapshot)
+    resources = []
+    for coordinate, connection in connections.items():
+        audit = _build_personal_resource_audit(
+            coordinate,
+            connection,
+            states.get(coordinate, {}),
+            reg,
+        )
+        if audit.get("personal_resource"):
+            resources.append(audit)
+    counts = {
+        "ownedVerified": sum(1 for row in resources if row.get("verification_status") == "OWNED_VERIFIED"),
+        "delegatedVerified": sum(1 for row in resources if row.get("verification_status") == "DELEGATED_VERIFIED"),
+        "availableUnverified": sum(1 for row in resources if row.get("verification_status") == "AVAILABLE_UNVERIFIED"),
+        "stale": sum(1 for row in resources if row.get("verification_status") == "STALE"),
+        "blocked": sum(1 for row in resources if row.get("verification_status") == "BLOCKED"),
+    }
+    trusted = counts["ownedVerified"] + counts["delegatedVerified"]
+    return {
+        "contract": "ci-personal-resource-trust/v1",
+        "freshness": freshness.get("status", "UNKNOWN"),
+        "trustedResources": trusted,
+        "totalResources": len(resources),
+        **counts,
+        "serverAuthoritative": True,
+    }
+
+
 def status():
     reg = _registry()
     snapshot = _acceptance()
     connections = _connections(reg)
     freshness = _snapshot_freshness(snapshot, reg)
+    personal_resources = _public_personal_resource_summary(reg, snapshot, freshness)
     return {
         "ok": "_error" not in reg and "_error" not in snapshot and bool(connections),
         "node": NODE_ID,
@@ -179,6 +211,7 @@ def status():
             "pointer": snapshot.get("_pointer"),
             "error": snapshot.get("_error"),
         },
+        "personalResources": personal_resources,
         "executors": {
             "localSafe": sorted(LOCAL_COORDINATES),
             "ciLink": _link_endpoint(reg),

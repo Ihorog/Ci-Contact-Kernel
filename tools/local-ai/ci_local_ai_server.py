@@ -316,8 +316,10 @@ class Handler(BaseHTTPRequestHandler):
                 return
             raw_context = payload.get("context")
             context = dict(raw_context) if isinstance(raw_context, dict) else {}
-            for key in ("source", "platform", "device", "surface"):
-                if payload.get(key) and not context.get(key):
+            for key in (
+                    "source", "platform", "device", "surface", "locale",
+                    "device_key_id", "verified_resources", "conversation"):
+                if payload.get(key) is not None and key not in context:
                     context[key] = payload.get(key)
             result = process_intent(text, context)
             self._send(200, {"ok": True, **result})

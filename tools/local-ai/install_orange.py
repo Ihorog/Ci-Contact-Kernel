@@ -66,6 +66,7 @@ Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONPATH={TARGET}:/home/kazkar/cit/modules/ci_operator
 Environment=CI_LOCAL_AI_HOST=0.0.0.0
 Environment=CI_LOCAL_AI_PORT=8791
+Environment=CI_LOCAL_AI_LOCATION=Orange
 ExecStart=/usr/bin/python3 {TARGET}/ci_local_ai_server.py
 Restart=always
 RestartSec=2
@@ -88,6 +89,13 @@ WantedBy=default.target
     )
     if enable_result.returncode != 0:
         raise RuntimeError("service_enable_failed:" + (enable_result.stderr or "")[-240:])
+
+    restart_result = subprocess.run(
+        ["systemctl", "--user", "restart", "ci-local-ai.service"],
+        capture_output=True, text=True, timeout=30, check=False,
+    )
+    if restart_result.returncode != 0:
+        raise RuntimeError("service_restart_failed:" + (restart_result.stderr or "")[-240:])
 
     health = None
     for _ in range(20):

@@ -1,0 +1,61 @@
+name: Ci MCP Edge Audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "ci/direct-mcp-smoke"
+    paths:
+      - ".github/workflows/ci-mcp-edge-audit.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CF_API: https://api.cloudflare.com/client/v4
+      CF_ZONE_NAME: cimeika.com.ua
+      CF_MCP_HOST: mcp-http.cimeika.com.ua
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Verify Cloudflare token
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          curl -fsS "$CF_API/user/tokens/verify"             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             -H "Content-Type: application/json"             | jq '{success, status: .result.status}'
+
+      - name: Resolve zone and DNS
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZONE_JSON=$(curl -fsS "$CF_API/zones?name=$CF_ZONE_NAME&status=active"             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")
+          ZONE_ID=$(echo "$ZONE_JSON" | jq -r '.result[0].id // empty')
+          test -n "$ZONE_ID"
+          echo "ZONE_ID=$ZONE_ID" >> "$GITHUB_ENV"
+          echo "zone=$CF_ZONE_NAME"
+          curl -fsS "$CF_API/zones/$ZONE_ID/dns_records?name=$CF_MCP_HOST"             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             | jq '{success, records: [.result[] | {id,type,name,content,proxied}]}'
+
+      - name: Read edge security settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          for setting in security_level browser_check challenge_ttl; do
+            echo "SETTING=$setting"
+            curl -fsS "$CF_API/zones/$ZONE_ID/settings/$setting"               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               | jq '{success, result: {id: .result.id, value: .result.value, editable: .result.editable}}'
+          done
+
+      - name: Read rulesets
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS "$CF_API/zones/$ZONE_ID/rulesets"             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             -o /tmp/rulesets.json
+          jq '{success, rulesets: [.result[] | {id,name,kind,phase}]}' /tmp/rulesets.json
+          jq -r '.result[] | select(.phase=="http_request_firewall_custom" or .phase=="http_request_sbfm" or .phase=="http_request_firewall_managed" or .phase=="http_ratelimit") | .id' /tmp/rulesets.json             | while read -r RID; do
+                [ -n "$RID" ] || continue
+                echo "RULESET=$RID"
+                curl -fsS "$CF_API/zones/$ZONE_ID/rulesets/$RID"                   -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"                   | jq '{result: {id: .result.id, name: .result.name, phase: .result.phase, rules: [.result.rules[]? | {id,description,action,enabled,expression,action_parameters}]}}'
+              done

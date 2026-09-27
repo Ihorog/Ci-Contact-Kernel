@@ -122,6 +122,19 @@ class DelegationContractTest(unittest.TestCase):
         self.assertEqual(result["nextAction"], "REVERIFY_PERSONAL_RESOURCE")
         self.assertEqual(result["resolution"]["personalResource"]["verification_status"], "STALE")
 
+    def test_operator_status_exposes_only_aggregate_personal_resource_trust(self):
+        snapshot = trusted_snapshot("CI.GITHUB")
+        with patch.object(ci_operator, "_acceptance", return_value=snapshot):
+            result = ci_operator.status()
+        summary = result["personalResources"]
+        self.assertEqual(summary["contract"], "ci-personal-resource-trust/v1")
+        self.assertTrue(summary["serverAuthoritative"])
+        self.assertEqual(summary["ownedVerified"], 1)
+        self.assertGreaterEqual(summary["trustedResources"], 1)
+        self.assertNotIn("resources", summary)
+        self.assertNotIn("authority", summary)
+        self.assertNotIn("evidence", summary)
+
     def test_resource_audit_has_required_shape(self):
         with patch.object(ci_operator, "_acceptance", return_value=trusted_snapshot("CI.GITHUB")):
             result = ci_operator.resource_audit("CI.GITHUB")

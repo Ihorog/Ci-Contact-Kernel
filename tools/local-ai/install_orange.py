@@ -23,9 +23,6 @@ def fetch(commit, name):
         return response.read()
 
 
-def run(*args):
-    return subprocess.run(args, capture_output=True, text=True, timeout=30, check=False)
-
 
 def http_json(url, payload=None):
     data = None
@@ -58,18 +55,18 @@ def main():
 
     UNIT.parent.mkdir(parents=True, exist_ok=True)
     UNIT.write_text(
-        """[Unit]
+        f"""[Unit]
 Description=Ci Local AI for Android Ci Point
 After=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/kazkar/cit/modules/ci_local_ai
+WorkingDirectory={TARGET}
 Environment=PYTHONUNBUFFERED=1
-Environment=PYTHONPATH=/home/kazkar/cit/modules/ci_local_ai:/home/kazkar/cit/modules/ci_operator
+Environment=PYTHONPATH={TARGET}:/home/kazkar/cit/modules/ci_operator
 Environment=CI_LOCAL_AI_HOST=0.0.0.0
 Environment=CI_LOCAL_AI_PORT=8791
-ExecStart=/usr/bin/python3 /home/kazkar/cit/modules/ci_local_ai/ci_local_ai_server.py
+ExecStart=/usr/bin/python3 {TARGET}/ci_local_ai_server.py
 Restart=always
 RestartSec=2
 
@@ -79,10 +76,16 @@ WantedBy=default.target
         encoding="utf-8",
     )
 
-    reload_result = run("systemctl", "--user", "daemon-reload")
+    reload_result = subprocess.run(
+        ["systemctl", "--user", "daemon-reload"],
+        capture_output=True, text=True, timeout=30, check=False,
+    )
     if reload_result.returncode != 0:
         raise RuntimeError("systemd_user_unavailable:" + (reload_result.stderr or "")[-240:])
-    enable_result = run("systemctl", "--user", "enable", "--now", "ci-local-ai.service")
+    enable_result = subprocess.run(
+        ["systemctl", "--user", "enable", "--now", "ci-local-ai.service"],
+        capture_output=True, text=True, timeout=30, check=False,
+    )
     if enable_result.returncode != 0:
         raise RuntimeError("service_enable_failed:" + (enable_result.stderr or "")[-240:])
 
@@ -111,7 +114,10 @@ WantedBy=default.target
     if not intent.get("ok"):
         raise RuntimeError("local_ai_intent_failed")
 
-    active = run("systemctl", "--user", "is-active", "ci-local-ai.service")
+    active = subprocess.run(
+        ["systemctl", "--user", "is-active", "ci-local-ai.service"],
+        capture_output=True, text=True, timeout=30, check=False,
+    )
     if active.returncode != 0 or active.stdout.strip() != "active":
         raise RuntimeError("local_ai_service_not_active")
 

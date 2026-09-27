@@ -7,6 +7,16 @@ on:
       - 'tools/local-ai/**'
       - 'Cipole (2).png'
       - '.github/workflows/ci-point-android.yml'
+      - '.github/scripts/ci-point-emulator-smoke.sh'
+  push:
+    branches: [main]
+    paths:
+      - 'android/ci-point/**'
+      - 'tools/local-ai/**'
+      - 'operator-node/ci_operator.py'
+      - 'public/ci-registry/**'
+      - '.github/workflows/ci-point-android.yml'
+      - '.github/scripts/ci-point-emulator-smoke.sh'
   workflow_dispatch:
 
 permissions:
@@ -38,9 +48,60 @@ jobs:
         run: ./gradlew :app:lintDebug :app:assembleDebug --stacktrace
         working-directory: android/ci-point
 
+      - name: Hash APK
+        run: sha256sum android/ci-point/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Enable KVM access
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Smoke install and start on Android
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          script: bash .github/scripts/ci-point-emulator-smoke.sh
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: ci-point-debug-apk
           path: android/ci-point/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+  deliver:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified APK
+        uses: actions/download-artifact@v4
+        with:
+          name: ci-point-debug-apk
+          path: delivery
+
+      - name: Publish Ci Point v0.5.2
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ci-point-v0.5.2
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mv delivery/app-debug.apk delivery/Ci-Point-v0.5.2.apk
+          sha256sum delivery/Ci-Point-v0.5.2.apk
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" delivery/Ci-Point-v0.5.2.apk --clobber
+          else
+            gh release create "$TAG" delivery/Ci-Point-v0.5.2.apk \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$TARGET_SHA" \
+              --title "Ci Point v0.5.2" \
+              --notes "Verified Android build: lint/build green, Android 35 install/runtime smoke passed, aggregate verified-personal-resource trust bound to Ci Operator."
+          fi

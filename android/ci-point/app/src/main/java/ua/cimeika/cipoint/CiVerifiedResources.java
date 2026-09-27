@@ -13,9 +13,11 @@ final class CiVerifiedResources {
     private static final String STATUS_ENDPOINT =
             "https://mcp-http.cimeika.com.ua/operator/health";
     private static final long CACHE_MS = 60_000L;
+    private static final long RETRY_BACKOFF_MS = 120_000L;
 
     private static volatile JSONObject cached;
     private static volatile long cachedAt;
+    private static volatile long retryAfter;
 
     private CiVerifiedResources() { }
 
@@ -25,17 +27,28 @@ final class CiVerifiedResources {
         if (value != null && now - cachedAt <= CACHE_MS) {
             return copy(value);
         }
+        if (value != null && now < retryAfter) {
+            JSONObject backedOff = copy(value);
+            try {
+                backedOff.put("transport", "cached_backoff");
+                backedOff.put("retry_after_ms", retryAfter);
+            } catch (Exception ignored) { }
+            return backedOff;
+        }
         try {
             JSONObject fresh = fetch();
             cached = fresh;
             cachedAt = now;
+            retryAfter = 0L;
             return copy(fresh);
         } catch (Exception exc) {
+            retryAfter = now + RETRY_BACKOFF_MS;
             if (value != null) {
                 JSONObject stale = copy(value);
                 try {
                     stale.put("transport", "cached");
                     stale.put("transport_error", exc.getClass().getSimpleName());
+                    stale.put("retry_after_ms", retryAfter);
                 } catch (Exception ignored) { }
                 return stale;
             }
@@ -55,7 +68,9 @@ final class CiVerifiedResources {
                 unknown.put("transport", "unavailable");
                 unknown.put("transport_error", exc.getClass().getSimpleName());
             } catch (Exception ignored) { }
-            return unknown;
+            cached = unknown;
+            cachedAt = 0L;
+            return copy(unknown);
         }
     }
 

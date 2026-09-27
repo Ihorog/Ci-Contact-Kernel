@@ -3,6 +3,8 @@ import json
 import os
 import py_compile
 import re
+import shlex
+import signal
 import subprocess
 import sys
 import time
@@ -22,6 +24,66 @@ def fetch(commit, name):
     with urllib.request.urlopen(req, timeout=20) as response:
         return response.read()
 
+
+
+
+def install_cron_fallback():
+    log_dir = Path("/home/kazkar/cit/logs")
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "ci_local_ai.log"
+    target_q = shlex.quote(str(TARGET))
+    script_q = shlex.quote(str(TARGET / "ci_local_ai_server.py"))
+    log_q = shlex.quote(str(log_path))
+    launcher = TARGET / "run_ci_local_ai.sh"
+    launcher.write_text(
+        "#!/bin/sh\n"
+        f"export PYTHONPATH={target_q}:/home/kazkar/cit/modules/ci_operator\n"
+        "export CI_LOCAL_AI_HOST=0.0.0.0\n"
+        "export CI_LOCAL_AI_PORT=8791\n"
+        "export CI_LOCAL_AI_LOCATION=Orange\n"
+        f"exec /usr/bin/python3 {script_q} >>{log_q} 2>&1\n",
+        encoding="utf-8",
+    )
+    launcher.chmod(0o755)
+
+    current = subprocess.run(
+        ["crontab", "-l"],
+        capture_output=True, text=True, timeout=20, check=False,
+    )
+    existing = current.stdout if current.returncode == 0 else ""
+    lines = [line for line in existing.splitlines() if "# CI_LOCAL_AI" not in line]
+    lines.append(f"@reboot {shlex.quote(str(launcher))} # CI_LOCAL_AI")
+    cron = subprocess.run(
+        ["crontab", "-"],
+        input="\n".join(lines) + "\n",
+        capture_output=True, text=True, timeout=20, check=False,
+    )
+    if cron.returncode != 0:
+        raise RuntimeError("cron_install_failed:" + (cron.stderr or "")[-240:])
+
+    pattern = str(TARGET / "ci_local_ai_server.py")
+    found = subprocess.run(
+        ["pgrep", "-f", pattern],
+        capture_output=True, text=True, timeout=10, check=False,
+    )
+    for raw in found.stdout.split():
+        if raw.isdigit():
+            pid = int(raw)
+            if pid != os.getpid():
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+    time.sleep(0.3)
+    subprocess.Popen(
+        [str(launcher)],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+        close_fds=True,
+    )
+    return "cron_reboot_auxiliary"
 
 
 def http_json(url, payload=None):
@@ -81,21 +143,22 @@ WantedBy=default.target
         ["systemctl", "--user", "daemon-reload"],
         capture_output=True, text=True, timeout=30, check=False,
     )
-    if reload_result.returncode != 0:
-        raise RuntimeError("systemd_user_unavailable:" + (reload_result.stderr or "")[-240:])
-    enable_result = subprocess.run(
-        ["systemctl", "--user", "enable", "--now", "ci-local-ai.service"],
-        capture_output=True, text=True, timeout=30, check=False,
-    )
-    if enable_result.returncode != 0:
-        raise RuntimeError("service_enable_failed:" + (enable_result.stderr or "")[-240:])
-
-    restart_result = subprocess.run(
-        ["systemctl", "--user", "restart", "ci-local-ai.service"],
-        capture_output=True, text=True, timeout=30, check=False,
-    )
-    if restart_result.returncode != 0:
-        raise RuntimeError("service_restart_failed:" + (restart_result.stderr or "")[-240:])
+    if reload_result.returncode == 0:
+        enable_result = subprocess.run(
+            ["systemctl", "--user", "enable", "--now", "ci-local-ai.service"],
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+        if enable_result.returncode != 0:
+            raise RuntimeError("service_enable_failed:" + (enable_result.stderr or "")[-240:])
+        restart_result = subprocess.run(
+            ["systemctl", "--user", "restart", "ci-local-ai.service"],
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+        if restart_result.returncode != 0:
+            raise RuntimeError("service_restart_failed:" + (restart_result.stderr or "")[-240:])
+        launch_method = "user_systemd"
+    else:
+        launch_method = install_cron_fallback()
 
     health = None
     for _ in range(20):
@@ -122,18 +185,20 @@ WantedBy=default.target
     if not intent.get("ok"):
         raise RuntimeError("local_ai_intent_failed")
 
-    active = subprocess.run(
-        ["systemctl", "--user", "is-active", "ci-local-ai.service"],
-        capture_output=True, text=True, timeout=30, check=False,
-    )
-    if active.returncode != 0 or active.stdout.strip() != "active":
-        raise RuntimeError("local_ai_service_not_active")
+    if launch_method == "user_systemd":
+        active = subprocess.run(
+            ["systemctl", "--user", "is-active", "ci-local-ai.service"],
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+        if active.returncode != 0 or active.stdout.strip() != "active":
+            raise RuntimeError("local_ai_service_not_active")
 
     print(json.dumps({
         "ok": True,
         "commit": commit,
         "service": "ci-local-ai.service",
         "status": "active",
+        "launchMethod": launch_method,
         "host": "0.0.0.0",
         "port": 8791,
         "health": health,

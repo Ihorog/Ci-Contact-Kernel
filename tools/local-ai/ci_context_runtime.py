@@ -15,6 +15,21 @@ taskType: compute|api_call|data_processing|file_operation|persona_transformation
 environment — лише внутрішній виконавчий контекст, за замовчуванням system.
 action за замовчуванням resolve_intent. Не створюй меню або назви модулів як навігацію."""
 
+RUNTIME_CONTEXT_FIELDS = (
+    "source", "platform", "device", "surface", "locale",
+    "device_key_id", "verified_resources", "conversation",
+)
+
+
+def runtime_context(payload):
+    context = dict(payload.get("context")) if isinstance(payload.get("context"), dict) else {}
+    for key in RUNTIME_CONTEXT_FIELDS:
+        value = payload.get(key)
+        if value is not None and key not in context:
+            context[key] = value
+    return context
+
+
 VALID_STATES = {"actual", "predicted", "past"}
 VALID_TASKS = {
     "compute", "api_call", "data_processing", "file_operation",
@@ -97,7 +112,7 @@ def normalize_card(raw, index=0):
 
 
 def _last_result(payload):
-    context = payload.get("context") if isinstance(payload.get("context"), dict) else {}
+    context = runtime_context(payload)
     last = context.get("last_result")
     return last if isinstance(last, dict) else {}
 
@@ -220,7 +235,7 @@ def resolve_context_cards(payload, json_request, ollama_url, model):
     compact = {
         "gesture": payload.get("gesture"),
         "direction": payload.get("direction"),
-        "context": payload.get("context") if isinstance(payload.get("context"), dict) else {},
+        "context": runtime_context(payload),
     }
     request = {
         "model": model,
@@ -290,4 +305,7 @@ def execute_context_card(payload, process_intent, finalize_result, resolver):
         "direction": "",
         "context": next_context,
     }
+    for key in RUNTIME_CONTEXT_FIELDS:
+        if payload.get(key) is not None:
+            next_payload[key] = payload.get(key)
     return result, resolver(next_payload)

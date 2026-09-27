@@ -20,11 +20,8 @@ import java.util.concurrent.Executors;
 
 final class CiContextClient implements CiContextProvider {
     private static final String PREFS = "ci_point";
-    private static final String PREF_AI_ENDPOINT = "local_ai_endpoint";
     private static final String PREF_CONTEXT_CACHE = "context_cache_json";
     private static final String PREF_CONTEXT_CACHE_AT = "context_cache_at";
-    private static final String DEFAULT_AI_ENDPOINT =
-            "http://192.168.1.38:8791/ci/intent";
 
     private final Context context;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -81,7 +78,20 @@ final class CiContextClient implements CiContextProvider {
         executor.execute(() -> {
             try {
                 body.put("verified_resources", CiVerifiedResources.snapshot());
-                JSONObject payload = postJson(endpointFor(path), body);
+                JSONObject payload = null;
+                Exception lastError = null;
+                for (String endpoint : CiEndpointConfig.candidates(context, path)) {
+                    try {
+                        payload = postJson(endpoint, body);
+                        CiEndpointConfig.remember(context, endpoint);
+                        break;
+                    } catch (Exception exc) {
+                        lastError = exc;
+                    }
+                }
+                if (payload == null) {
+                    throw lastError != null ? lastError : new IllegalStateException("no_ci_endpoint");
+                }
                 if (closed) return;
                 if ("/ci/context".equals(path)) cacheContext(payload);
                 deliverSuccess(callback, payload);
@@ -112,21 +122,6 @@ final class CiContextClient implements CiContextProvider {
         mainHandler.post(() -> {
             if (!closed) callback.onError(error);
         });
-    }
-
-    private String endpointFor(String path) {
-        SharedPreferences prefs =
-                context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        String endpoint = prefs.getString(PREF_AI_ENDPOINT, DEFAULT_AI_ENDPOINT);
-        if (endpoint == null || endpoint.trim().isEmpty()) {
-            endpoint = DEFAULT_AI_ENDPOINT;
-        }
-        String clean = endpoint.trim();
-        int marker = clean.indexOf("/ci/");
-        String base = marker >= 0
-                ? clean.substring(0, marker)
-                : clean.replaceAll("/+$", "");
-        return base + path;
     }
 
     private void cacheContext(JSONObject payload) {

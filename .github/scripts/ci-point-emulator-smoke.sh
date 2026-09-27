@@ -4,7 +4,7 @@ set -euo pipefail
 APK="android/ci-point/app/build/outputs/apk/debug/app-debug.apk"
 PACKAGE="ua.cimeika.ci"
 ACTIVITY="ua.cimeika.cipoint.MainActivity"
-EXPECTED_VERSION="0.5.2"
+EXPECTED_VERSION="0.5.3"
 
 test -f "$APK"
 adb install -r "$APK"

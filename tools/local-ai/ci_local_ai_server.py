@@ -3,6 +3,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import time
 import uuid
 import urllib.request
@@ -19,6 +20,10 @@ OLLAMA_URL = os.getenv("CI_OLLAMA_URL", "http://127.0.0.1:11434/api/chat")
 VAULT_SCRIPT = Path(os.getenv("CI_VAULT_SCRIPT", r"C:\Users\simei\Ci-Rebuild\CiVault.ps1"))
 MAX_MEDIA_DIRS = int(os.getenv("CI_MEDIA_MAX_DIRS", "80"))
 MAX_MEDIA_ITEMS = int(os.getenv("CI_MEDIA_MAX_ITEMS", "40"))
+RUNTIME_LOCATION = os.getenv(
+    "CI_LOCAL_AI_LOCATION",
+    "CiHub" if os.name == "nt" else "Orange",
+)
 
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".gif", ".bmp"}
 VIDEO_EXT = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".m4v", ".ts"}
@@ -86,6 +91,19 @@ def resolve_intent(text):
 
 
 def _vault_list(path=""):
+    if os.name != "nt":
+        operator_root = os.getenv(
+            "CI_OPERATOR_RUNTIME_ROOT",
+            "/home/kazkar/cit/modules/ci_operator",
+        )
+        if operator_root not in sys.path:
+            sys.path.insert(0, operator_root)
+        import ci_operator_runtime
+        result = ci_operator_runtime.vault("list", path=path)
+        if not result.get("ok"):
+            raise RuntimeError(str(result.get("error") or "vault_list_failed")[-300:])
+        return result
+
     command = [
         "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
         "-File", str(VAULT_SCRIPT), "-Action", "list", "-Path", path,
@@ -173,7 +191,7 @@ def _executor_for(action, context=None):
     is_windows = platform in {"windows", "win32"} or "cihub" in source or "desktop" in source
 
     if action in {"vault_list", "media_search"}:
-        return {"id": "CI.VAULT", "location": "CiHub", "mode": "local"}
+        return {"id": "CI.VAULT", "location": RUNTIME_LOCATION, "mode": "local"}
     if action == "open_gpt":
         if is_android:
             return {"id": "ANDROID", "location": device, "platform": "android", "mode": "client", "target": "com.openai.chatgpt"}
@@ -182,7 +200,7 @@ def _executor_for(action, context=None):
         return {"id": "CI.CLIENT", "location": device, "platform": platform or "unknown", "mode": "client", "target": "chatgpt"}
     if action in {"previous", "next", "tools", "collapse_current", "collapse_all", "restore_context"}:
         return {"id": "CI.POINT", "location": device, "platform": platform or "unknown", "mode": "local"}
-    return {"id": "CI.LOCAL_AI", "location": "CiHub", "mode": "local"}
+    return {"id": "CI.LOCAL_AI", "location": RUNTIME_LOCATION, "mode": "local"}
 
 def _projection_for(result):
     action = result.get("action") or "answer"

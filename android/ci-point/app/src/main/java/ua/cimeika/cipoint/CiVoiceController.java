@@ -251,10 +251,6 @@ final class CiVoiceController {
     private void submit(String text) {
         executor.execute(() -> {
             try {
-                SharedPreferences prefs =
-                        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-                String endpoint = prefs.getString(PREF_AI_ENDPOINT, DEFAULT_AI_ENDPOINT);
-
                 JSONObject body = new JSONObject();
                 body.put("text", text);
                 body.put("source", "ci-android-overlay");
@@ -267,7 +263,20 @@ final class CiVoiceController {
                 body.put("conversation", true);
                 body.put("verified_resources", CiVerifiedResources.snapshot());
 
-                JSONObject result = postJson(endpoint, body);
+                JSONObject result = null;
+                Exception lastError = null;
+                for (String endpoint : CiEndpointConfig.candidates(context, "/ci/intent")) {
+                    try {
+                        result = postJson(endpoint, body);
+                        CiEndpointConfig.remember(context, endpoint);
+                        break;
+                    } catch (Exception exc) {
+                        lastError = exc;
+                    }
+                }
+                if (result == null) {
+                    throw lastError != null ? lastError : new IllegalStateException("no_ci_endpoint");
+                }
                 if (closed || !conversationActive) return;
                 callback.onResult(result);
 

@@ -44,6 +44,37 @@ jobs:
       - name: Static check local AI
         run: python3 -m py_compile tools/local-ai/*.py
 
+      - name: Smoke local AI fallback runtime
+        env:
+          CI_OLLAMA_URL: http://127.0.0.1:1
+          CI_LOCAL_AI_HOST: 127.0.0.1
+          CI_LOCAL_AI_PORT: 8791
+        run: |
+          set -euo pipefail
+          python3 tools/local-ai/ci_local_ai_server.py >/tmp/ci-local-ai.log 2>&1 &
+          PID=$!
+          trap 'kill "$PID" 2>/dev/null || true' EXIT
+          python3 - <<'PY'
+          import json, time, urllib.request
+          for _ in range(30):
+              try:
+                  with urllib.request.urlopen("http://127.0.0.1:8791/health", timeout=1) as r:
+                      h=json.loads(r.read())
+                  if h.get("ok"):
+                      break
+              except Exception:
+                  time.sleep(.2)
+          else:
+              raise SystemExit("CI_LOCAL_AI_HEALTH_FAIL")
+          data=json.dumps({"text":"ping","source":"ci-ci-smoke","platform":"android","device":"smoke","surface":"ci-point","locale":"uk-UA"}).encode()
+          req=urllib.request.Request("http://127.0.0.1:8791/ci/intent",data=data,headers={"Content-Type":"application/json"})
+          with urllib.request.urlopen(req,timeout=2) as r:
+              result=json.loads(r.read())
+          assert result.get("ok") is True, result
+          assert result.get("protocol") == "ci-context-action-v0.5", result
+          print("CI_LOCAL_AI_INTENT=PASS", result.get("processor"))
+          PY
+
       - name: Lint and build APK
         run: ./gradlew :app:lintDebug :app:assembleDebug --stacktrace
         working-directory: android/ci-point
@@ -87,21 +118,21 @@ jobs:
           name: ci-point-debug-apk
           path: delivery
 
-      - name: Publish Ci Point v0.5.2
+      - name: Publish Ci Point v0.5.3
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ci-point-v0.5.2
+          TAG: ci-point-v0.5.3
           TARGET_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          mv delivery/app-debug.apk delivery/Ci-Point-v0.5.2.apk
-          sha256sum delivery/Ci-Point-v0.5.2.apk
+          mv delivery/app-debug.apk delivery/Ci-Point-v0.5.3.apk
+          sha256sum delivery/Ci-Point-v0.5.3.apk
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG already exists; refusing to replace an immutable versioned APK."
             exit 0
           fi
-          gh release create "$TAG" delivery/Ci-Point-v0.5.2.apk \
+          gh release create "$TAG" delivery/Ci-Point-v0.5.3.apk \
             --repo "$GITHUB_REPOSITORY" \
             --target "$TARGET_SHA" \
-            --title "Ci Point v0.5.2" \
-            --notes "Verified Android build: lint/build green, Android 35 install/runtime smoke passed, aggregate verified-personal-resource trust bound to Ci Operator."
+            --title "Ci Point v0.5.3" \
+            --notes "Verified Android build: lint/build green, Android 35 install/runtime smoke passed, resilient Orange endpoint routing enabled, and local Ci runtime smoke passed."

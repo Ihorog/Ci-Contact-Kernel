@@ -1,0 +1,100 @@
+name: Ci Direct MCP Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "ci/direct-mcp-smoke"
+    paths:
+      - ".github/workflows/ci-direct-mcp-smoke.yml"
+      - "connector/ci_connector_server.py"
+      - "operator-node/mcp_probe.py"
+      - "plugins/ci/.mcp.json"
+
+permissions:
+  contents: read
+
+jobs:
+  direct-mcp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CI_MCP_BASE: https://mcp-http.cimeika.com.ua
+    steps:
+      - name: Health
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 20             "$CI_MCP_BASE/operator/health"             -o /tmp/health.json
+          python - <<'PY'
+          import json
+          d=json.load(open('/tmp/health.json'))
+          assert d.get('ok') is True, d
+          assert d.get('node') == 'CI.OPERATOR.ORANGE', d
+          print('DIRECT_MCP_HEALTH=PASS')
+          print('node=', d.get('node'))
+          print('version=', d.get('version'))
+          print('host=', d.get('host'))
+          PY
+
+      - name: OAuth metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 20             "$CI_MCP_BASE/.well-known/oauth-protected-resource"             -o /tmp/oauth.json
+          python - <<'PY'
+          import json, os
+          d=json.load(open('/tmp/oauth.json'))
+          base=os.environ['CI_MCP_BASE']
+          assert d.get('resource') == base, d
+          assert base in (d.get('authorization_servers') or []), d
+          scopes=set(d.get('scopes_supported') or [])
+          assert {'ci:read','ci:act'}.issubset(scopes), d
+          print('DIRECT_MCP_OAUTH=PASS')
+          PY
+
+      - name: MCP initialize
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >/tmp/init.json <<'JSON'
+          {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci-direct-github-smoke","version":"1"}}}
+          JSON
+          curl --fail --silent --show-error --max-time 20             -X POST "$CI_MCP_BASE/mcp"             -H 'content-type: application/json'             -H 'accept: application/json, text/event-stream'             --data-binary @/tmp/init.json             -o /tmp/init-response.json
+          python - <<'PY'
+          import json
+          d=json.load(open('/tmp/init-response.json'))
+          r=d.get('result') or {}
+          s=r.get('serverInfo') or {}
+          assert s.get('name') == 'ci-operator', d
+          assert r.get('protocolVersion'), d
+          print('DIRECT_MCP_INITIALIZE=PASS')
+          print('server=', s.get('name'))
+          print('version=', s.get('version'))
+          print('protocol=', r.get('protocolVersion'))
+          PY
+
+      - name: MCP tools list
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >/tmp/tools.json <<'JSON'
+          {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
+          JSON
+          curl --fail --silent --show-error --max-time 20             -X POST "$CI_MCP_BASE/mcp"             -H 'content-type: application/json'             -H 'accept: application/json, text/event-stream'             --data-binary @/tmp/tools.json             -o /tmp/tools-response.json
+          python - <<'PY'
+          import json
+          d=json.load(open('/tmp/tools-response.json'))
+          tools=(d.get('result') or {}).get('tools') or []
+          names={t.get('name') for t in tools}
+          required={
+            'ci_status','ci_state','ci_verify','ci_resolve',
+            'ci_operator_status','ci_resource_audit',
+            'ci_operator_release','ci_operator_metrics'
+          }
+          assert len(tools) >= 30, len(tools)
+          assert required.issubset(names), sorted(required-names)
+          print('DIRECT_MCP_TOOLS=PASS')
+          print('tool_count=', len(tools))
+          print('required=', ','.join(sorted(required)))
+          PY

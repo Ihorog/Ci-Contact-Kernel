@@ -25,7 +25,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --max-time 20 -A 'Mozilla/5.0 CiOperatorMCPProbe/1.0'             "$CI_MCP_BASE/operator/health"             -o /tmp/health.json
+          code=$(curl --silent --show-error --max-time 20 -A 'OpenAI-MCP/1.0' -H 'Origin: https://chatgpt.com' -H 'Accept: application/json, text/event-stream' -D /tmp/health.headers -o /tmp/health.json -w '%{http_code}' "$CI_MCP_BASE/operator/health")
+          if [ "$code" != "200" ]; then echo "HEALTH_HTTP=$code"; cat /tmp/health.headers; cat /tmp/health.json; exit 1; fi
           python - <<'PY'
           import json
           d=json.load(open('/tmp/health.json'))
@@ -41,7 +42,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --max-time 20 -A 'Mozilla/5.0 CiOperatorMCPProbe/1.0'             "$CI_MCP_BASE/.well-known/oauth-protected-resource"             -o /tmp/oauth.json
+          code=$(curl --silent --show-error --max-time 20 -A 'OpenAI-MCP/1.0' -H 'Origin: https://chatgpt.com' -H 'Accept: application/json, text/event-stream' -D /tmp/oauth.headers -o /tmp/oauth.json -w '%{http_code}' "$CI_MCP_BASE/.well-known/oauth-protected-resource")
+          if [ "$code" != "200" ]; then echo "OAUTH_HTTP=$code"; cat /tmp/oauth.headers; cat /tmp/oauth.json; exit 1; fi
           python - <<'PY'
           import json, os
           d=json.load(open('/tmp/oauth.json'))
@@ -60,7 +62,8 @@ jobs:
           cat >/tmp/init.json <<'JSON'
           {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci-direct-github-smoke","version":"1"}}}
           JSON
-          curl --fail --silent --show-error --max-time 20 -A 'Mozilla/5.0 CiOperatorMCPProbe/1.0'             -X POST "$CI_MCP_BASE/mcp"             -H 'content-type: application/json'             -H 'accept: application/json, text/event-stream'             --data-binary @/tmp/init.json             -o /tmp/init-response.json
+          code=$(curl --silent --show-error --max-time 20 -A 'OpenAI-MCP/1.0' -H 'Origin: https://chatgpt.com' -H 'MCP-Protocol-Version: 2025-06-18' -X POST "$CI_MCP_BASE/mcp" -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -D /tmp/init.headers --data-binary @/tmp/init.json -o /tmp/init-response.json -w '%{http_code}')
+          if [ "$code" != "200" ]; then echo "INIT_HTTP=$code"; cat /tmp/init.headers; cat /tmp/init-response.json; exit 1; fi
           python - <<'PY'
           import json
           d=json.load(open('/tmp/init-response.json'))
@@ -81,7 +84,8 @@ jobs:
           cat >/tmp/tools.json <<'JSON'
           {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
           JSON
-          curl --fail --silent --show-error --max-time 20 -A 'Mozilla/5.0 CiOperatorMCPProbe/1.0'             -X POST "$CI_MCP_BASE/mcp"             -H 'content-type: application/json'             -H 'accept: application/json, text/event-stream'             --data-binary @/tmp/tools.json             -o /tmp/tools-response.json
+          code=$(curl --silent --show-error --max-time 20 -A 'OpenAI-MCP/1.0' -H 'Origin: https://chatgpt.com' -H 'MCP-Protocol-Version: 2025-06-18' -X POST "$CI_MCP_BASE/mcp" -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -D /tmp/tools.headers --data-binary @/tmp/tools.json -o /tmp/tools-response.json -w '%{http_code}')
+          if [ "$code" != "200" ]; then echo "TOOLS_HTTP=$code"; cat /tmp/tools.headers; cat /tmp/tools-response.json; exit 1; fi
           python - <<'PY'
           import json
           d=json.load(open('/tmp/tools-response.json'))

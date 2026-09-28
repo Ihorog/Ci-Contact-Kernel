@@ -128,8 +128,8 @@ final class CiContextHalo {
         windowManager.addView(card, p);
 
         long delay = 25L + index * 45L;
-        card.animate().alpha(0.96f).scaleX(1f).scaleY(1f)
-                .translationZ(dp(10 + index * 2))
+        card.animate().alpha(CiPresenceSpec.CONTENT_ALPHA).scaleX(1f).scaleY(1f)
+                .translationZ(0f)
                 .setStartDelay(delay).setDuration(170L).start();
     }
 

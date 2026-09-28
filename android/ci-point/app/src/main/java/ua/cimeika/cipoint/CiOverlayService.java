@@ -135,6 +135,7 @@ public final class CiOverlayService extends Service {
         String action = intent != null ? intent.getAction() : null;
         if (ACTION_CI_ACTIVITY.equals(action)) {
             if (activePoint == null && Settings.canDrawOverlays(this)) attachCi();
+            if (overlayState == OverlayState.HIDDEN) revealFromHidden(false);
             handlePresenceIntent(intent);
             return START_STICKY;
         }
@@ -198,7 +199,7 @@ public final class CiOverlayService extends Service {
                 : (overlayState == OverlayState.DOCKED ? dockX(metrics.widthPixels) : clampX(savedX, metrics.widthPixels));
         int y = clampY(savedY, metrics.heightPixels);
 
-        presenceView = new CiPresenceView(this);
+        presenceView = new CiPresenceView(this, this::onPresenceSettled);
         presenceView.setContentDescription("Сі — шар присутності");
         presenceParams = overlayParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
@@ -465,7 +466,19 @@ public final class CiOverlayService extends Service {
         int targetX = dockX(metrics.widthPixels);
         int targetY = clampY(pointParams.y, metrics.heightPixels);
         animateWindowTo(targetX, targetY, true, () -> {
-            setState(OverlayState.DOCKED);
+            CiPresenceSpec.Activity current = presenceView != null
+                    ? presenceView.activity()
+                    : CiPresenceSpec.Activity.IDLE;
+            if (current == CiPresenceSpec.Activity.IDLE
+                    || current == CiPresenceSpec.Activity.HIDDEN) {
+                setState(OverlayState.DOCKED);
+            } else {
+                overlayState = OverlayState.DOCKED;
+                if (prefs != null) {
+                    prefs.edit().putString(PREF_STATE, OverlayState.DOCKED.name()).apply();
+                }
+                savePosition();
+            }
             if (invokeAfter) handler.postDelayed(() -> undock(true), 80L);
         });
     }
@@ -812,7 +825,7 @@ public final class CiOverlayService extends Service {
         final long generation = ++contextGeneration;
         clearContextHalo();
         setState(OverlayState.PULSE);
-        setPresenceActivity(CiPresenceSpec.Activity.DELEGATING);
+        setPresenceActivity(CiPresenceSpec.Activity.THINKING);
         schedulePresenceWaiting(generation);
         contextProvider.execute(card, currentContextState(), new CiContextProvider.Callback() {
             @Override public void onSuccess(org.json.JSONObject payload) {
@@ -1079,23 +1092,39 @@ public final class CiOverlayService extends Service {
     private void setPresenceActivity(CiPresenceSpec.Activity activity) {
         if (presenceView == null) return;
         presenceView.setActivity(activity);
-        idleDimmed = false;
         Log.i("CiPresence", "state=" + activity.name().toLowerCase(java.util.Locale.ROOT));
-        if (activity != CiPresenceSpec.Activity.IDLE && activity != CiPresenceSpec.Activity.HIDDEN) {
-            cancelIdleDim();
-            if (ciLogo != null) {
-                ciLogo.animate().alpha(CiPresenceSpec.ACTIVE_ALPHA).scaleX(1.04f).scaleY(1.04f)
-                        .setDuration(120L).start();
-            }
+        if (activity == CiPresenceSpec.Activity.IDLE) {
+            onPresenceSettled();
+        } else if (activity != CiPresenceSpec.Activity.HIDDEN) {
+            activatePresenceVisual();
         }
+    }
+
+    private void activatePresenceVisual() {
+        idleDimmed = false;
+        cancelPassiveBreath();
+        cancelIdleDim();
+        if (ciLogo == null) return;
+        ciLogo.animate().cancel();
+        ciLogo.animate().alpha(CiPresenceSpec.ACTIVE_ALPHA).scaleX(1.04f).scaleY(1.04f)
+                .setDuration(120L).start();
+    }
+
+    private void onPresenceSettled() {
+        if (presenceView == null || presenceView.activity() != CiPresenceSpec.Activity.IDLE) return;
+        if (overlayState == OverlayState.HIDDEN) return;
+        boolean contextVisible = presenceView.isContextScaffoldVisible()
+                || (contextHalo != null && contextHalo.isVisible())
+                || (resultProjection != null && resultProjection.isVisible());
+        if (contextVisible) setState(OverlayState.CONTEXT);
+        else setState(stableStateFromPrefs());
     }
 
     private void schedulePresenceWaiting(long generation) {
         handler.postDelayed(() -> {
             if (generation != contextGeneration || presenceView == null) return;
             CiPresenceSpec.Activity current = presenceView.activity();
-            if (current == CiPresenceSpec.Activity.THINKING
-                    || current == CiPresenceSpec.Activity.DELEGATING) {
+            if (current == CiPresenceSpec.Activity.THINKING) {
                 setPresenceActivity(CiPresenceSpec.Activity.WAITING_EXTERNAL);
             }
         }, CiPresenceSpec.WAITING_THRESHOLD_MS);
@@ -1109,10 +1138,12 @@ public final class CiOverlayService extends Service {
         float y = intent.getFloatExtra("target_y", Float.NaN);
         if (activity == CiPresenceSpec.Activity.SCREEN_ACTION
                 && !Float.isNaN(x) && !Float.isNaN(y)) {
+            activatePresenceVisual();
             Log.i("CiPresence", "state=screen_action target=" + x + "," + y);
             presenceView.showScreenAction(x, y);
         } else if (activity == CiPresenceSpec.Activity.APP_OPENING
                 && !Float.isNaN(x) && !Float.isNaN(y)) {
+            activatePresenceVisual();
             Log.i("CiPresence", "state=app_opening target=" + x + "," + y);
             presenceView.showAppOpening(x, y);
         } else {
@@ -1122,6 +1153,7 @@ public final class CiOverlayService extends Service {
 
     private void showAppOpeningAtCenter() {
         if (presenceView == null) return;
+        activatePresenceVisual();
         DisplayMetrics metrics = new DisplayMetrics();
         windowManager.getDefaultDisplay().getRealMetrics(metrics);
         presenceView.showAppOpening(metrics.widthPixels * 0.5f, metrics.heightPixels * 0.5f);

@@ -73,7 +73,7 @@ need(view, "if (moveMode) return true", "move frame scheduling")
 need(view, "boolean opensLeft =", "bounded/mirrored scaffold geometry")
 need(view, "getWidth() - cellW - edge", "horizontal scaffold clamp")
 need(view, "getHeight() - cellH - edge", "vertical scaffold clamp")
-need(view, "right,\n                            midY,\n                            logoCx", "reverse particle retraction")
+need(view, "nearX,\n                            midY,\n                            logoCx", "reverse particle retraction")
 need(view, "CiPresenceSpec.GOLD", "gold lateral/action language")
 need(view, "CiPresenceSpec.BLUE", "blue upward/listening language")
 for method in (

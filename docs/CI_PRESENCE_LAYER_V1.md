@@ -71,6 +71,11 @@ Particles are always translucent. Peak particle alpha: 0.72. Typical: 0.18–0.5
 | swipe down | cool desaturated blue trail downward | collapse/older semantic |
 | circular clockwise | gold orbit accelerates clockwise | next stage |
 | circular counter-clockwise | blue-gold orbit counter-clockwise | previous state |
+| populated cell tap | cell compresses to 0.95 + haptic; Presence enters execution motion | execute selected real context action |
+| populated cell swipe left | gold trail left; scaffold remains/materializes | branch context |
+| populated cell swipe right | gold trail right; scaffold retracts | dismiss context |
+| populated cell swipe up | blue trail up | newer context |
+| populated cell swipe down | cool blue/neutral trail down | older context |
 
 ## 5. Runtime activity → visual response
 

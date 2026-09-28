@@ -36,6 +36,7 @@ Status: implementation contract. No animation may run unless it corresponds to a
 | Docked logo alpha | 0.72 | docked |
 | Hidden logo alpha | 0.34 | hidden/sliver |
 | Active logo alpha | 1.00 | all active states |
+| Full-screen Presence window alpha | 0.78 | bounded below Android overlay obscuring threshold |
 | Passive breath scale | 1.000 → 1.026 → 1.000 | 2.6% max |
 | Passive breath period | 2600 ms | ±150 ms |
 | Gesture trail lifetime | 420 ms | ±30 ms |
@@ -126,7 +127,7 @@ A left swipe passes only if:
 
 ## 8. Interference / hiding
 
-- Presence drawing window is FLAG_NOT_TOUCHABLE + FLAG_NOT_FOCUSABLE.
+- Presence drawing window is FLAG_NOT_TOUCHABLE + FLAG_NOT_FOCUSABLE and uses window alpha 0.78.
 - User can keep interacting with YouTube or any foreground app through Presence.
 - After 6 s of true IDLE the logo dims to alpha 0.62 without disappearing and passive breathing stops so the dim level remains stable.
 - Any touch, voice, runtime state, result or error restores normal visibility and passive breathing immediately.
@@ -139,7 +140,7 @@ A left swipe passes only if:
 P0-A Motion language: all input rows map to implemented effects.
 P0-B Context scaffold: exact 3 open fading cells; no filled card backgrounds.
 P0-C Telemetry truth: no SEARCH/CALCULATE/DELEGATE visual without a corresponding runtime event.
-P0-D Cross-app overlay: service survives HOME and Settings/other foreground app, does not consume underlying touches.
+P0-D Cross-app overlay: service survives HOME and Settings/other foreground app, and an Android 35 smoke tap changes the underlying Settings screen through the Presence window.
 P0-E Lifecycle: THINKING → WAITING_EXTERNAL → RESULT/ERROR → IDLE is observable in code/runtime.
 P0-F Interference: idle-dim/dock/hide values match section 2.
 P0-G Android build: lint + assembleDebug green.

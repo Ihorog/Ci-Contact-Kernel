@@ -23,6 +23,7 @@ halo = (JAVA / "CiContextHalo.java").read_text(encoding="utf-8")
 client = (JAVA / "CiContextClient.java").read_text(encoding="utf-8")
 build = (ROOT / "android/ci-point/app/build.gradle").read_text(encoding="utf-8")
 workflow = (ROOT / ".github/workflows/ci-point-android.yml").read_text(encoding="utf-8")
+smoke = (ROOT / ".github/scripts/ci-point-emulator-smoke.sh").read_text(encoding="utf-8")
 docs = (ROOT / "docs/CI_PRESENCE_LAYER_V1.md").read_text(encoding="utf-8")
 
 checks = {
@@ -40,6 +41,7 @@ checks = {
     "DOCKED_ALPHA = 0.72f": spec,
     "HIDDEN_ALPHA = 0.34f": spec,
     "PASSIVE_BREATH_SCALE = 1.026f": spec,
+    "PRESENCE_WINDOW_ALPHA = 0.78f": spec,
     "IDLE_DIM_DELAY_MS = 6000L": spec,
     "GESTURE_TRAIL_MS = 420L": spec,
     "CONTEXT_REVEAL_MS = 360L": spec,
@@ -83,6 +85,7 @@ for method in (
 need(service, "ACTION_CI_ACTIVITY", "runtime activity input")
 need(service, "FLAG_NOT_TOUCHABLE", "non-interference overlay")
 need(service, "FLAG_NOT_FOCUSABLE", "non-focus overlay")
+need(service, "presenceParams.alpha = CiPresenceSpec.PRESENCE_WINDOW_ALPHA", "bounded Presence window opacity")
 need(service, "presenceView.swipe(direction)", "gesture to presence")
 need(service, "presenceView.circularGesture(clockwise)", "circular gesture presence")
 need(service, "CiPresenceSpec.Activity.THINKING", "thinking lifecycle")
@@ -104,6 +107,7 @@ need(client, '"ci-android-empty-context"', "empty context fallback")
 forbid(client, '"Ймовірно: продовжити"', "fabricated placeholder context")
 need(build, "versionName '0.6.0'", "0.6.0 version")
 need(workflow, "delivery/Ci-Point-v0.6.0.apk", "0.6.0 release asset")
+need(smoke, "CI_PRESENCE_TOUCH_THROUGH=PASS", "Android foreground touch-through smoke")
 forbid(workflow, "delivery/Ci-Point-v0.5.3.apk", "stale release asset")
 if workflow.count(".github/scripts/ci-presence-contract-audit.py") < 2:
     errors.append("MISSING Presence audit path coverage for both PR and main push")
@@ -117,6 +121,7 @@ for phrase in (
     "Release is not accepted unless P0-A through P0-I all pass",
     "passive breathing stops so the dim level remains stable",
     "mirrors to the free side only when there is insufficient left clearance",
+    "uses window alpha 0.78",
 ):
     need(docs, phrase, "acceptance contract")
 

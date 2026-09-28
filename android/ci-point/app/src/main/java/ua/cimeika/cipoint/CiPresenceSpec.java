@@ -39,6 +39,7 @@ final class CiPresenceSpec {
     static final float DOCKED_ALPHA = 0.72f;
     static final float HIDDEN_ALPHA = 0.34f;
     static final float ACTIVE_ALPHA = 1f;
+    static final float PRESENCE_WINDOW_ALPHA = 0.78f;
     static final float PASSIVE_BREATH_SCALE = 1.026f;
 
     static final long PASSIVE_BREATH_UP_MS = 1220L;

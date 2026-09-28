@@ -122,13 +122,14 @@ A left swipe passes only if:
 7. far edge is not closed;
 8. if Ci returns content, labels appear inside the already-existing cells without adding filled cards;
 9. dismissal dissolves the same contours and returns particles to Ci.
+10. the scaffold stays fully on-screen; it opens left by default and mirrors to the free side only when there is insufficient left clearance. The gesture trail itself still follows the user's left swipe.
 
 ## 8. Interference / hiding
 
 - Presence drawing window is FLAG_NOT_TOUCHABLE + FLAG_NOT_FOCUSABLE.
 - User can keep interacting with YouTube or any foreground app through Presence.
-- After 6 s of true IDLE the logo dims to alpha 0.62 without disappearing.
-- Any touch, voice, runtime state, result or error restores active visibility immediately.
+- After 6 s of true IDLE the logo dims to alpha 0.62 without disappearing and passive breathing stops so the dim level remains stable.
+- Any touch, voice, runtime state, result or error restores normal visibility and passive breathing immediately.
 - Docked state reduces alpha to 0.72 and partially parks at the edge.
 - Explicit HIDE leaves only 12 dp visible; it does not continue activity animation.
 - Active work, listening, visible context, or screen action must never auto-dim.

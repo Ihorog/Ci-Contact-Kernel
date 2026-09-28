@@ -3,7 +3,6 @@ package ua.cimeika.cipoint;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
-import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -105,8 +104,8 @@ final class CiContextHalo {
         card.setEllipsize(android.text.TextUtils.TruncateAt.END);
         card.setPadding(dp(24), dp(8), dp(24), dp(8));
         card.setContentDescription("Сі: " + model.label);
-        card.setBackground(backgroundFor(model));
-        card.setElevation(dp(14));
+        card.setBackgroundColor(Color.TRANSPARENT);
+        card.setElevation(0f);
         card.setAlpha(0f);
         card.setScaleX(0.82f);
         card.setScaleY(0.82f);
@@ -131,16 +130,6 @@ final class CiContextHalo {
         card.animate().alpha(CiPresenceSpec.CONTENT_ALPHA).scaleX(1f).scaleY(1f)
                 .translationZ(0f)
                 .setStartDelay(delay).setDuration(170L).start();
-    }
-
-    private Drawable backgroundFor(CiContextCard card) {
-        int alpha = "predicted".equals(card.state) ? 174 : 214;
-        if ("past".equals(card.state)) alpha = 156;
-        return new CiHexagonDrawable(
-                Color.argb(alpha, 15, 18, 24),
-                Color.argb(92, 255, 255, 255),
-                dp(1)
-        );
     }
 
     private void attachTouch(TextView view, CiContextCard model) {

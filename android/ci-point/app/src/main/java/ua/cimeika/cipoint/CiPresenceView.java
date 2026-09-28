@@ -98,6 +98,14 @@ final class CiPresenceView extends View {
         activity = next == null ? CiPresenceSpec.Activity.IDLE : next;
         activityStartedAt = SystemClock.uptimeMillis();
         activityDurationMs = Math.max(0L, durationMs);
+        if (activity == CiPresenceSpec.Activity.HIDDEN) {
+            contextVisible = false;
+            contextRetracting = false;
+            contextTransitionAt = 0L;
+            gestureStartedAt = 0L;
+            circularStartedAt = 0L;
+            moveMode = false;
+        }
         if (activity != CiPresenceSpec.Activity.SCREEN_ACTION
                 && activity != CiPresenceSpec.Activity.APP_OPENING) {
             hasTarget = false;
@@ -127,6 +135,8 @@ final class CiPresenceView extends View {
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         long now = SystemClock.uptimeMillis();
+
+        if (activity == CiPresenceSpec.Activity.HIDDEN) return;
 
         drawContextScaffold(canvas, now);
         drawGestureTrail(canvas, now);
@@ -170,17 +180,31 @@ final class CiPresenceView extends View {
             // Matter visibly travels from Ci into the scaffold while it materializes/retracts.
             if (contextTransitionAt > 0L) {
                 float travel = contextRetracting ? 1f - progress : progress;
-                drawTravelParticles(
-                        canvas,
-                        logoCx,
-                        logoCy,
-                        right,
-                        midY,
-                        travel,
-                        CiPresenceSpec.GOLD,
-                        0.64f * progress,
-                        9 + i * 2
-                );
+                if (contextRetracting) {
+                    drawTravelParticles(
+                            canvas,
+                            right,
+                            midY,
+                            logoCx,
+                            logoCy,
+                            travel,
+                            CiPresenceSpec.GOLD,
+                            0.64f * Math.max(0.22f, progress),
+                            9 + i * 2
+                    );
+                } else {
+                    drawTravelParticles(
+                            canvas,
+                            logoCx,
+                            logoCy,
+                            right,
+                            midY,
+                            travel,
+                            CiPresenceSpec.GOLD,
+                            0.64f * progress,
+                            9 + i * 2
+                    );
+                }
             }
         }
         paint.setStyle(Paint.Style.FILL);

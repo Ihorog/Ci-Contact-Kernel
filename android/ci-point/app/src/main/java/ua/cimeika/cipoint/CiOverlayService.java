@@ -75,6 +75,7 @@ public final class CiOverlayService extends Service {
     private String dockSide = "";
     private Runnable passiveBreath;
     private Runnable idleDim;
+    private boolean idleDimmed;
 
     private float downRawX;
     private float downRawY;
@@ -263,7 +264,7 @@ public final class CiOverlayService extends Service {
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
                 if (presenceView != null) presenceView.acknowledgeTouch();
-                cancelIdleDim();
+                restoreFromIdleDim();
                 downRawX = event.getRawX();
                 downRawY = event.getRawY();
                 downTime = System.currentTimeMillis();
@@ -510,6 +511,7 @@ public final class CiOverlayService extends Service {
 
     private void applyStateVisual(boolean animate) {
         if (ciLogo == null) return;
+        idleDimmed = false;
         cancelPassiveBreath();
         cancelIdleDim();
         ciLogo.animate().cancel();
@@ -529,7 +531,7 @@ public final class CiOverlayService extends Service {
     }
 
     private void schedulePassiveBreath() {
-        if (handler == null || ciLogo == null) return;
+        if (handler == null || ciLogo == null || idleDimmed) return;
         cancelPassiveBreath();
         passiveBreath = () -> {
             if (ciLogo == null || (overlayState != OverlayState.PASSIVE && overlayState != OverlayState.DOCKED)) return;
@@ -561,6 +563,9 @@ public final class CiOverlayService extends Service {
             if (overlayState != OverlayState.PASSIVE && overlayState != OverlayState.DOCKED) return;
             if (presenceView != null && presenceView.isContextScaffoldVisible()) return;
             if (voiceController != null && voiceController.isConversationActive()) return;
+            idleDimmed = true;
+            cancelPassiveBreath();
+            ciLogo.animate().cancel();
             ciLogo.animate().alpha(CiPresenceSpec.IDLE_DIM_ALPHA).scaleX(0.94f).scaleY(0.94f)
                     .setDuration(420L).start();
         };
@@ -570,6 +575,22 @@ public final class CiOverlayService extends Service {
     private void cancelIdleDim() {
         if (idleDim != null && handler != null) handler.removeCallbacks(idleDim);
         idleDim = null;
+    }
+
+    private void restoreFromIdleDim() {
+        boolean wasDimmed = idleDimmed;
+        idleDimmed = false;
+        cancelIdleDim();
+        if (!wasDimmed || ciLogo == null) return;
+        if (overlayState != OverlayState.PASSIVE && overlayState != OverlayState.DOCKED) return;
+        float scale = overlayState == OverlayState.DOCKED ? 0.94f : 1f;
+        float alpha = overlayState == OverlayState.DOCKED
+                ? CiPresenceSpec.DOCKED_ALPHA
+                : CiPresenceSpec.PASSIVE_ALPHA;
+        ciLogo.animate().cancel();
+        ciLogo.animate().alpha(alpha).scaleX(scale).scaleY(scale).setDuration(120L).start();
+        schedulePassiveBreath();
+        scheduleIdleDim();
     }
 
     private void animateSwipe(float dx, float dy, long duration) {
@@ -1056,6 +1077,7 @@ public final class CiOverlayService extends Service {
     private void setPresenceActivity(CiPresenceSpec.Activity activity) {
         if (presenceView == null) return;
         presenceView.setActivity(activity);
+        idleDimmed = false;
         Log.i("CiPresence", "state=" + activity.name().toLowerCase(java.util.Locale.ROOT));
         if (activity != CiPresenceSpec.Activity.IDLE && activity != CiPresenceSpec.Activity.HIDDEN) {
             cancelIdleDim();

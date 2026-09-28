@@ -210,6 +210,7 @@ public final class CiOverlayService extends Service {
                         | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
                         | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
         );
+        presenceParams.alpha = CiPresenceSpec.PRESENCE_WINDOW_ALPHA;
         windowManager.addView(presenceView, presenceParams);
         presenceView.setAnchor(x, y, pointSize);
 

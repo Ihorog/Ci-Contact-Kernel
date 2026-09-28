@@ -91,6 +91,49 @@ SERVICE_DUMP="$(adb shell dumpsys activity services "$PACKAGE")"
 PID="$(adb shell pidof "$PACKAGE" | tr -d '\r\n')"
 test -n "$PID"
 
+# Prove the full-screen Presence window does not block the foreground app.
+adb shell uiautomator dump /sdcard/ci-settings.xml >/dev/null
+adb pull /sdcard/ci-settings.xml /tmp/ci-settings.xml >/dev/null
+read -r TAP_X TAP_Y <<<"$(python3 - <<'PY'
+import re
+import xml.etree.ElementTree as ET
+root = ET.parse("/tmp/ci-settings.xml").getroot()
+preferred = None
+fallback = None
+for node in root.iter("node"):
+    if node.attrib.get("clickable") != "true":
+        continue
+    m = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if not m:
+        continue
+    x1, y1, x2, y2 = map(int, m.groups())
+    if x2 - x1 < 80 or y2 - y1 < 30:
+        continue
+    point = ((x1 + x2) // 2, (y1 + y2) // 2)
+    text = (node.attrib.get("text") or "").lower()
+    if "network" in text or "connected" in text:
+        preferred = point
+        break
+    if fallback is None and y1 > 120:
+        fallback = point
+point = preferred or fallback
+if point is None:
+    raise SystemExit("NO_CLICKABLE_SETTINGS_TARGET")
+print(*point)
+PY
+)"
+BEFORE_FOCUS="$(adb shell dumpsys window | grep -m1 'mCurrentFocus' || true)"
+adb shell input tap "$TAP_X" "$TAP_Y"
+sleep 1
+AFTER_FOCUS="$(adb shell dumpsys window | grep -m1 'mCurrentFocus' || true)"
+if [[ "$AFTER_FOCUS" == "$BEFORE_FOCUS" ]]; then
+  echo "CI_PRESENCE_TOUCH_THROUGH=FAIL"
+  echo "before=$BEFORE_FOCUS"
+  echo "after=$AFTER_FOCUS"
+  exit 1
+fi
+echo "CI_PRESENCE_TOUCH_THROUGH=PASS"
+
 LOGS="$(adb logcat -d -v brief)"
 CRASH_BLOCK="$(printf '%s\n' "$LOGS" | grep -A12 'FATAL EXCEPTION' || true)"
 if [[ "$CRASH_BLOCK" == *"Process: $PACKAGE"* ]]; then
@@ -104,3 +147,4 @@ echo "CI_POINT_VERSION=$EXPECTED_VERSION"
 echo "CI_POINT_PID=$PID"
 echo "CI_PRESENCE_GESTURES=PASS"
 echo "CI_PRESENCE_TELEMETRY=PASS"
+echo "CI_PRESENCE_TOUCH_THROUGH=PASS"

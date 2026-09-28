@@ -46,7 +46,6 @@ public final class CiOverlayService extends Service {
     private static final long LONG_PRESS_MS = 420L;
     private static final long SWIPE_MAX_MS = 520L;
     private static final long DOUBLE_TAP_MS = 360L;
-    private static final int HIDDEN_VISIBLE_DP = 12;
 
     private WindowManager windowManager;
     private View activePoint;
@@ -133,6 +132,7 @@ public final class CiOverlayService extends Service {
         }
         String action = intent != null ? intent.getAction() : null;
         if (ACTION_CI_ACTIVITY.equals(action)) {
+            if (activePoint == null && Settings.canDrawOverlays(this)) attachCi();
             handlePresenceIntent(intent);
             return START_STICKY;
         }
@@ -162,7 +162,6 @@ public final class CiOverlayService extends Service {
         cancelPassiveBreath();
         cancelIdleDim();
         if (presenceView != null) presenceView.setActivity(CiPresenceSpec.Activity.HIDDEN);
-        cancelIdleDim();
         if (pendingSingleTap != null && handler != null) handler.removeCallbacks(pendingSingleTap);
         if (voiceController != null) voiceController.close();
         voiceController = null;
@@ -235,6 +234,9 @@ public final class CiOverlayService extends Service {
                         | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
                         | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS);
         windowManager.addView(ciLogo, logoParams);
+        if (overlayState == OverlayState.HIDDEN && presenceView != null) {
+            presenceView.setActivity(CiPresenceSpec.Activity.HIDDEN);
+        }
         applyStateVisual(false);
     }
 
@@ -444,7 +446,7 @@ public final class CiOverlayService extends Service {
     }
 
     private int hiddenX(int width) {
-        int visible = dp(HIDDEN_VISIBLE_DP);
+        int visible = dp(CiPresenceSpec.HIDDEN_VISIBLE_DP);
         if ("left".equals(dockSide)) return -pointSize + visible;
         return width - visible;
     }
@@ -454,6 +456,7 @@ public final class CiOverlayService extends Service {
         DisplayMetrics metrics = new DisplayMetrics();
         windowManager.getDefaultDisplay().getRealMetrics(metrics);
         if (prefs != null) prefs.edit().putBoolean(PREF_HIDDEN, false).apply();
+        if (presenceView != null) presenceView.setActivity(CiPresenceSpec.Activity.IDLE);
         int targetX = dockX(metrics.widthPixels);
         int targetY = clampY(pointParams.y, metrics.heightPixels);
         animateWindowTo(targetX, targetY, true, () -> {
@@ -1137,6 +1140,8 @@ public final class CiOverlayService extends Service {
         if (prefs != null) prefs.edit().putBoolean(PREF_HIDDEN, true).apply();
         cancelLongPress();
         cancelPassiveBreath();
+        cancelIdleDim();
+        if (presenceView != null) presenceView.setActivity(CiPresenceSpec.Activity.HIDDEN);
         if (pendingSingleTap != null && handler != null) handler.removeCallbacks(pendingSingleTap);
         pendingSingleTap = null;
         DisplayMetrics metrics = new DisplayMetrics();

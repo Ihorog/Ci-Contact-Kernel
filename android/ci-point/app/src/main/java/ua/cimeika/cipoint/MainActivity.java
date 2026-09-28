@@ -61,7 +61,9 @@ public final class MainActivity extends Activity {
 
     private void startCi() {
         Intent serviceIntent = new Intent(this, CiOverlayService.class);
-        String presenceState = BuildConfig.DEBUG && getIntent() != null
+        boolean debugBuild =
+                (getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+        String presenceState = debugBuild && getIntent() != null
                 ? getIntent().getStringExtra("ci_presence_state")
                 : null;
         if (presenceState != null && !presenceState.trim().isEmpty()) {

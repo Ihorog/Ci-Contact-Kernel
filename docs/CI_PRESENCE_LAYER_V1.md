@@ -71,6 +71,10 @@ Particles are always translucent. Peak particle alpha: 0.72. Typical: 0.18–0.5
 | swipe down | cool desaturated blue trail downward | collapse/older semantic |
 | circular clockwise | gold orbit accelerates clockwise | next stage |
 | circular counter-clockwise | blue-gold orbit counter-clockwise | previous state |
+| docked + swipe outward | short directional trail, then park to 12 dp sliver | explicit hide |
+| docked + swipe inward | directional trail + spring out from edge | undock |
+| hidden sliver tap | spring reveal to docked position | reveal Ci |
+| runtime activity while hidden | Ci reveals to docked position while the real activity motion starts | activity must remain visible |
 | populated cell tap | cell compresses to 0.95 + haptic; Presence enters execution motion | execute selected real context action |
 | populated cell swipe left | gold trail left; scaffold remains/materializes | branch context |
 | populated cell swipe right | gold trail right; scaffold retracts | dismiss context |
@@ -139,6 +143,8 @@ A left swipe passes only if:
 - Docked state reduces alpha to 0.72 and partially parks at the edge.
 - Explicit HIDE leaves only 12 dp visible; it does not continue activity animation.
 - Active work, listening, visible context, or screen action must never auto-dim.
+- Passive breathing is cancelled while runtime activity is active and restored only after Presence settles to real IDLE.
+- A hidden Ci automatically reveals to its docked position when real runtime activity arrives; HIDDEN itself has no fake activity motion.
 
 ## 9. Acceptance gates
 

@@ -226,13 +226,15 @@ public final class CiOverlayService extends Service {
         ciLogo.setImageResource(R.drawable.ci_logo);
         ciLogo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         ciLogo.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-        ciLogo.setAlpha(0.96f);
+        ciLogo.setAlpha(CiPresenceSpec.PASSIVE_ALPHA);
         ciLogo.setElevation(dp(16));
         ciLogo.setTranslationZ(dp(8));
+        // The visible Ci itself is the only 72 dp interactive surface.
+        // Full-screen Presence remains NOT_TOUCHABLE and never intercepts the host app.
+        ciLogo.setOnTouchListener(this::onPointTouch);
 
         logoParams = overlayParams(pointSize, pointSize, x, y,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                        | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
                         | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS);
         windowManager.addView(ciLogo, logoParams);
         if (overlayState == OverlayState.HIDDEN && presenceView != null) {

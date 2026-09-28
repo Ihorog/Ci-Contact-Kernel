@@ -75,6 +75,9 @@ jobs:
           print("CI_LOCAL_AI_INTENT=PASS", result.get("processor"))
           PY
 
+      - name: Audit Ci Presence contract
+        run: python3 .github/scripts/ci-presence-contract-audit.py
+
       - name: Lint and build APK
         run: ./gradlew :app:lintDebug :app:assembleDebug --stacktrace
         working-directory: android/ci-point
@@ -118,10 +121,10 @@ jobs:
           name: ci-point-debug-apk
           path: delivery
 
-      - name: Publish Ci Point v0.5.3
+      - name: Publish Ci Point v0.6.0
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ci-point-v0.5.3
+          TAG: ci-point-v0.6.0
           TARGET_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
@@ -134,5 +137,5 @@ jobs:
           gh release create "$TAG" delivery/Ci-Point-v0.5.3.apk \
             --repo "$GITHUB_REPOSITORY" \
             --target "$TARGET_SHA" \
-            --title "Ci Point v0.5.3" \
-            --notes "Verified Android build: lint/build green, Android 35 install/runtime smoke passed, resilient Orange endpoint routing enabled, and local Ci runtime smoke passed."
+            --title "Ci Point v0.6.0" \
+            --notes "Verified Android build: Presence contract audit, lint/build, Android 35 install/runtime smoke, resilient Orange routing, and local Ci runtime smoke passed."

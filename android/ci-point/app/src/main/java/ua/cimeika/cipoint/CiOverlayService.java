@@ -828,6 +828,7 @@ public final class CiOverlayService extends Service {
     }
 
     private void handleContextCardSwipe(CiContextCard card, String direction) {
+        if (presenceView != null) presenceView.swipe(direction);
         CiGestureRouter.Command command = gestureRouter != null
                 ? gestureRouter.routeCardSwipe(direction)
                 : CiGestureRouter.Command.RESERVED;

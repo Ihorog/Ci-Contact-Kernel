@@ -19,6 +19,7 @@ import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.provider.Settings;
 import android.util.DisplayMetrics;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -572,6 +573,8 @@ public final class CiOverlayService extends Service {
     private void animateSwipe(float dx, float dy, long duration) {
         String direction = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? "right" : "left") : (dy >= 0 ? "down" : "up");
         if (presenceView != null) presenceView.swipe(direction);
+        Log.i("CiPresence", "gesture=" + direction
+                + " scaffold=" + (presenceView != null && presenceView.isContextScaffoldVisible()));
         cancelIdleDim();
         if (overlayState == OverlayState.HIDDEN) {
             boolean inward = ("left".equals(dockSide) && "right".equals(direction))
@@ -637,6 +640,7 @@ public final class CiOverlayService extends Service {
     private void animateCircularGesture(boolean clockwise) {
         if (ciLogo == null) return;
         if (presenceView != null) presenceView.circularGesture(clockwise);
+        Log.i("CiPresence", "gesture=" + (clockwise ? "clockwise" : "counterclockwise"));
         stopVoiceContact();
         String semantic = clockwise ? "next_stage" : "previous_state";
         setState(OverlayState.PULSE);
@@ -1050,6 +1054,7 @@ public final class CiOverlayService extends Service {
     private void setPresenceActivity(CiPresenceSpec.Activity activity) {
         if (presenceView == null) return;
         presenceView.setActivity(activity);
+        Log.i("CiPresence", "state=" + activity.name().toLowerCase(java.util.Locale.ROOT));
         if (activity != CiPresenceSpec.Activity.IDLE && activity != CiPresenceSpec.Activity.HIDDEN) {
             cancelIdleDim();
             if (ciLogo != null) {
@@ -1078,9 +1083,11 @@ public final class CiOverlayService extends Service {
         float y = intent.getFloatExtra("target_y", Float.NaN);
         if (activity == CiPresenceSpec.Activity.SCREEN_ACTION
                 && !Float.isNaN(x) && !Float.isNaN(y)) {
+            Log.i("CiPresence", "state=screen_action target=" + x + "," + y);
             presenceView.showScreenAction(x, y);
         } else if (activity == CiPresenceSpec.Activity.APP_OPENING
                 && !Float.isNaN(x) && !Float.isNaN(y)) {
+            Log.i("CiPresence", "state=app_opening target=" + x + "," + y);
             presenceView.showAppOpening(x, y);
         } else {
             setPresenceActivity(activity);

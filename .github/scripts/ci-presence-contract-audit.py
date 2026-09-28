@@ -22,6 +22,7 @@ service = (JAVA / "CiOverlayService.java").read_text(encoding="utf-8")
 halo = (JAVA / "CiContextHalo.java").read_text(encoding="utf-8")
 client = (JAVA / "CiContextClient.java").read_text(encoding="utf-8")
 build = (ROOT / "android/ci-point/app/build.gradle").read_text(encoding="utf-8")
+workflow = (ROOT / ".github/workflows/ci-point-android.yml").read_text(encoding="utf-8")
 docs = (ROOT / "docs/CI_PRESENCE_LAYER_V1.md").read_text(encoding="utf-8")
 
 checks = {
@@ -63,6 +64,13 @@ need(view, "i < CiPresenceSpec.CONTEXT_CELL_COUNT", "exact three-cell loop")
 need(view, 'if ("left".equals(gestureDirection))', "left swipe scaffold")
 need(view, "showContextScaffold();", "scaffold materialization")
 need(view, "drawTravelParticles(", "particle transport")
+need(view, "drawCircularGesture(canvas, now)", "circular gesture draw pass")
+need(view, "if (moveMode) drawMoveMode(canvas, now)", "move mode draw pass")
+need(view, "if (circularStartedAt > 0L) return true", "circular frame scheduling")
+need(view, "if (moveMode) return true", "move frame scheduling")
+need(view, "boolean opensLeft =", "bounded/mirrored scaffold geometry")
+need(view, "getWidth() - cellW - edge", "horizontal scaffold clamp")
+need(view, "getHeight() - cellH - edge", "vertical scaffold clamp")
 need(view, "right,\n                            midY,\n                            logoCx", "reverse particle retraction")
 need(view, "CiPresenceSpec.GOLD", "gold lateral/action language")
 need(view, "CiPresenceSpec.BLUE", "blue upward/listening language")
@@ -84,6 +92,9 @@ need(service, "CiPresenceSpec.Activity.ERROR", "error lifecycle")
 need(service, "showScreenAction(x, y)", "screen target telemetry")
 need(service, "showAppOpening(x, y)", "app opening telemetry")
 need(service, "scheduleIdleDim()", "idle dim lifecycle")
+need(service, "idleDimmed = true", "stable idle dim state")
+need(service, "cancelPassiveBreath();", "idle dim stops passive breath")
+need(service, "restoreFromIdleDim()", "interaction restores passive state")
 
 need(halo, "setBackgroundColor(Color.TRANSPARENT)", "frameless context content")
 forbid(halo, "CiHexagonDrawable", "filled/closed legacy context card")
@@ -92,12 +103,20 @@ forbid(halo, "backgroundFor(", "legacy context background")
 need(client, '"ci-android-empty-context"', "empty context fallback")
 forbid(client, '"Ймовірно: продовжити"', "fabricated placeholder context")
 need(build, "versionName '0.6.0'", "0.6.0 version")
+need(workflow, "delivery/Ci-Point-v0.6.0.apk", "0.6.0 release asset")
+forbid(workflow, "delivery/Ci-Point-v0.5.3.apk", "stale release asset")
+if workflow.count(".github/scripts/ci-presence-contract-audit.py") < 2:
+    errors.append("MISSING Presence audit path coverage for both PR and main push")
+if workflow.count("docs/CI_PRESENCE_LAYER_V1.md") < 2:
+    errors.append("MISSING Presence contract path coverage for both PR and main push")
 
 for phrase in (
     "Static Ci is allowed only in IDLE/HIDDEN",
     "Context scaffold is exactly three cells",
     "Presence drawing window is FLAG_NOT_TOUCHABLE + FLAG_NOT_FOCUSABLE",
     "Release is not accepted unless P0-A through P0-I all pass",
+    "passive breathing stops so the dim level remains stable",
+    "mirrors to the free side only when there is insufficient left clearance",
 ):
     need(docs, phrase, "acceptance contract")
 

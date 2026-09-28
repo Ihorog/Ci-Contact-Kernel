@@ -144,6 +144,8 @@ final class CiPresenceView extends View {
 
         drawContextScaffold(canvas, now);
         drawGestureTrail(canvas, now);
+        drawCircularGesture(canvas, now);
+        if (moveMode) drawMoveMode(canvas, now);
         drawActivity(canvas, now);
 
         if (needsNextFrame(now)) {
@@ -168,26 +170,43 @@ final class CiPresenceView extends View {
         float logoCx = anchorX + anchorSize / 2f;
         float logoCy = anchorY + anchorSize / 2f;
 
+        int edge = dp(12);
+        boolean opensLeft = anchorX - cellW - gap - dp(10) >= edge;
+
         for (int i = 0; i < CiPresenceSpec.CONTEXT_CELL_COUNT; i++) {
-            float left = anchorX - cellW - gap - (i == 1 ? dp(10) : 0);
-            float top = logoCy - cellH / 2f + (i - 1) * step;
+            float rawLeft = opensLeft
+                    ? anchorX - cellW - gap - (i == 1 ? dp(10) : 0)
+                    : anchorX + anchorSize + gap + (i == 1 ? dp(10) : 0);
+            float left = Math.max(edge, Math.min(rawLeft, getWidth() - cellW - edge));
+            float rawTop = logoCy - cellH / 2f + (i - 1) * step;
+            float top = Math.max(edge, Math.min(rawTop, getHeight() - cellH - edge));
             float right = left + cellW;
             float bottom = top + cellH;
             float midY = (top + bottom) * 0.5f;
+            float nearX = opensLeft ? right : left;
 
-            // Strong near Ci (right); intentionally open/faded on the remote left.
-            drawFadingLine(canvas, right, midY, right - inset, top, baseAlpha, 1f, 0.88f);
-            drawFadingLine(canvas, right - inset, top, left + inset * 0.75f, top, baseAlpha, 0.88f, 0.02f);
-            drawFadingLine(canvas, right, midY, right - inset, bottom, baseAlpha, 1f, 0.88f);
-            drawFadingLine(canvas, right - inset, bottom, left + inset * 0.75f, bottom, baseAlpha, 0.88f, 0.02f);
+            if (opensLeft) {
+                // Strong near Ci (right); remote left remains open and fades away.
+                drawFadingLine(canvas, right, midY, right - inset, top, baseAlpha, 1f, 0.88f);
+                drawFadingLine(canvas, right - inset, top, left + inset * 0.75f, top, baseAlpha, 0.88f, 0.02f);
+                drawFadingLine(canvas, right, midY, right - inset, bottom, baseAlpha, 1f, 0.88f);
+                drawFadingLine(canvas, right - inset, bottom, left + inset * 0.75f, bottom, baseAlpha, 0.88f, 0.02f);
+            } else {
+                // Edge fallback mirrors only the scaffold, not the swipe trail.
+                // Strong near Ci (left); remote right remains open and fades away.
+                drawFadingLine(canvas, left, midY, left + inset, top, baseAlpha, 1f, 0.88f);
+                drawFadingLine(canvas, left + inset, top, right - inset * 0.75f, top, baseAlpha, 0.88f, 0.02f);
+                drawFadingLine(canvas, left, midY, left + inset, bottom, baseAlpha, 1f, 0.88f);
+                drawFadingLine(canvas, left + inset, bottom, right - inset * 0.75f, bottom, baseAlpha, 0.88f, 0.02f);
+            }
 
-            // Matter visibly travels from Ci into the scaffold while it materializes/retracts.
+            // Matter visibly travels between Ci and the near side of the scaffold.
             if (contextTransitionAt > 0L) {
                 float travel = contextRetracting ? 1f - progress : progress;
                 if (contextRetracting) {
                     drawTravelParticles(
                             canvas,
-                            right,
+                            nearX,
                             midY,
                             logoCx,
                             logoCy,
@@ -201,7 +220,7 @@ final class CiPresenceView extends View {
                             canvas,
                             logoCx,
                             logoCy,
-                            right,
+                            nearX,
                             midY,
                             travel,
                             CiPresenceSpec.GOLD,
@@ -602,6 +621,8 @@ final class CiPresenceView extends View {
 
     private boolean needsNextFrame(long now) {
         if (gestureStartedAt > 0L) return true;
+        if (circularStartedAt > 0L) return true;
+        if (moveMode) return true;
         if (contextTransitionAt > 0L) return true;
         if (activity == CiPresenceSpec.Activity.LISTENING
                 || activity == CiPresenceSpec.Activity.THINKING

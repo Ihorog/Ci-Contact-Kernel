@@ -4,12 +4,19 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.graphics.LinearGradient;
+import android.graphics.Shader;
 import android.os.SystemClock;
 import android.view.View;
 
 final class CiPresenceView extends View {
+    interface Listener {
+        void onActivitySettled();
+    }
+
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF oval = new RectF();
+    private final Listener listener;
 
     private int anchorX;
     private int anchorY;
@@ -34,8 +41,9 @@ final class CiPresenceView extends View {
     private long circularStartedAt;
     private boolean circularClockwise;
 
-    CiPresenceView(Context context) {
+    CiPresenceView(Context context, Listener listener) {
         super(context);
+        this.listener = listener;
         setBackgroundColor(android.graphics.Color.TRANSPARENT);
         setWillNotDraw(false);
         paint.setStrokeCap(Paint.Cap.ROUND);
@@ -188,16 +196,16 @@ final class CiPresenceView extends View {
             if (opensLeft) {
                 // Strong near Ci (right); remote left remains open and fades away.
                 drawFadingLine(canvas, right, midY, right - inset, top, baseAlpha, 1f, 0.88f);
-                drawFadingLine(canvas, right - inset, top, left + inset * 0.75f, top, baseAlpha, 0.88f, 0.02f);
+                drawFadingLine(canvas, right - inset, top, left + inset * 0.75f, top, baseAlpha, 0.88f, 0f);
                 drawFadingLine(canvas, right, midY, right - inset, bottom, baseAlpha, 1f, 0.88f);
-                drawFadingLine(canvas, right - inset, bottom, left + inset * 0.75f, bottom, baseAlpha, 0.88f, 0.02f);
+                drawFadingLine(canvas, right - inset, bottom, left + inset * 0.75f, bottom, baseAlpha, 0.88f, 0f);
             } else {
                 // Edge fallback mirrors only the scaffold, not the swipe trail.
                 // Strong near Ci (left); remote right remains open and fades away.
                 drawFadingLine(canvas, left, midY, left + inset, top, baseAlpha, 1f, 0.88f);
-                drawFadingLine(canvas, left + inset, top, right - inset * 0.75f, top, baseAlpha, 0.88f, 0.02f);
+                drawFadingLine(canvas, left + inset, top, right - inset * 0.75f, top, baseAlpha, 0.88f, 0f);
                 drawFadingLine(canvas, left, midY, left + inset, bottom, baseAlpha, 1f, 0.88f);
-                drawFadingLine(canvas, left + inset, bottom, right - inset * 0.75f, bottom, baseAlpha, 0.88f, 0.02f);
+                drawFadingLine(canvas, left + inset, bottom, right - inset * 0.75f, bottom, baseAlpha, 0.88f, 0f);
             }
 
             // Matter visibly travels between Ci and the near side of the scaffold.
@@ -245,9 +253,7 @@ final class CiPresenceView extends View {
                 contextRetracting = false;
                 contextVisible = false;
                 if (activity == CiPresenceSpec.Activity.RETRACTING) {
-                    activity = CiPresenceSpec.Activity.IDLE;
-                    activityStartedAt = now;
-                    activityDurationMs = 0L;
+                    settleToIdle(now);
                 }
                 return 0f;
             }
@@ -385,10 +391,8 @@ final class CiPresenceView extends View {
 
         if (activityDurationMs > 0L && elapsed >= activityDurationMs
                 && activity != CiPresenceSpec.Activity.RETRACTING) {
-            activity = CiPresenceSpec.Activity.IDLE;
-            activityStartedAt = now;
-            activityDurationMs = 0L;
             hasTarget = false;
+            settleToIdle(now);
         }
     }
 
@@ -603,20 +607,20 @@ final class CiPresenceView extends View {
             float baseAlpha,
             float startFactor,
             float endFactor) {
-        final int segments = 9;
-        for (int i = 0; i < segments; i++) {
-            float a = i / (float) segments;
-            float b = (i + 1) / (float) segments;
-            float factor = lerp(startFactor, endFactor, (a + b) * 0.5f);
-            setPaintColor(CiPresenceSpec.GOLD, baseAlpha * factor);
-            canvas.drawLine(
-                    lerp(x1, x2, a),
-                    lerp(y1, y2, a),
-                    lerp(x1, x2, b),
-                    lerp(y1, y2, b),
-                    paint
-            );
-        }
+        int startAlpha = Math.max(0, Math.min(255, Math.round(255f * baseAlpha * startFactor)));
+        int endAlpha = Math.max(0, Math.min(255, Math.round(255f * baseAlpha * endFactor)));
+        int startColor = (CiPresenceSpec.GOLD & 0x00FFFFFF) | (startAlpha << 24);
+        int endColor = (CiPresenceSpec.GOLD & 0x00FFFFFF) | (endAlpha << 24);
+        paint.setShader(new LinearGradient(x1, y1, x2, y2, startColor, endColor, Shader.TileMode.CLAMP));
+        canvas.drawLine(x1, y1, x2, y2, paint);
+        paint.setShader(null);
+    }
+
+    private void settleToIdle(long now) {
+        activity = CiPresenceSpec.Activity.IDLE;
+        activityStartedAt = now;
+        activityDurationMs = 0L;
+        if (listener != null) post(listener::onActivitySettled);
     }
 
     private boolean needsNextFrame(long now) {

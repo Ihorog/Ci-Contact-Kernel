@@ -60,6 +60,17 @@ final class CiPresenceView extends View {
         invalidateFrame();
     }
 
+    void setMoveMode(boolean enabled) {
+        moveMode = enabled;
+        invalidateFrame();
+    }
+
+    void circularGesture(boolean clockwise) {
+        circularClockwise = clockwise;
+        circularStartedAt = SystemClock.uptimeMillis();
+        invalidateFrame();
+    }
+
     void showContextScaffold() {
         contextVisible = true;
         contextRetracting = false;
@@ -240,6 +251,42 @@ final class CiPresenceView extends View {
             setPaintColor(color, alpha);
             canvas.drawCircle(x, y, dp(1) + dp(2) * (1f - q), paint);
         }
+    }
+
+    private void drawCircularGesture(Canvas canvas, long now) {
+        if (circularStartedAt == 0L) return;
+        float p = (now - circularStartedAt) / 620f;
+        if (p >= 1f) {
+            circularStartedAt = 0L;
+            return;
+        }
+        float cx = anchorX + anchorSize / 2f;
+        float cy = anchorY + anchorSize / 2f;
+        float radius = dp(34) + dp(8) * easeOutCubic(p);
+        float direction = circularClockwise ? 1f : -1f;
+        int count = 16;
+        paint.setStyle(Paint.Style.FILL);
+        for (int i = 0; i < count; i++) {
+            float q = i / (float) count;
+            double angle = direction * (p * Math.PI * 3.2 + q * Math.PI * 2);
+            int color = circularClockwise || i % 3 != 0
+                    ? CiPresenceSpec.GOLD
+                    : CiPresenceSpec.BLUE;
+            setPaintColor(color, 0.62f * (1f - p) * (0.45f + 0.55f * q));
+            canvas.drawCircle(
+                    cx + (float)Math.cos(angle) * radius,
+                    cy + (float)Math.sin(angle) * radius,
+                    dpf(1.4f + (i % 2) * 0.45f),
+                    paint
+            );
+        }
+    }
+
+    private void drawMoveMode(Canvas canvas, long now) {
+        float cx = anchorX + anchorSize / 2f;
+        float cy = anchorY + anchorSize / 2f;
+        float phase = (now % 1700L) / 1700f;
+        drawOrbitParticles(canvas, cx, cy, dp(30), phase, CiPresenceSpec.GOLD, 8, 0.38f);
     }
 
     private void drawActivity(Canvas canvas, long now) {

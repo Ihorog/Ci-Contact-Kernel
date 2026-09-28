@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -euxo pipefail
 
 APK="android/ci-point/app/build/outputs/apk/debug/app-debug.apk"
 PACKAGE="ua.cimeika.ci"
@@ -57,10 +57,20 @@ adb shell am start -W -n "$PACKAGE/$ACTIVITY" \
 sleep 0.4
 
 PRESENCE_LOGS="$(adb logcat -d -v brief | grep 'CiPresence' || true)"
-[[ "$PRESENCE_LOGS" == *"gesture=left scaffold=true"* ]]
-[[ "$PRESENCE_LOGS" == *"gesture=up"* ]]
+printf '%s\n' "$PRESENCE_LOGS"
+
+require_presence_log() {
+  local NEEDLE="$1"
+  if ! grep -Fq "$NEEDLE" <<<"$PRESENCE_LOGS"; then
+    echo "CI_PRESENCE_SMOKE_MISSING=$NEEDLE"
+    exit 1
+  fi
+}
+
+require_presence_log "gesture=left scaffold=true"
+require_presence_log "gesture=up"
 for EXPECTED in thinking searching calculating delegating waiting_external result error screen_action; do
-  [[ "$PRESENCE_LOGS" == *"state=$EXPECTED"* ]]
+  require_presence_log "state=$EXPECTED"
 done
 
 adb shell input keyevent KEYCODE_HOME

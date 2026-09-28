@@ -87,6 +87,8 @@ need(service, "FLAG_NOT_TOUCHABLE", "non-interference overlay")
 need(service, "FLAG_NOT_FOCUSABLE", "non-focus overlay")
 need(service, "presenceParams.alpha = CiPresenceSpec.PRESENCE_WINDOW_ALPHA", "bounded Presence window opacity")
 need(service, "presenceView.swipe(direction)", "gesture to presence")
+if service.count("presenceView.swipe(direction)") < 2:
+    errors.append("MISSING context-cell gesture routing into Presence")
 need(service, "presenceView.circularGesture(clockwise)", "circular gesture presence")
 need(service, "CiPresenceSpec.Activity.THINKING", "thinking lifecycle")
 need(service, "CiPresenceSpec.Activity.WAITING_EXTERNAL", "external wait lifecycle")
@@ -100,6 +102,7 @@ need(service, "cancelPassiveBreath();", "idle dim stops passive breath")
 need(service, "restoreFromIdleDim()", "interaction restores passive state")
 
 need(halo, "setBackgroundColor(Color.TRANSPARENT)", "frameless context content")
+need(halo, "scaleX(0.95f).scaleY(0.95f)", "context-cell touch feedback")
 forbid(halo, "CiHexagonDrawable", "filled/closed legacy context card")
 forbid(halo, "backgroundFor(", "legacy context background")
 

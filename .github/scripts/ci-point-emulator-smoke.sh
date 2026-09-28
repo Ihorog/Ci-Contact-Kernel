@@ -35,6 +35,34 @@ fi
 PID="$(adb shell pidof "$PACKAGE" | tr -d '\r\n')"
 test -n "$PID"
 
+# Exercise the real overlay hit target. Fresh-install position is 72% x / 62% y.
+DIMS="$(adb shell wm size | tail -n1 | tr -d '\r' | sed -E 's/.*: ([0-9]+x[0-9]+).*/\1/')"
+WIDTH="${DIMS%x*}"
+HEIGHT="${DIMS#*x}"
+CI_X=$((WIDTH * 72 / 100))
+CI_Y=$((HEIGHT * 62 / 100))
+adb shell input swipe "$CI_X" "$CI_Y" "$((CI_X - 260))" "$CI_Y" 220
+sleep 1
+adb shell input swipe "$CI_X" "$CI_Y" "$CI_X" "$((CI_Y - 260))" 220
+sleep 1
+
+# Drive telemetry states through the exported debug Activity; it forwards internally
+# to the non-exported foreground service.
+for STATE in thinking searching calculating delegating waiting_external result error; do
+  adb shell am start -W -n "$PACKAGE/$ACTIVITY" --es ci_presence_state "$STATE" >/dev/null
+  sleep 0.15
+done
+adb shell am start -W -n "$PACKAGE/$ACTIVITY" \
+  --es ci_presence_state screen_action --ef target_x 420 --ef target_y 640 >/dev/null
+sleep 0.4
+
+PRESENCE_LOGS="$(adb logcat -d -v brief | grep 'CiPresence' || true)"
+[[ "$PRESENCE_LOGS" == *"gesture=left scaffold=true"* ]]
+[[ "$PRESENCE_LOGS" == *"gesture=up"* ]]
+for EXPECTED in thinking searching calculating delegating waiting_external result error screen_action; do
+  [[ "$PRESENCE_LOGS" == *"state=$EXPECTED"* ]]
+done
+
 adb shell input keyevent KEYCODE_HOME
 sleep 2
 SERVICE_DUMP="$(adb shell dumpsys activity services "$PACKAGE")"
@@ -64,3 +92,5 @@ fi
 echo "CI_POINT_ANDROID_SMOKE=PASS"
 echo "CI_POINT_VERSION=$EXPECTED_VERSION"
 echo "CI_POINT_PID=$PID"
+echo "CI_PRESENCE_GESTURES=PASS"
+echo "CI_PRESENCE_TELEMETRY=PASS"

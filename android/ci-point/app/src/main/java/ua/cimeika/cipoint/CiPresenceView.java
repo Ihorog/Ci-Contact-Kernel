@@ -30,6 +30,10 @@ final class CiPresenceView extends View {
     private float targetX;
     private float targetY;
 
+    private boolean moveMode;
+    private long circularStartedAt;
+    private boolean circularClockwise;
+
     CiPresenceView(Context context) {
         super(context);
         setBackgroundColor(android.graphics.Color.TRANSPARENT);

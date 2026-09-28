@@ -8,6 +8,8 @@ on:
       - 'Cipole (2).png'
       - '.github/workflows/ci-point-android.yml'
       - '.github/scripts/ci-point-emulator-smoke.sh'
+      - '.github/scripts/ci-presence-contract-audit.py'
+      - 'docs/CI_PRESENCE_LAYER_V1.md'
   push:
     branches: [main]
     paths:

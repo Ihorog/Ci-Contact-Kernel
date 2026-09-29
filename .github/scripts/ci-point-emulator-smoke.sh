@@ -41,10 +41,33 @@ WIDTH="${DIMS%x*}"
 HEIGHT="${DIMS#*x}"
 CI_X=$((WIDTH * 72 / 100))
 CI_Y=$((HEIGHT * 62 / 100))
-adb shell input swipe "$CI_X" "$CI_Y" "$((CI_X - 260))" "$CI_Y" 220
-sleep 1
-adb shell input swipe "$CI_X" "$CI_Y" "$CI_X" "$((CI_Y - 260))" 220
-sleep 1
+
+exercise_gesture() {
+  local NAME="$1"
+  local END_X="$2"
+  local END_Y="$3"
+  local EXPECTED_LOG="$4"
+  local ATTEMPT
+
+  # The service record can appear slightly before WindowManager finishes
+  # attaching the overlay hit target. Retry the real gesture instead of
+  # accepting a startup race as a product failure.
+  for ATTEMPT in 1 2 3; do
+    adb shell input swipe "$CI_X" "$CI_Y" "$END_X" "$END_Y" 220
+    sleep 0.7
+    if adb logcat -d -v brief | grep 'CiPresence' | grep -Fq "$EXPECTED_LOG"; then
+      echo "CI_PRESENCE_GESTURE_READY=$NAME attempt=$ATTEMPT"
+      return 0
+    fi
+  done
+
+  echo "CI_PRESENCE_GESTURE_FAILED=$NAME expected=$EXPECTED_LOG"
+  return 1
+}
+
+exercise_gesture "left" "$((CI_X - 260))" "$CI_Y" "gesture=left scaffold=true"
+exercise_gesture "up" "$CI_X" "$((CI_Y - 260))" "gesture=up"
+sleep 0.4
 
 # Drive telemetry states through the exported debug Activity; it forwards internally
 # to the non-exported foreground service.

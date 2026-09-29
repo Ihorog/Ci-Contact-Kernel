@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -euxo pipefail
 
 APK="android/ci-point/app/build/outputs/apk/debug/app-debug.apk"
 PACKAGE="ua.cimeika.ci"
 ACTIVITY="ua.cimeika.cipoint.MainActivity"
-EXPECTED_VERSION="0.5.3"
+EXPECTED_VERSION="0.6.0"
 
 test -f "$APK"
 adb install -r "$APK"
@@ -35,6 +35,67 @@ fi
 PID="$(adb shell pidof "$PACKAGE" | tr -d '\r\n')"
 test -n "$PID"
 
+# Exercise the real overlay hit target. Fresh-install position is 72% x / 62% y.
+DIMS="$(adb shell wm size | tail -n1 | tr -d '\r' | sed -E 's/.*: ([0-9]+x[0-9]+).*/\1/')"
+WIDTH="${DIMS%x*}"
+HEIGHT="${DIMS#*x}"
+CI_X=$((WIDTH * 72 / 100))
+CI_Y=$((HEIGHT * 62 / 100))
+
+exercise_gesture() {
+  local NAME="$1"
+  local END_X="$2"
+  local END_Y="$3"
+  local EXPECTED_LOG="$4"
+  local ATTEMPT
+
+  # The service record can appear slightly before WindowManager finishes
+  # attaching the overlay hit target. Retry the real gesture instead of
+  # accepting a startup race as a product failure.
+  for ATTEMPT in 1 2 3; do
+    adb shell input swipe "$CI_X" "$CI_Y" "$END_X" "$END_Y" 220
+    sleep 0.7
+    if adb logcat -d -v brief | grep 'CiPresence' | grep -Fq "$EXPECTED_LOG"; then
+      echo "CI_PRESENCE_GESTURE_READY=$NAME attempt=$ATTEMPT"
+      return 0
+    fi
+  done
+
+  echo "CI_PRESENCE_GESTURE_FAILED=$NAME expected=$EXPECTED_LOG"
+  return 1
+}
+
+exercise_gesture "left" "$((CI_X - 260))" "$CI_Y" "gesture=left scaffold=true"
+exercise_gesture "up" "$CI_X" "$((CI_Y - 260))" "gesture=up"
+sleep 0.4
+
+# Drive telemetry states through the exported debug Activity; it forwards internally
+# to the non-exported foreground service.
+for STATE in thinking searching calculating delegating waiting_external result error; do
+  adb shell am start -W -n "$PACKAGE/$ACTIVITY" --es ci_presence_state "$STATE" >/dev/null
+  sleep 0.15
+done
+adb shell am start -W -n "$PACKAGE/$ACTIVITY" \
+  --es ci_presence_state screen_action --ef target_x 420 --ef target_y 640 >/dev/null
+sleep 0.4
+
+PRESENCE_LOGS="$(adb logcat -d -v brief | grep 'CiPresence' || true)"
+printf '%s\n' "$PRESENCE_LOGS"
+
+require_presence_log() {
+  local NEEDLE="$1"
+  if ! grep -Fq "$NEEDLE" <<<"$PRESENCE_LOGS"; then
+    echo "CI_PRESENCE_SMOKE_MISSING=$NEEDLE"
+    exit 1
+  fi
+}
+
+require_presence_log "gesture=left scaffold=true"
+require_presence_log "gesture=up"
+for EXPECTED in thinking searching calculating delegating waiting_external result error screen_action; do
+  require_presence_log "state=$EXPECTED"
+done
+
 adb shell input keyevent KEYCODE_HOME
 sleep 2
 SERVICE_DUMP="$(adb shell dumpsys activity services "$PACKAGE")"
@@ -53,6 +114,49 @@ SERVICE_DUMP="$(adb shell dumpsys activity services "$PACKAGE")"
 PID="$(adb shell pidof "$PACKAGE" | tr -d '\r\n')"
 test -n "$PID"
 
+# Prove the full-screen Presence window does not block the foreground app.
+adb shell uiautomator dump /sdcard/ci-settings.xml >/dev/null
+adb pull /sdcard/ci-settings.xml /tmp/ci-settings.xml >/dev/null
+read -r TAP_X TAP_Y <<<"$(python3 - <<'PY'
+import re
+import xml.etree.ElementTree as ET
+root = ET.parse("/tmp/ci-settings.xml").getroot()
+preferred = None
+fallback = None
+for node in root.iter("node"):
+    if node.attrib.get("clickable") != "true":
+        continue
+    m = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if not m:
+        continue
+    x1, y1, x2, y2 = map(int, m.groups())
+    if x2 - x1 < 80 or y2 - y1 < 30:
+        continue
+    point = ((x1 + x2) // 2, (y1 + y2) // 2)
+    text = (node.attrib.get("text") or "").lower()
+    if "network" in text or "connected" in text:
+        preferred = point
+        break
+    if fallback is None and y1 > 120:
+        fallback = point
+point = preferred or fallback
+if point is None:
+    raise SystemExit("NO_CLICKABLE_SETTINGS_TARGET")
+print(*point)
+PY
+)"
+BEFORE_FOCUS="$(adb shell dumpsys window | grep -m1 'mCurrentFocus' || true)"
+adb shell input tap "$TAP_X" "$TAP_Y"
+sleep 1
+AFTER_FOCUS="$(adb shell dumpsys window | grep -m1 'mCurrentFocus' || true)"
+if [[ "$AFTER_FOCUS" == "$BEFORE_FOCUS" ]]; then
+  echo "CI_PRESENCE_TOUCH_THROUGH=FAIL"
+  echo "before=$BEFORE_FOCUS"
+  echo "after=$AFTER_FOCUS"
+  exit 1
+fi
+echo "CI_PRESENCE_TOUCH_THROUGH=PASS"
+
 LOGS="$(adb logcat -d -v brief)"
 CRASH_BLOCK="$(printf '%s\n' "$LOGS" | grep -A12 'FATAL EXCEPTION' || true)"
 if [[ "$CRASH_BLOCK" == *"Process: $PACKAGE"* ]]; then
@@ -64,3 +168,6 @@ fi
 echo "CI_POINT_ANDROID_SMOKE=PASS"
 echo "CI_POINT_VERSION=$EXPECTED_VERSION"
 echo "CI_POINT_PID=$PID"
+echo "CI_PRESENCE_GESTURES=PASS"
+echo "CI_PRESENCE_TELEMETRY=PASS"
+echo "CI_PRESENCE_TOUCH_THROUGH=PASS"

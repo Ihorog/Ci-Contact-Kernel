@@ -174,82 +174,23 @@ final class CiContextClient implements CiContextProvider {
         String gesture = body.optString("gesture", "materialize_context");
         if ("materialize_context".equals(gesture)
                 || "swipe_left".equals(gesture)
-                || "after_action".equals(gesture)) {
+                || "after_action".equals(gesture)
+                || "context_newer".equals(gesture)
+                || "context_older".equals(gesture)
+                || "next_stage".equals(gesture)
+                || "previous_state".equals(gesture)) {
             JSONObject cached = cachedContext();
             if (cached != null) return cached;
         }
 
-        JSONObject state = body.optJSONObject("context");
-        if (state == null) state = new JSONObject();
-        String current = currentLabel(state);
-
-        JSONArray cards = new JSONArray();
-        if ("context_newer".equals(gesture) || "next_stage".equals(gesture)) {
-            cards.put(makeCard(
-                    "Ймовірно: наступний крок",
-                    "Наступний крок у поточному контексті",
-                    "predicted",
-                    "context_newer".equals(gesture) ? "context_newer" : "next_stage"
-            ));
-            cards.put(makeCard(
-                    "Поточний контекст",
-                    current,
-                    "actual",
-                    "resolve_intent"
-            ));
-            cards.put(makeCard(
-                    "Попередній стан",
-                    "Повернути попередній стан",
-                    "past",
-                    "previous_state"
-            ));
-        } else if ("context_older".equals(gesture)
-                || "previous_state".equals(gesture)) {
-            cards.put(makeCard(
-                    "Попередній стан",
-                    "Повернути попередній стан",
-                    "past",
-                    "previous_state"
-            ));
-            cards.put(makeCard(
-                    "Поточний контекст",
-                    current,
-                    "actual",
-                    "resolve_intent"
-            ));
-            cards.put(makeCard(
-                    "Ймовірно: наступний крок",
-                    "Наступний крок у поточному контексті",
-                    "predicted",
-                    "context_newer"
-            ));
-        } else {
-            cards.put(makeCard(
-                    "Поточний контекст",
-                    current,
-                    "actual",
-                    "resolve_intent"
-            ));
-            cards.put(makeCard(
-                    "Ймовірно: продовжити",
-                    "Продовжити поточний контекст",
-                    "predicted",
-                    "context_newer"
-            ));
-            cards.put(makeCard(
-                    "Попередній стан",
-                    "Повернути попередній контекст",
-                    "past",
-                    "previous_state"
-            ));
-        }
-
+        // Presence geometry exists independently from content. When Ci has no
+        // verified/cached proposal, return no synthetic placeholder cards.
         JSONObject payload = new JSONObject();
         try {
             payload.put("ok", true);
             payload.put("fallback", true);
-            payload.put("source", "ci-android-local-context");
-            payload.put("cards", cards);
+            payload.put("source", "ci-android-empty-context");
+            payload.put("cards", new JSONArray());
             payload.put("protocol", "ci-context-local-v1");
         } catch (Exception ignored) { }
         return payload;

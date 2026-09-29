@@ -1,0 +1,40 @@
+name: Ci control-plane contract
+
+on:
+  pull_request:
+    paths:
+      - "docs/ci/CI_AI_CONTROL_PLANE_SPEC_V1.md"
+      - "docs/ci/ci-control-plane-v1.json"
+      - ".github/workflows/ci-control-plane-contract.yml"
+  push:
+    branches: [main]
+    paths:
+      - "docs/ci/CI_AI_CONTROL_PLANE_SPEC_V1.md"
+      - "docs/ci/ci-control-plane-v1.json"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate control-plane manifest
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("docs/ci/ci-control-plane-v1.json")
+          d=json.loads(p.read_text())
+          assert d["authority"]["control_plane"]=="Ci"
+          assert d["authority"]["single_master"] is True
+          assert d["completion"]["terminal_success"]=="VERIFIED"
+          assert d["completion"]["require_all_mandatory_evidence"] is True
+          assert d["completion"]["executor_self_promote"] is False
+          assert d["invariants"]["no_fake_execution"] is True
+          assert d["invariants"]["no_duplicate_executor"] is True
+          assert d["invariants"]["offline_executor_state"]=="BLOCKED"
+          assert d["orange_release_gate"][-1]=="VERIFIED"
+          print("CI_CONTROL_PLANE_CONTRACT=PASS")
+          PY

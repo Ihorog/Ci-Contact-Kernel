@@ -4,8 +4,8 @@ import os
 import shutil
 from pathlib import Path
 
-VERSION = "1.0.0"
-ROOT = Path(os.getenv("CI_VAULT_ROOT", "/mnt/cimeika_vault"))
+VERSION = "1.1.0"
+ROOT = Path(os.getenv("CI_VAULT_ROOT", "/mnt/cimeika_vault/92482E5D482E3FF9"))
 MAX_CHUNK = int(os.getenv("CI_VAULT_MAX_CHUNK", str(4 * 1024 * 1024)))
 
 
@@ -29,11 +29,37 @@ def _relative(path):
     return "" if path == _root() else path.relative_to(_root()).as_posix()
 
 
+def _write_probe(root):
+    if not root.exists() or not root.is_dir():
+        return {"ok": False, "error": "vault_root_missing", "evidence": "create_fsync_delete_probe"}
+    name = ".ci-vault-health-" + hashlib.sha256(os.urandom(32)).hexdigest()[:12]
+    probe = root / name
+    try:
+        with probe.open("xb") as handle:
+            handle.write(b"ci")
+            handle.flush()
+            os.fsync(handle.fileno())
+        probe.unlink()
+        return {"ok": True, "evidence": "create_fsync_delete_probe"}
+    except Exception as exc:
+        try:
+            if probe.exists():
+                probe.unlink()
+        except Exception:
+            pass
+        return {"ok": False, "error": str(exc)[:240], "evidence": "create_fsync_delete_probe"}
+
+
 def status():
     root = _root()
     exists = root.exists() and root.is_dir()
-    writable = exists and os.access(root, os.W_OK)
     readable = exists and os.access(root, os.R_OK)
+    write_probe = _write_probe(root) if readable else {
+        "ok": False,
+        "error": "vault_not_readable",
+        "evidence": "create_fsync_delete_probe",
+    }
+    writable = bool(write_probe.get("ok"))
     usage = shutil.disk_usage(root) if exists else None
     return {
         "ok": bool(exists and readable),
@@ -42,9 +68,10 @@ def status():
         "root": str(root),
         "readable": readable,
         "writable": writable,
+        "writeProbe": write_probe,
         "freeBytes": usage.free if usage else None,
         "totalBytes": usage.total if usage else None,
-        "evidence": "live_filesystem_probe",
+        "evidence": "live_filesystem_and_write_probe",
     }
 
 

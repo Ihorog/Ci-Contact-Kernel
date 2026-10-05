@@ -204,12 +204,12 @@ final class CiVoiceController {
                 ArrayList<String> values =
                         results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                 if (values == null || values.isEmpty()) {
-                    scheduleRetry(false, 260L);
+                    scheduleRetry(true, 260L);
                     return;
                 }
                 String text = values.get(0).trim();
                 if (text.isEmpty()) {
-                    scheduleRetry(false, 260L);
+                    scheduleRetry(true, 260L);
                     return;
                 }
                 callback.onTranscript(text);

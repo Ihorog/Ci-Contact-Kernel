@@ -8,8 +8,9 @@ import provider_adapters
 import release_manager
 import self_update as updater
 import vault_node
+import home_repair
 
-VERSION = "1.6.0"
+VERSION = "1.7.0"
 NODE_ID = base.NODE_ID
 
 
@@ -106,7 +107,24 @@ def resource_audit(target=None):
 
 
 def executor_status():
-    return {"ok": True, "node": NODE_ID, "operatorRuntimeVersion": VERSION, "adapters": provider_adapters.probe_all(), "vault": vault_node.status()}
+    return {"ok": True, "node": NODE_ID, "operatorRuntimeVersion": VERSION, "adapters": provider_adapters.probe_all(), "vault": vault_node.status(), "home": home_repair.home_status()}
+
+
+def home_status():
+    value = home_repair.home_status()
+    value["node"] = NODE_ID
+    value["operatorRuntimeVersion"] = VERSION
+    return value
+
+
+def home_repair_action(action: str, idempotency_key: str):
+    started = time.perf_counter()
+    result = home_repair.execute(action, idempotency_key)
+    result["node"] = NODE_ID
+    result["operatorRuntimeVersion"] = VERSION
+    coordinate = "CI.VAULT" if action.startswith("vault.") else "CI.HOME"
+    _record("home_repair_" + str(action).replace(".", "_"), started, result, coordinate=coordinate, route="ORANGE_HOME_REPAIR")
+    return result
 
 
 def vault(action: str, **kwargs):

@@ -75,12 +75,12 @@ jobs:
           print("CI_LOCAL_AI_INTENT=PASS", result.get("processor"))
           PY
 
-      - name: Lint and build APK
-        run: ./gradlew :app:lintDebug :app:assembleDebug --stacktrace
+      - name: Lint and build APKs
+        run: ./gradlew :app:lintDebug :app:assembleDebug :app:assembleRelease --stacktrace
         working-directory: android/ci-point
 
-      - name: Hash APK
-        run: sha256sum android/ci-point/app/build/outputs/apk/debug/app-debug.apk
+      - name: Hash hardened APK
+        run: sha256sum android/ci-point/app/build/outputs/apk/release/app-release.apk
 
       - name: Enable KVM access
         run: |
@@ -98,11 +98,11 @@ jobs:
           emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
           script: bash .github/scripts/ci-point-emulator-smoke.sh
 
-      - name: Upload APK
+      - name: Upload hardened APK
         uses: actions/upload-artifact@v4
         with:
-          name: ci-point-debug-apk
-          path: android/ci-point/app/build/outputs/apk/debug/app-debug.apk
+          name: ci-point-release-apk
+          path: android/ci-point/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
 
   deliver:
@@ -115,24 +115,24 @@ jobs:
       - name: Download verified APK
         uses: actions/download-artifact@v4
         with:
-          name: ci-point-debug-apk
+          name: ci-point-release-apk
           path: delivery
 
-      - name: Publish Ci Point v0.5.3
+      - name: Publish Ci Point v0.5.4
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ci-point-v0.5.3
+          TAG: ci-point-v0.5.4
           TARGET_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          mv delivery/app-debug.apk delivery/Ci-Point-v0.5.3.apk
-          sha256sum delivery/Ci-Point-v0.5.3.apk
+          mv delivery/app-release.apk delivery/Ci-Point-v0.5.4.apk
+          sha256sum delivery/Ci-Point-v0.5.4.apk
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $TAG already exists; refusing to replace an immutable versioned APK."
             exit 0
           fi
-          gh release create "$TAG" delivery/Ci-Point-v0.5.3.apk \
+          gh release create "$TAG" delivery/Ci-Point-v0.5.4.apk \
             --repo "$GITHUB_REPOSITORY" \
             --target "$TARGET_SHA" \
-            --title "Ci Point v0.5.3" \
-            --notes "Verified Android build: lint/build green, Android 35 install/runtime smoke passed, resilient Orange endpoint routing enabled, and local Ci runtime smoke passed."
+            --title "Ci Point v0.5.4" \
+            --notes "Security/control build: non-debuggable release variant, Android backup disabled, HTTPS-by-default network policy with cleartext limited to current CI.OPERATOR.ORANGE LAN host, configurable operator endpoints, Android 35 install/runtime smoke, and local Ci runtime smoke."

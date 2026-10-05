@@ -20,6 +20,8 @@ class VaultNodeTests(unittest.TestCase):
         status = vault_node.status()
         self.assertTrue(status['ok'])
         self.assertTrue(status['writable'])
+        self.assertTrue(status['writeProbe']['ok'])
+        self.assertEqual(status['evidence'], 'live_filesystem_and_write_probe')
         made = vault_node.execute('mkdir', path='docs')
         self.assertTrue(made['ok'])
         listing = vault_node.execute('list', path='')

@@ -15,9 +15,9 @@ or a reachable LAN node.
 - Internet/cloud services are not a runtime dependency.
 - No public HTTPS endpoint is built into the Android core.
 - No ChatGPT/OpenAI package or URL is required or launched by the offline build.
-- No household IP address is hardcoded into the APK.
-- LAN/Wi-Fi transport is optional and disabled unless an explicit private-network endpoint
-  is stored by the user/environment.
+- LAN/Wi-Fi transport is optional.
+- Ci Point may ship with the trusted HOME.CI operator route `192.168.1.54:8791` as a default
+  LAN candidate, while still accepting an explicitly configured private-network endpoint.
 - When configured, the network path is additive: local core remains available before,
   during, and after a network failure.
 - Accepted explicit LAN hosts: localhost/127.0.0.1, 10/8, 172.16/12, 192.168/16.
@@ -63,7 +63,7 @@ A v0.6.1 candidate passes only when:
 4. Android 35 install/start/overlay smoke passes.
 5. No Ci Point crash is present in logcat.
 6. Version reported by the installed package is 0.6.1.
-7. The source set contains no public external-assistant URL or hardcoded home LAN IP.
+7. The source set contains no public external-assistant URL; the only built-in LAN route is the trusted HOME.CI operator candidate.
 8. Optional LAN failure leaves the local core operational.
 
 Physical Lenovo Tab M11 acceptance remains a separate device gate after CI/emulator

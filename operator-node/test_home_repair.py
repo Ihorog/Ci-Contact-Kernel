@@ -36,7 +36,7 @@ class HomeRepairTests(unittest.TestCase):
              ]) as runner:
             result = home_repair.ensure_vault_rw("vault-test-001")
         self.assertTrue(result["ok"])
-        self.assertEqual(runner.call_args_list[1].args[0], ["sudo", "-n", "mount", str(home_repair.VAULT_ROOT)])
+        self.assertEqual(runner.call_args_list[1].args[0], ["sudo", "-n", "mount", str(home_repair.VAULT_MOUNT_ROOT)])
 
     def test_acceptance_refresh_updates_only_live_home_coordinates(self):
         with tempfile.TemporaryDirectory() as td:

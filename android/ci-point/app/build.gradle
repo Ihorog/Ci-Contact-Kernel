@@ -2,6 +2,16 @@ plugins {
     id 'com.android.application'
 }
 
+def ciOperatorBaseUrl =
+        project.findProperty('CI_OPERATOR_BASE_URL') ?: 'http://192.168.1.54:8791'
+def ciOperatorHealthUrl =
+        project.findProperty('CI_OPERATOR_HEALTH_URL') ?:
+                'https://mcp-http.cimeika.com.ua/operator/health'
+
+def quoteBuildConfig = { value ->
+    '"' + value.toString().replace('\\', '\\\\').replace('"', '\\"') + '"'
+}
+
 android {
     namespace 'ua.cimeika.cipoint'
     compileSdk 35
@@ -10,8 +20,32 @@ android {
         applicationId 'ua.cimeika.ci'
         minSdk 26
         targetSdk 33
-        versionCode 12
-        versionName '0.5.3'
+        versionCode 13
+        versionName '0.5.4'
+
+        buildConfigField 'String', 'CI_OPERATOR_BASE_URL',
+                quoteBuildConfig(ciOperatorBaseUrl)
+        buildConfigField 'String', 'CI_OPERATOR_HEALTH_URL',
+                quoteBuildConfig(ciOperatorHealthUrl)
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    buildTypes {
+        debug {
+            debuggable true
+        }
+        release {
+            debuggable false
+            minifyEnabled false
+
+            // Ci Point is not Play-distributed yet. Keep the hardened release
+            // installable for device verification until a dedicated signing
+            // identity is provisioned.
+            signingConfig signingConfigs.debug
+        }
     }
 
     compileOptions {

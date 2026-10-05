@@ -296,6 +296,14 @@ public final class CiOverlayService extends Service {
         }
     }
 
+    private void cancelPendingTapActivation() {
+        if (pendingSingleTap != null && handler != null) {
+            handler.removeCallbacks(pendingSingleTap);
+        }
+        pendingSingleTap = null;
+        lastTapUpTime = 0L;
+    }
+
     private void handleTap() {
         long now = System.currentTimeMillis();
         if (lastTapUpTime > 0 && now - lastTapUpTime <= DOUBLE_TAP_MS) {
@@ -476,6 +484,8 @@ public final class CiOverlayService extends Service {
         if (ciLogo == null) return;
         cancelPassiveBreath();
         ciLogo.animate().cancel();
+        ciLogo.setTranslationX(0f);
+        ciLogo.setTranslationY(0f);
         long d = animate ? 150L : 0L;
         float scale = 1f, alpha = 0.96f, z = dp(8);
         if (overlayState == OverlayState.DOCKED) { scale = 0.94f; alpha = 0.80f; z = dp(5); }
@@ -507,6 +517,7 @@ public final class CiOverlayService extends Service {
 
     private void animateSwipe(float dx, float dy, long duration) {
         String direction = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? "right" : "left") : (dy >= 0 ? "down" : "up");
+        cancelPendingTapActivation();
         if (overlayState == OverlayState.HIDDEN) {
             boolean inward = ("left".equals(dockSide) && "right".equals(direction))
                     || ("right".equals(dockSide) && "left".equals(direction));
@@ -523,11 +534,11 @@ public final class CiOverlayService extends Service {
             if (inward) { emitGesture(dx, dy, duration, direction); undock(false); return; }
         }
 
-        emitGesture(dx, dy, duration, direction);
         boolean haloVisible = contextHalo != null && contextHalo.isVisible();
         CiGestureRouter.Command command = gestureRouter != null
                 ? gestureRouter.routeOverlaySwipe(direction, haloVisible)
                 : CiGestureRouter.Command.RESERVED;
+        emitGesture(dx, dy, duration, direction, semanticForSwipeCommand(command, direction));
 
         OverlayState returnState = stableStateFromPrefs();
         setState(OverlayState.PULSE);
@@ -538,7 +549,6 @@ public final class CiOverlayService extends Service {
             invalidateContextRequests();
             clearContextHalo();
             clearResultProjection();
-            emitSemanticGesture("materialize_context", "left");
             DisplayMetrics metrics = new DisplayMetrics();
             windowManager.getDefaultDisplay().getRealMetrics(metrics);
             if (swipeVisuals != null && pointParams != null) {
@@ -562,7 +572,6 @@ public final class CiOverlayService extends Service {
             invalidateContextRequests();
             clearContextHalo();
             clearResultProjection();
-            emitSemanticGesture("activate_action", "right");
             DisplayMetrics metrics = new DisplayMetrics();
             windowManager.getDefaultDisplay().getRealMetrics(metrics);
             if (swipeVisuals != null && pointParams != null) {
@@ -574,7 +583,7 @@ public final class CiOverlayService extends Service {
                         }
                 );
             } else {
-                performCiClick();
+                activateVoiceFromSwipe();
             }
             return;
         }
@@ -732,15 +741,31 @@ public final class CiOverlayService extends Service {
         voiceController.toggle();
     }
 
+    private String semanticForSwipeCommand(CiGestureRouter.Command command, String direction) {
+        if (command == CiGestureRouter.Command.MATERIALIZE_CONTEXT) return "materialize_context";
+        if (command == CiGestureRouter.Command.ACTIVATE_ACTION) return "activate_action";
+        if (command == CiGestureRouter.Command.DISMISS_CONTEXT) return "reset_context";
+        if (command == CiGestureRouter.Command.BROWSE_NEWER) return "context_newer";
+        if (command == CiGestureRouter.Command.BROWSE_OLDER) return "context_older";
+        return defaultSemanticForDirection(direction);
+    }
+
+    private String defaultSemanticForDirection(String direction) {
+        return "right".equals(direction) ? "reset_context"
+                : ("left".equals(direction) ? "materialize_context"
+                : ("up".equals(direction) ? "context_newer" : "context_older"));
+    }
+
     private void emitGesture(float dx, float dy, long duration, String direction) {
+        emitGesture(dx, dy, duration, direction, defaultSemanticForDirection(direction));
+    }
+
+    private void emitGesture(float dx, float dy, long duration, String direction, String semantic) {
         Intent event = new Intent(ACTION_CI_GESTURE);
         event.putExtra("dx", dx);
         event.putExtra("dy", dy);
         event.putExtra("duration", duration);
         event.putExtra("direction", direction);
-        String semantic = "right".equals(direction) ? "reset_context"
-                : ("left".equals(direction) ? "materialize_context"
-                : ("up".equals(direction) ? "context_newer" : "context_older"));
         event.putExtra("semantic", semantic);
         event.putExtra("timestamp", System.currentTimeMillis());
         event.putExtra("source", "ci-active-point");

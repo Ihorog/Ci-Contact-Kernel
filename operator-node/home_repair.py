@@ -9,11 +9,11 @@ from pathlib import Path
 
 import vault_node
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 STATE = Path("/home/kazkar/cit/state/home_repair")
 ACCEPTANCE = Path("/home/kazkar/cimeika/cit/registry/ci-registry/v1.1.0/acceptance/current.json")
 END0 = os.getenv("CI_HOME_PRIMARY_INTERFACE", "end0")
-VAULT_ROOT = Path(os.getenv("CI_VAULT_ROOT", "/mnt/cimeika_vault"))
+VAULT_ROOT = Path(os.getenv("CI_VAULT_ROOT", "/mnt/cimeika_vault/92482E5D482E3FF9"))
 
 
 def _run(argv, timeout=12):
@@ -232,6 +232,19 @@ def refresh_acceptance(idempotency_key):
     network = network_status()
     vault = vault_node.status()
     coordinates = [dict(x) for x in snapshot.get("coordinates", []) if isinstance(x, dict)]
+    by_id = {row.get("id"): row for row in coordinates if row.get("id")}
+    for required_id in ("CI.ORANGE", "CI.HOME", "CI.VAULT"):
+        if required_id not in by_id:
+            row = {"id": required_id}
+            coordinates.append(row)
+            by_id[required_id] = row
+
+    authority = {
+        "kind": "owner",
+        "scope": "HOME.CI",
+        "source": "explicit_local_owner_authorization",
+        "externalAccess": False,
+    }
     refreshed = []
     for row in coordinates:
         cid = row.get("id")
@@ -239,6 +252,7 @@ def refresh_acceptance(idempotency_key):
             row.update({
                 "state": "VERIFIED",
                 "last_verified": now,
+                "authority": authority,
                 "evidence": now + ": direct Orange runtime acceptance refresh",
                 "provenance": {"source": "CI.OPERATOR.ORANGE", "checks": ["local_runtime"], "secret_material": False},
                 "blocker": None,
@@ -249,20 +263,24 @@ def refresh_acceptance(idempotency_key):
             row.update({
                 "state": state,
                 "last_verified": now,
+                "authority": authority,
                 "evidence": now + ": end0 live probe; linkUp=" + str(bool(network.get("linkUp"))),
                 "provenance": {"source": "CI.OPERATOR.ORANGE", "checks": ["network_status"], "secret_material": False},
                 "blocker": None if network.get("linkUp") else "ethernet_not_up",
             })
             refreshed.append(cid)
         elif cid == "CI.VAULT":
-            state = "VERIFIED" if vault.get("ok") and vault.get("writable") else ("VERIFIED_PARTIAL" if vault.get("ok") else "BLOCKED")
+            write_probe = vault.get("writeProbe") if isinstance(vault.get("writeProbe"), dict) else {}
+            vault_rw = bool(vault.get("ok") and vault.get("writable") and write_probe.get("ok"))
+            state = "VERIFIED" if vault_rw else ("VERIFIED_PARTIAL" if vault.get("ok") else "BLOCKED")
             row.update({
                 "state": state,
                 "last_verified": now,
-                "access": ["read", "write"] if vault.get("writable") else (["read"] if vault.get("readable") else []),
-                "evidence": now + ": live vault filesystem probe; readable=" + str(bool(vault.get("readable"))) + "; writable=" + str(bool(vault.get("writable"))),
-                "provenance": {"source": "CI.OPERATOR.ORANGE", "checks": ["vault.status"], "secret_material": False},
-                "blocker": None if vault.get("writable") else "vault_not_rw",
+                "authority": authority,
+                "access": ["read", "write"] if vault_rw else (["read"] if vault.get("readable") else []),
+                "evidence": now + ": live vault filesystem+write probe; root=" + str(vault.get("root")) + "; readable=" + str(bool(vault.get("readable"))) + "; writable=" + str(vault_rw),
+                "provenance": {"source": "CI.OPERATOR.ORANGE", "checks": ["vault.status", "create_fsync_delete_probe"], "secret_material": False},
+                "blocker": None if vault_rw else "vault_not_rw",
             })
             refreshed.append(cid)
     snapshot = dict(snapshot)

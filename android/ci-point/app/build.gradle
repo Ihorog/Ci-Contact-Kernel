@@ -2,6 +2,34 @@ plugins {
     id 'com.android.application'
 }
 
+def ciOperatorBaseUrl =
+        project.findProperty('CI_OPERATOR_BASE_URL') ?: 'http://192.168.1.54:8791'
+def ciOperatorHealthUrl =
+        project.findProperty('CI_OPERATOR_HEALTH_URL') ?:
+                'https://mcp-http.cimeika.com.ua/operator/health'
+
+def envOrProperty = { name ->
+    def envValue = System.getenv(name)
+    if (envValue != null && !envValue.trim().isEmpty()) return envValue
+    def propertyValue = project.findProperty(name)
+    return propertyValue != null ? propertyValue.toString() : ''
+}
+
+def ciReleaseStoreFile = envOrProperty('CI_ANDROID_KEYSTORE_FILE')
+def ciReleaseStorePassword = envOrProperty('CI_ANDROID_STORE_PASSWORD')
+def ciReleaseKeyAlias = envOrProperty('CI_ANDROID_KEY_ALIAS')
+def ciReleaseKeyPassword = envOrProperty('CI_ANDROID_KEY_PASSWORD')
+def ciStableSigningReady = [
+        ciReleaseStoreFile,
+        ciReleaseStorePassword,
+        ciReleaseKeyAlias,
+        ciReleaseKeyPassword
+].every { it != null && !it.trim().isEmpty() }
+
+def quoteBuildConfig = { value ->
+    '"' + value.toString().replace('\\', '\\\\').replace('"', '\\"') + '"'
+}
+
 android {
     namespace 'ua.cimeika.cipoint'
     compileSdk 35
@@ -10,8 +38,49 @@ android {
         applicationId 'ua.cimeika.ci'
         minSdk 26
         targetSdk 33
-        versionCode 12
-        versionName '0.5.3'
+        versionCode 13
+        versionName '0.5.4'
+
+        buildConfigField 'String', 'CI_OPERATOR_BASE_URL',
+                quoteBuildConfig(ciOperatorBaseUrl)
+        buildConfigField 'String', 'CI_OPERATOR_HEALTH_URL',
+                quoteBuildConfig(ciOperatorHealthUrl)
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    signingConfigs {
+        if (ciStableSigningReady) {
+            ciRelease {
+                storeFile file(ciReleaseStoreFile)
+                storePassword ciReleaseStorePassword
+                keyAlias ciReleaseKeyAlias
+                keyPassword ciReleaseKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            debuggable true
+        }
+        release {
+            debuggable false
+            minifyEnabled false
+
+            if (ciStableSigningReady) {
+                signingConfig signingConfigs.ciRelease
+            } else {
+                // Verification-only fallback. CI may install this candidate,
+                // but delivery is blocked unless stable signing is configured.
+                signingConfig signingConfigs.debug
+            }
+
+            buildConfigField 'boolean', 'CI_STABLE_SIGNING',
+                    ciStableSigningReady.toString()
+        }
     }
 
     compileOptions {

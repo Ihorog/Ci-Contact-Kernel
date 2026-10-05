@@ -14,6 +14,7 @@ STATE = Path("/home/kazkar/cit/state/home_repair")
 ACCEPTANCE = Path("/home/kazkar/cimeika/cit/registry/ci-registry/v1.1.0/acceptance/current.json")
 END0 = os.getenv("CI_HOME_PRIMARY_INTERFACE", "end0")
 VAULT_ROOT = Path(os.getenv("CI_VAULT_ROOT", "/mnt/cimeika_vault/92482E5D482E3FF9"))
+VAULT_MOUNT_ROOT = Path(os.getenv("CI_VAULT_MOUNT_ROOT", "/mnt/cimeika_vault"))
 
 
 def _run(argv, timeout=12):
@@ -182,12 +183,12 @@ def ensure_vault_rw(idempotency_key):
     before_probe = _probe_vault_write() if before.get("readable") else {"ok": False, "error": "vault_not_readable"}
     if before.get("writable") and before_probe.get("ok"):
         return _finish(action, idempotency_key, {"ok": True, "executed": False, "verified": True, "before": {**before, "writeProbe": before_probe}, "after": {**before, "writeProbe": before_probe}, "evidence": "already_rw"})
-    findmnt = _run(["findmnt", "-n", "-o", "TARGET,FSTYPE,OPTIONS", str(VAULT_ROOT)])
+    findmnt = _run(["findmnt", "-n", "-o", "TARGET,FSTYPE,OPTIONS", str(VAULT_MOUNT_ROOT)])
     mounted = findmnt["rc"] == 0
     if not mounted:
-        mutation = _run(["sudo", "-n", "mount", str(VAULT_ROOT)], timeout=25)
+        mutation = _run(["sudo", "-n", "mount", str(VAULT_MOUNT_ROOT)], timeout=25)
     else:
-        mutation = _run(["sudo", "-n", "mount", "-o", "remount,rw", str(VAULT_ROOT)], timeout=25)
+        mutation = _run(["sudo", "-n", "mount", "-o", "remount,rw", str(VAULT_MOUNT_ROOT)], timeout=25)
     time.sleep(0.5)
     after = vault_node.status()
     after_probe = _probe_vault_write() if after.get("readable") else {"ok": False, "error": "vault_not_readable"}
@@ -200,7 +201,7 @@ def ensure_vault_rw(idempotency_key):
         "before": {**before, "writeProbe": before_probe, "findmnt": findmnt["stdout"] or None},
         "after": {**after, "writeProbe": after_probe},
         "mutation": {"rc": mutation["rc"], "stderr": mutation["stderr"] or None},
-        "evidence": "fstab_bounded_mount_then_live_write_probe",
+        "evidence": "fstab_mount_root_then_canonical_vault_write_probe",
     })
 
 

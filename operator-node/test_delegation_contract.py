@@ -135,6 +135,30 @@ class DelegationContractTest(unittest.TestCase):
         self.assertNotIn("authority", summary)
         self.assertNotIn("evidence", summary)
 
+    def test_vault_live_state_requires_write_probe(self):
+        with patch.object(ci_operator, "_acceptance", return_value=trusted_snapshot("CI.VAULT")), \
+             patch.object(ci_operator.vault_node, "status", return_value={
+                 "ok": True,
+                 "readable": True,
+                 "writable": False,
+                 "writeProbe": {"ok": False, "error": "write_failed"},
+             }):
+            result = ci_operator.resolve("стан Vault", "CI.VAULT")
+        self.assertEqual(result["state"], "VERIFIED_PARTIAL")
+        self.assertFalse(result["evidenceCurrent"])
+
+    def test_vault_live_state_is_verified_after_rw_probe(self):
+        with patch.object(ci_operator, "_acceptance", return_value=trusted_snapshot("CI.VAULT")), \
+             patch.object(ci_operator.vault_node, "status", return_value={
+                 "ok": True,
+                 "readable": True,
+                 "writable": True,
+                 "writeProbe": {"ok": True, "evidence": "create_fsync_delete_probe"},
+             }):
+            result = ci_operator.resolve("стан Vault", "CI.VAULT")
+        self.assertEqual(result["state"], "VERIFIED")
+        self.assertTrue(result["evidenceCurrent"])
+
     def test_resource_audit_has_required_shape(self):
         with patch.object(ci_operator, "_acceptance", return_value=trusted_snapshot("CI.GITHUB")):
             result = ci_operator.resource_audit("CI.GITHUB")

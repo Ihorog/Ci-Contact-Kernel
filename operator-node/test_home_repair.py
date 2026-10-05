@@ -63,8 +63,15 @@ class HomeRepairTests(unittest.TestCase):
             }
             current = acceptance_dir / "current.json"
             current.write_text(json.dumps(pointer), encoding="utf-8")
+            authority = root / "home_authority.json"
+            authority.write_text(json.dumps({
+                "kind": "owner",
+                "scope": "HOME.CI",
+                "source": "unit-test",
+                "externalAccess": False,
+            }), encoding="utf-8")
 
-            with patch.object(home_repair, "STATE", root / "state"),                  patch.object(home_repair, "ACCEPTANCE", current),                  patch.object(home_repair, "network_status", return_value={"ok": True, "linkUp": True}),                  patch.object(home_repair.vault_node, "status", return_value={"ok": True, "root": str(home_repair.VAULT_ROOT), "readable": True, "writable": True, "writeProbe": {"ok": True, "evidence": "create_fsync_delete_probe"}}):
+            with patch.object(home_repair, "STATE", root / "state"),                  patch.object(home_repair, "ACCEPTANCE", current),                  patch.object(home_repair, "HOME_AUTHORITY", authority),                  patch.object(home_repair, "network_status", return_value={"ok": True, "linkUp": True}),                  patch.object(home_repair.vault_node, "status", return_value={"ok": True, "root": str(home_repair.VAULT_ROOT), "readable": True, "writable": True, "writeProbe": {"ok": True, "evidence": "create_fsync_delete_probe"}}):
                 result = home_repair.refresh_acceptance("acceptance-test-001")
 
             self.assertTrue(result["ok"])

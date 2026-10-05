@@ -21,13 +21,14 @@ class SelfUpdateTests(unittest.TestCase):
                 'ci_operator.py', 'provider_adapters.py', 'ci_operator_runtime.py',
                 'operator_telemetry.py', 'queue_contract.py', 'vault_node.py', 'release_manager.py',
                 'self_update.py', 'mcp_probe.py', 'technical_model.py', 'ci_pipeline.py',
-                'organism_biology.py', 'local_selftest.py',
+                'organism_biology.py', 'local_selftest.py', 'home_repair.py',
                 'executor_mesh.py', 'evidence_aggregator.py', 'ci_orchestrator.py', 'executor_queue_server.py',
             ],
         )
         self.assertIn('self_update.py', self_update.ALLOWED)
         self.assertIn('mcp_probe.py', self_update.ALLOWED)
         self.assertIn('vault_node.py', self_update.ALLOWED)
+        self.assertIn('home_repair.py', self_update.ALLOWED)
         self.assertIn('executor_queue_server.py', self_update.OPTIONAL)
         self.assertNotIn('ci_connector_server.py', self_update.ALLOWED)
         self.assertNotIn('install_provider_layer.py', self_update.ALLOWED)

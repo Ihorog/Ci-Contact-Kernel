@@ -25,6 +25,11 @@ build = (ROOT / "android/ci-point/app/build.gradle").read_text(encoding="utf-8")
 workflow = (ROOT / ".github/workflows/ci-point-android.yml").read_text(encoding="utf-8")
 smoke = (ROOT / ".github/scripts/ci-point-emulator-smoke.sh").read_text(encoding="utf-8")
 docs = (ROOT / "docs/CI_PRESENCE_LAYER_V1.md").read_text(encoding="utf-8")
+manifest = (ROOT / "android/ci-point/app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
+endpoint = (JAVA / "CiEndpointConfig.java").read_text(encoding="utf-8")
+voice = (JAVA / "CiVoiceController.java").read_text(encoding="utf-8")
+resources = (JAVA / "CiVerifiedResources.java").read_text(encoding="utf-8")
+offline_docs = (ROOT / "docs/CI_POINT_OFFLINE_FIRST_V1.md").read_text(encoding="utf-8")
 
 checks = {
     "LOGO_DP = 72": spec,
@@ -115,10 +120,23 @@ forbid(halo, "backgroundFor(", "legacy context background")
 
 need(client, '"ci-android-empty-context"', "empty context fallback")
 forbid(client, '"Ймовірно: продовжити"', "fabricated placeholder context")
-need(build, "versionName '0.6.0'", "0.6.0 version")
-need(workflow, "delivery/Ci-Point-v0.6.0.apk", "0.6.0 release asset")
+need(build, "versionName '0.6.1'", "0.6.1 version")
+need(workflow, "delivery/Ci-Point-v0.6.1.apk", "0.6.1 release asset")
 need(smoke, "CI_PRESENCE_TOUCH_THROUGH=PASS", "Android foreground touch-through smoke")
 forbid(workflow, "delivery/Ci-Point-v0.5.3.apk", "stale release asset")
+forbid(workflow, "delivery/Ci-Point-v0.6.0.apk", "stale 0.6.0 release asset")
+
+# Offline-first gates: no WAN assistant/cloud dependency and no built-in home IPs.
+forbid(manifest, 'com.openai.chatgpt', "external assistant package query")
+forbid(endpoint, '192.168.1.38', "legacy hardcoded LAN endpoint")
+forbid(endpoint, '192.168.1.132', "hardcoded LAN endpoint")
+forbid(endpoint, '192.168.1.54', "hardcoded LAN endpoint")
+forbid(resources, 'mcp-http.cimeika.com.ua', "cloud health dependency")
+forbid(voice, 'scheduleRetry(false', "online speech-recognition fallback")
+need(endpoint, "isExplicitLanEndpoint", "explicit private-LAN gate")
+need(voice, '"ci-point-offline-core"', "offline intent resolver")
+need(resources, '"network_required", false', "offline resource state")
+need(offline_docs, "Core behavior MUST work with airplane mode enabled", "offline acceptance contract")
 if workflow.count(".github/scripts/ci-presence-contract-audit.py") < 2:
     errors.append("MISSING Presence audit path coverage for both PR and main push")
 if workflow.count("docs/CI_PRESENCE_LAYER_V1.md") < 2:
@@ -145,6 +163,6 @@ if errors:
     sys.exit(1)
 
 print("CI_PRESENCE_CONTRACT=PASS")
-print("CI_PRESENCE_VERSION=0.6.0")
+print("CI_PRESENCE_VERSION=0.6.1")
 print("CI_PRESENCE_CELLS=3")
 print("CI_PRESENCE_NON_INTERFERENCE=PASS")

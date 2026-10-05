@@ -332,6 +332,9 @@ def _build_personal_resource_audit(coordinate, connection, acceptance, reg):
     if state in {"BLOCKED", "UNAVAILABLE"}:
         verification_status = "BLOCKED"
         blocker = blocker or "resource_state_blocked"
+    elif state not in {"VERIFIED", "CALLABLE"}:
+        verification_status = "AVAILABLE_UNVERIFIED"
+        blocker = blocker or "resource_not_fully_verified"
     elif freshness.get("status") != "FRESH":
         verification_status = "STALE"
         blocker = blocker or freshness.get("reason") or "verification_stale"
@@ -426,6 +429,11 @@ def resolve(intent: str, target=None):
     else:
         execution = "DELEGATE_CONNECTOR"
     personal_resource = _build_personal_resource_audit(selected, connection, acceptance, reg)
+    if selected == "CI.VAULT" and state != "VERIFIED":
+        personal_resource = dict(personal_resource)
+        personal_resource["trusted"] = False
+        personal_resource["verification_status"] = "AVAILABLE_UNVERIFIED"
+        personal_resource["blocker"] = "vault_live_rw_probe_failed"
     candidate_execution = execution
     if personal_resource.get("personal_resource") and not personal_resource.get("trusted"):
         execution = "PERSONAL_TRUST_BLOCKED"

@@ -25,6 +25,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      stable_signing: ${{ steps.signing.outputs.ready }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -75,7 +77,36 @@ jobs:
           print("CI_LOCAL_AI_INTENT=PASS", result.get("processor"))
           PY
 
+      - name: Prepare stable Android signing identity
+        id: signing
+        env:
+          CI_ANDROID_KEYSTORE_B64: ${{ secrets.CI_ANDROID_KEYSTORE_B64 }}
+          CI_ANDROID_STORE_PASSWORD: ${{ secrets.CI_ANDROID_STORE_PASSWORD }}
+          CI_ANDROID_KEY_ALIAS: ${{ secrets.CI_ANDROID_KEY_ALIAS }}
+          CI_ANDROID_KEY_PASSWORD: ${{ secrets.CI_ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$CI_ANDROID_KEYSTORE_B64" &&
+                -n "$CI_ANDROID_STORE_PASSWORD" &&
+                -n "$CI_ANDROID_KEY_ALIAS" &&
+                -n "$CI_ANDROID_KEY_PASSWORD" ]]; then
+            KEYSTORE="$RUNNER_TEMP/ci-point-release.keystore"
+            printf '%s' "$CI_ANDROID_KEYSTORE_B64" | base64 --decode > "$KEYSTORE"
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "keystore=$KEYSTORE" >> "$GITHUB_OUTPUT"
+            echo "CI_ANDROID_SIGNING=STABLE"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "keystore=" >> "$GITHUB_OUTPUT"
+            echo "CI_ANDROID_SIGNING=CANDIDATE_ONLY"
+          fi
+
       - name: Lint and build APKs
+        env:
+          CI_ANDROID_KEYSTORE_FILE: ${{ steps.signing.outputs.keystore }}
+          CI_ANDROID_STORE_PASSWORD: ${{ secrets.CI_ANDROID_STORE_PASSWORD }}
+          CI_ANDROID_KEY_ALIAS: ${{ secrets.CI_ANDROID_KEY_ALIAS }}
+          CI_ANDROID_KEY_PASSWORD: ${{ secrets.CI_ANDROID_KEY_PASSWORD }}
         run: ./gradlew :app:lintDebug :app:assembleDebug :app:assembleRelease --stacktrace
         working-directory: android/ci-point
 
@@ -98,7 +129,7 @@ jobs:
           emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
           script: bash .github/scripts/ci-point-emulator-smoke.sh
 
-      - name: Upload hardened APK
+      - name: Upload hardened APK candidate
         uses: actions/upload-artifact@v4
         with:
           name: ci-point-release-apk
@@ -106,7 +137,7 @@ jobs:
           if-no-files-found: error
 
   deliver:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.build.outputs.stable_signing == 'true'
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -135,4 +166,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$TARGET_SHA" \
             --title "Ci Point v0.5.4" \
-            --notes "Security/control build: non-debuggable release variant, Android backup disabled, HTTPS-by-default network policy with cleartext limited to current CI.OPERATOR.ORANGE LAN host, configurable operator endpoints, Android 35 install/runtime smoke, and local Ci runtime smoke."
+            --notes "Security/control build: stable Android signing identity required and verified by CI; non-debuggable release; Android backup disabled; HTTPS-by-default network policy with cleartext limited to current CI.OPERATOR.ORANGE LAN host; configurable operator endpoints; Android 35 install/runtime smoke and local Ci runtime smoke passed."

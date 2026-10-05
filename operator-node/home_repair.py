@@ -88,7 +88,10 @@ def _probe_vault_write():
     name = ".ci-write-probe-" + hashlib.sha256(str(time.time_ns()).encode()).hexdigest()[:12]
     probe = root / name
     try:
-        probe.write_bytes(b"ci")
+        with probe.open("xb") as handle:
+            handle.write(b"ci")
+            handle.flush()
+            os.fsync(handle.fileno())
         probe.unlink()
         return {"ok": True, "evidence": "create_fsync_delete_probe"}
     except Exception as exc:
@@ -97,12 +100,12 @@ def _probe_vault_write():
                 probe.unlink()
         except Exception:
             pass
-        return {"ok": False, "error": str(exc)[:240], "evidence": "create_delete_probe_failed"}
+        return {"ok": False, "error": str(exc)[:240], "evidence": "create_fsync_delete_probe_failed"}
 
 
 def home_status():
     vault = vault_node.status()
-    write_probe = _probe_vault_write() if vault.get("readable") else {"ok": False, "error": "vault_not_readable"}
+    write_probe = vault.get("writeProbe") if isinstance(vault.get("writeProbe"), dict) else (_probe_vault_write() if vault.get("readable") else {"ok": False, "error": "vault_not_readable"})
     return {
         "ok": bool(network_status().get("ok")),
         "version": VERSION,
@@ -202,7 +205,7 @@ def ensure_vault_rw(idempotency_key):
     if cached:
         return cached
     before = vault_node.status()
-    before_probe = _probe_vault_write() if before.get("readable") else {"ok": False, "error": "vault_not_readable"}
+    before_probe = before.get("writeProbe") if isinstance(before.get("writeProbe"), dict) else (_probe_vault_write() if before.get("readable") else {"ok": False, "error": "vault_not_readable"})
     if before.get("writable") and before_probe.get("ok"):
         return _finish(action, idempotency_key, {"ok": True, "executed": False, "verified": True, "before": {**before, "writeProbe": before_probe}, "after": {**before, "writeProbe": before_probe}, "evidence": "already_rw"})
     findmnt = _run(["findmnt", "-n", "-o", "TARGET,FSTYPE,OPTIONS", str(VAULT_MOUNT_ROOT)])
@@ -213,7 +216,7 @@ def ensure_vault_rw(idempotency_key):
         mutation = _run(["sudo", "-n", "mount", "-o", "remount,rw", str(VAULT_MOUNT_ROOT)], timeout=25)
     time.sleep(0.5)
     after = vault_node.status()
-    after_probe = _probe_vault_write() if after.get("readable") else {"ok": False, "error": "vault_not_readable"}
+    after_probe = after.get("writeProbe") if isinstance(after.get("writeProbe"), dict) else (_probe_vault_write() if after.get("readable") else {"ok": False, "error": "vault_not_readable"})
     ok = bool(after.get("writable") and after_probe.get("ok"))
     return _finish(action, idempotency_key, {
         "ok": ok,

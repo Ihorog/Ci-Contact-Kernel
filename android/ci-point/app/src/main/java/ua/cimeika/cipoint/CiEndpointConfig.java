@@ -13,6 +13,7 @@ final class CiEndpointConfig {
     private static final String PREFS = "ci_point";
     private static final String PREF_AI_ENDPOINT = "local_ai_endpoint";
     private static final String LEGACY_ENDPOINT = "http://192.168.1.38:8791/ci/intent";
+    private static final String CURRENT_CLEAR_TEXT_LAN_HOST = "192.168.1.54";
 
     private CiEndpointConfig() { }
 
@@ -53,23 +54,28 @@ final class CiEndpointConfig {
 
     private static String normalizedBase(String raw) {
         try {
-            String clean = raw.trim();
-            int marker = clean.indexOf("/ci/");
-            if (marker >= 0) clean = clean.substring(0, marker);
-            clean = clean.replaceAll("/+$", "");
-
-            URI uri = URI.create(clean);
+            URI uri = URI.create(raw.trim());
             String scheme = uri.getScheme();
             String host = uri.getHost();
-            if (scheme == null || host == null) return "";
+            if (scheme == null || host == null || uri.getUserInfo() != null) return "";
 
             String normalizedScheme = scheme.toLowerCase(Locale.ROOT);
-            if ("https".equals(normalizedScheme)) {
-                return origin(uri, normalizedScheme);
+            if (!"https".equals(normalizedScheme)
+                    && !("http".equals(normalizedScheme) && isAllowedLanHost(host))) {
+                return "";
             }
-            if ("http".equals(normalizedScheme) && isAllowedLanHost(host)) {
-                return origin(uri, normalizedScheme);
+
+            String basePath = uri.getRawPath();
+            if (basePath == null || "/".equals(basePath)) {
+                basePath = "";
+            } else {
+                int marker = basePath.indexOf("/ci/");
+                if (marker >= 0) basePath = basePath.substring(0, marker);
+                basePath = basePath.replaceAll("/+$", "");
+                if (!basePath.isEmpty() && !basePath.startsWith("/")) return "";
             }
+
+            return origin(uri, normalizedScheme) + basePath;
         } catch (Exception ignored) { }
         return "";
     }
@@ -82,13 +88,6 @@ final class CiEndpointConfig {
     }
 
     private static boolean isAllowedLanHost(String host) {
-        try {
-            URI configured = URI.create(BuildConfig.CI_OPERATOR_BASE_URL);
-            String configuredHost = configured.getHost();
-            return configuredHost != null
-                    && configuredHost.equalsIgnoreCase(host);
-        } catch (Exception ignored) {
-            return false;
-        }
+        return CURRENT_CLEAR_TEXT_LAN_HOST.equalsIgnoreCase(host);
     }
 }

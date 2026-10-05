@@ -66,7 +66,6 @@ public final class CiOverlayService extends Service {
     private CiContextProvider contextProvider;
     private CiContextHalo contextHalo;
     private CiGestureRouter gestureRouter;
-    private CiExternalAssistantAdapter externalAssistant;
     private org.json.JSONObject lastDisplayableResult;
     private long contextGeneration;
 
@@ -106,7 +105,6 @@ public final class CiOverlayService extends Service {
         resultProjection = new CiResultProjection(this, windowManager);
         contextProvider = new CiContextClient(this);
         gestureRouter = new CiGestureRouter();
-        externalAssistant = new ChatGptAndroidAdapter(this);
         contextHalo = new CiContextHalo(this, windowManager, new CiContextHalo.Callback() {
             @Override public void onCardTap(CiContextCard card) { handler.post(() -> handleContextCardTap(card)); }
             @Override public void onCardSwipe(CiContextCard card, String direction) { handler.post(() -> handleContextCardSwipe(card, direction)); }
@@ -172,7 +170,6 @@ public final class CiOverlayService extends Service {
         if (contextProvider != null) contextProvider.close();
         contextProvider = null;
         gestureRouter = null;
-        externalAssistant = null;
         clearContextHalo();
         contextHalo = null;
         clearResultProjection();
@@ -993,10 +990,8 @@ public final class CiOverlayService extends Service {
 
     private void executeResolvedAction(String action, org.json.JSONObject result) {
         if ("open_gpt".equals(action)) {
-            showAppOpeningAtCenter();
-            String status = launchCiGpt();
-            String detail = externalAssistant != null ? externalAssistant.id() : "external_assistant";
-            emitExecutionEvidence(action, status, detail, result);
+            emitExecutionEvidence(action, "blocked_offline", "external_assistant_disabled", result);
+            pulseError();
         } else if ("context_newer".equals(action)) {
             requestContext("context_newer", "up");
             emitExecutionEvidence(action, "resolved", "context_newer", result);
@@ -1185,15 +1180,6 @@ public final class CiOverlayService extends Service {
         ciLogo.animate().rotation(-7f).setDuration(70).withEndAction(() -> ciLogo.animate()
                 .rotation(7f).setDuration(90).withEndAction(() -> ciLogo.animate()
                         .rotation(0f).setDuration(90).withEndAction(() -> setState(stableStateFromPrefs())).start()).start()).start();
-    }
-
-    private void launchChatGpt() {
-        launchCiGpt();
-    }
-
-    private String launchCiGpt() {
-        if (externalAssistant == null) return "failed";
-        return externalAssistant.open();
     }
 
     private void hideCi() {

@@ -28,6 +28,7 @@ final class CiSwipeVisualLayer {
     private WindowManager.LayoutParams params;
     private ValueAnimator animator;
     private boolean callbackFired;
+    private boolean suppressCallback;
 
     CiSwipeVisualLayer(Context context, WindowManager windowManager) {
         this.context = context;
@@ -43,6 +44,7 @@ final class CiSwipeVisualLayer {
     }
 
     void clear() {
+        suppressCallback = true;
         if (animator != null) {
             animator.cancel();
             animator = null;
@@ -65,6 +67,7 @@ final class CiSwipeVisualLayer {
             Runnable onFormed
     ) {
         clear();
+        suppressCallback = false;
 
         int width = dp(WIDTH_DP);
         int height = dp(HEIGHT_DP);
@@ -116,7 +119,7 @@ final class CiSwipeVisualLayer {
         });
         animator.addListener(new AnimatorListenerAdapter() {
             @Override public void onAnimationEnd(Animator animation) {
-                if (!callbackFired) {
+                if (!suppressCallback && !callbackFired) {
                     callbackFired = true;
                     if (onFormed != null) onFormed.run();
                 }

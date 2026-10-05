@@ -36,7 +36,7 @@ class HomeRepairTests(unittest.TestCase):
              ]) as runner:
             result = home_repair.ensure_vault_rw("vault-test-001")
         self.assertTrue(result["ok"])
-        self.assertEqual(runner.call_args_list[1].args[0], ["sudo", "-n", "mount", str(home_repair.VAULT_ROOT)])
+        self.assertEqual(runner.call_args_list[1].args[0], ["sudo", "-n", "mount", str(home_repair.VAULT_MOUNT_ROOT)])
 
     def test_acceptance_refresh_updates_only_live_home_coordinates(self):
         with tempfile.TemporaryDirectory() as td:
@@ -52,7 +52,6 @@ class HomeRepairTests(unittest.TestCase):
                 "coordinates": [
                     {"id": "CI.ORANGE", "state": "VERIFIED"},
                     {"id": "CI.HOME", "state": "VERIFIED"},
-                    {"id": "CI.VAULT", "state": "VERIFIED"},
                     {"id": "CI.GITHUB", "state": "VERIFIED", "last_verified": "2026-01-01T00:00:00Z"},
                 ],
             }
@@ -64,8 +63,15 @@ class HomeRepairTests(unittest.TestCase):
             }
             current = acceptance_dir / "current.json"
             current.write_text(json.dumps(pointer), encoding="utf-8")
+            authority = root / "home_authority.json"
+            authority.write_text(json.dumps({
+                "kind": "owner",
+                "scope": "HOME.CI",
+                "source": "unit-test",
+                "externalAccess": False,
+            }), encoding="utf-8")
 
-            with patch.object(home_repair, "STATE", root / "state"),                  patch.object(home_repair, "ACCEPTANCE", current),                  patch.object(home_repair, "network_status", return_value={"ok": True, "linkUp": True}),                  patch.object(home_repair.vault_node, "status", return_value={"ok": True, "readable": True, "writable": True}):
+            with patch.object(home_repair, "STATE", root / "state"),                  patch.object(home_repair, "ACCEPTANCE", current),                  patch.object(home_repair, "HOME_AUTHORITY", authority),                  patch.object(home_repair, "network_status", return_value={"ok": True, "linkUp": True}),                  patch.object(home_repair.vault_node, "status", return_value={"ok": True, "root": str(home_repair.VAULT_ROOT), "readable": True, "writable": True, "writeProbe": {"ok": True, "evidence": "create_fsync_delete_probe"}}):
                 result = home_repair.refresh_acceptance("acceptance-test-001")
 
             self.assertTrue(result["ok"])
@@ -75,6 +81,10 @@ class HomeRepairTests(unittest.TestCase):
             self.assertIn("last_verified", rows["CI.ORANGE"])
             self.assertIn("last_verified", rows["CI.HOME"])
             self.assertIn("last_verified", rows["CI.VAULT"])
+            self.assertEqual(rows["CI.VAULT"]["state"], "VERIFIED")
+            self.assertEqual(rows["CI.VAULT"]["authority"]["kind"], "owner")
+            self.assertEqual(rows["CI.HOME"]["authority"]["scope"], "HOME.CI")
+            self.assertIn("create_fsync_delete_probe", rows["CI.VAULT"]["provenance"]["checks"])
             self.assertEqual(rows["CI.GITHUB"]["last_verified"], "2026-01-01T00:00:00Z")
 
 

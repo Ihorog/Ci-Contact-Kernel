@@ -332,6 +332,9 @@ def _build_personal_resource_audit(coordinate, connection, acceptance, reg):
     if state in {"BLOCKED", "UNAVAILABLE"}:
         verification_status = "BLOCKED"
         blocker = blocker or "resource_state_blocked"
+    elif state not in {"VERIFIED", "CALLABLE"}:
+        verification_status = "AVAILABLE_UNVERIFIED"
+        blocker = blocker or "resource_not_fully_verified"
     elif freshness.get("status") != "FRESH":
         verification_status = "STALE"
         blocker = blocker or freshness.get("reason") or "verification_stale"
@@ -405,11 +408,18 @@ def resolve(intent: str, target=None):
     evidence_current = freshness.get("status") == "FRESH"
     if selected == "CI.VAULT":
         live = vault_node.status()
-        state = "VERIFIED" if live.get("ok") else "UNAVAILABLE"
+        write_probe = live.get("writeProbe") if isinstance(live.get("writeProbe"), dict) else {}
+        live_rw = bool(live.get("ok") and live.get("writable") and write_probe.get("ok"))
+        if live_rw:
+            state = "VERIFIED"
+        elif live.get("ok"):
+            state = "VERIFIED_PARTIAL"
+        else:
+            state = "UNAVAILABLE"
         state_source = "live_probe"
         evidence = live
-        evidence_current = bool(live.get("ok"))
-        freshness = {"status": "FRESH" if live.get("ok") else "UNKNOWN", "source": "live_probe", "checkedAt": datetime.now(timezone.utc).isoformat()}
+        evidence_current = live_rw
+        freshness = {"status": "FRESH" if live_rw else "UNKNOWN", "source": "live_probe", "checkedAt": datetime.now(timezone.utc).isoformat()}
     if state == "BLOCKED":
         execution = "BLOCKED"
     elif selected == "CI.LINK":
@@ -419,6 +429,11 @@ def resolve(intent: str, target=None):
     else:
         execution = "DELEGATE_CONNECTOR"
     personal_resource = _build_personal_resource_audit(selected, connection, acceptance, reg)
+    if selected == "CI.VAULT" and state != "VERIFIED":
+        personal_resource = dict(personal_resource)
+        personal_resource["trusted"] = False
+        personal_resource["verification_status"] = "AVAILABLE_UNVERIFIED"
+        personal_resource["blocker"] = "vault_live_rw_probe_failed"
     candidate_execution = execution
     if personal_resource.get("personal_resource") and not personal_resource.get("trusted"):
         execution = "PERSONAL_TRUST_BLOCKED"

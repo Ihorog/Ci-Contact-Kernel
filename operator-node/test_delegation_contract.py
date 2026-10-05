@@ -135,6 +135,43 @@ class DelegationContractTest(unittest.TestCase):
         self.assertNotIn("authority", summary)
         self.assertNotIn("evidence", summary)
 
+    def test_vault_live_state_requires_write_probe(self):
+        with patch.object(ci_operator, "_acceptance", return_value=trusted_snapshot("CI.VAULT")), \
+             patch.object(ci_operator.vault_node, "status", return_value={
+                 "ok": True,
+                 "readable": True,
+                 "writable": False,
+                 "writeProbe": {"ok": False, "error": "write_failed"},
+             }):
+            result = ci_operator.resolve("стан Vault", "CI.VAULT")
+        self.assertEqual(result["state"], "VERIFIED_PARTIAL")
+        self.assertFalse(result["evidenceCurrent"])
+        self.assertEqual(result["execution"], "PERSONAL_TRUST_BLOCKED")
+        self.assertFalse(result["personalResource"]["trusted"])
+        self.assertEqual(result["personalResource"]["blocker"], "vault_live_rw_probe_failed")
+
+    def test_vault_live_state_is_verified_after_rw_probe(self):
+        with patch.object(ci_operator, "_acceptance", return_value=trusted_snapshot("CI.VAULT")), \
+             patch.object(ci_operator.vault_node, "status", return_value={
+                 "ok": True,
+                 "readable": True,
+                 "writable": True,
+                 "writeProbe": {"ok": True, "evidence": "create_fsync_delete_probe"},
+             }):
+            result = ci_operator.resolve("стан Vault", "CI.VAULT")
+        self.assertEqual(result["state"], "VERIFIED")
+        self.assertTrue(result["evidenceCurrent"])
+
+    def test_partial_personal_state_is_not_trusted_even_with_owner_authority(self):
+        snapshot = trusted_snapshot("CI.HOME")
+        snapshot["coordinates"][0]["state"] = "VERIFIED_PARTIAL"
+        with patch.object(ci_operator, "_acceptance", return_value=snapshot):
+            result = ci_operator.resource_audit("CI.HOME")
+        resource = result["resource"]
+        self.assertFalse(resource["trusted"])
+        self.assertEqual(resource["verification_status"], "AVAILABLE_UNVERIFIED")
+        self.assertEqual(resource["blocker"], "resource_not_fully_verified")
+
     def test_resource_audit_has_required_shape(self):
         with patch.object(ci_operator, "_acceptance", return_value=trusted_snapshot("CI.GITHUB")):
             result = ci_operator.resource_audit("CI.GITHUB")

@@ -9,11 +9,13 @@ from pathlib import Path
 
 import vault_node
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 STATE = Path("/home/kazkar/cit/state/home_repair")
 ACCEPTANCE = Path("/home/kazkar/cimeika/cit/registry/ci-registry/v1.1.0/acceptance/current.json")
 END0 = os.getenv("CI_HOME_PRIMARY_INTERFACE", "end0")
-VAULT_ROOT = Path(os.getenv("CI_VAULT_ROOT", "/mnt/cimeika_vault"))
+VAULT_ROOT = Path(os.getenv("CI_VAULT_ROOT", "/mnt/cimeika_vault/92482E5D482E3FF9"))
+VAULT_MOUNT_ROOT = Path(os.getenv("CI_VAULT_MOUNT_ROOT", "/mnt/cimeika_vault"))
+HOME_AUTHORITY = Path(os.getenv("CI_HOME_AUTHORITY_PATH", "/home/kazkar/cit/state/home_authority.json"))
 
 
 def _run(argv, timeout=12):
@@ -86,7 +88,10 @@ def _probe_vault_write():
     name = ".ci-write-probe-" + hashlib.sha256(str(time.time_ns()).encode()).hexdigest()[:12]
     probe = root / name
     try:
-        probe.write_bytes(b"ci")
+        with probe.open("xb") as handle:
+            handle.write(b"ci")
+            handle.flush()
+            os.fsync(handle.fileno())
         probe.unlink()
         return {"ok": True, "evidence": "create_fsync_delete_probe"}
     except Exception as exc:
@@ -95,12 +100,12 @@ def _probe_vault_write():
                 probe.unlink()
         except Exception:
             pass
-        return {"ok": False, "error": str(exc)[:240], "evidence": "create_delete_probe_failed"}
+        return {"ok": False, "error": str(exc)[:240], "evidence": "create_fsync_delete_probe_failed"}
 
 
 def home_status():
     vault = vault_node.status()
-    write_probe = _probe_vault_write() if vault.get("readable") else {"ok": False, "error": "vault_not_readable"}
+    write_probe = vault.get("writeProbe") if isinstance(vault.get("writeProbe"), dict) else (_probe_vault_write() if vault.get("readable") else {"ok": False, "error": "vault_not_readable"})
     return {
         "ok": bool(network_status().get("ok")),
         "version": VERSION,
@@ -122,6 +127,27 @@ def _atomic_json(path, body):
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(body, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     os.replace(tmp, path)
+
+
+def _load_home_authority():
+    try:
+        body = json.loads(HOME_AUTHORITY.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(body, dict):
+        return None
+    if str(body.get("kind", "")).lower() not in {"owner", "delegated"}:
+        return None
+    if body.get("scope") != "HOME.CI":
+        return None
+    if body.get("externalAccess") is not False:
+        return None
+    return {
+        "kind": str(body.get("kind")).lower(),
+        "scope": "HOME.CI",
+        "source": str(body.get("source") or "local_authority_marker"),
+        "externalAccess": False,
+    }
 
 
 def _cached(action, key):
@@ -179,18 +205,18 @@ def ensure_vault_rw(idempotency_key):
     if cached:
         return cached
     before = vault_node.status()
-    before_probe = _probe_vault_write() if before.get("readable") else {"ok": False, "error": "vault_not_readable"}
+    before_probe = before.get("writeProbe") if isinstance(before.get("writeProbe"), dict) else (_probe_vault_write() if before.get("readable") else {"ok": False, "error": "vault_not_readable"})
     if before.get("writable") and before_probe.get("ok"):
         return _finish(action, idempotency_key, {"ok": True, "executed": False, "verified": True, "before": {**before, "writeProbe": before_probe}, "after": {**before, "writeProbe": before_probe}, "evidence": "already_rw"})
-    findmnt = _run(["findmnt", "-n", "-o", "TARGET,FSTYPE,OPTIONS", str(VAULT_ROOT)])
+    findmnt = _run(["findmnt", "-n", "-o", "TARGET,FSTYPE,OPTIONS", str(VAULT_MOUNT_ROOT)])
     mounted = findmnt["rc"] == 0
     if not mounted:
-        mutation = _run(["sudo", "-n", "mount", str(VAULT_ROOT)], timeout=25)
+        mutation = _run(["sudo", "-n", "mount", str(VAULT_MOUNT_ROOT)], timeout=25)
     else:
-        mutation = _run(["sudo", "-n", "mount", "-o", "remount,rw", str(VAULT_ROOT)], timeout=25)
+        mutation = _run(["sudo", "-n", "mount", "-o", "remount,rw", str(VAULT_MOUNT_ROOT)], timeout=25)
     time.sleep(0.5)
     after = vault_node.status()
-    after_probe = _probe_vault_write() if after.get("readable") else {"ok": False, "error": "vault_not_readable"}
+    after_probe = after.get("writeProbe") if isinstance(after.get("writeProbe"), dict) else (_probe_vault_write() if after.get("readable") else {"ok": False, "error": "vault_not_readable"})
     ok = bool(after.get("writable") and after_probe.get("ok"))
     return _finish(action, idempotency_key, {
         "ok": ok,
@@ -200,7 +226,7 @@ def ensure_vault_rw(idempotency_key):
         "before": {**before, "writeProbe": before_probe, "findmnt": findmnt["stdout"] or None},
         "after": {**after, "writeProbe": after_probe},
         "mutation": {"rc": mutation["rc"], "stderr": mutation["stderr"] or None},
-        "evidence": "fstab_bounded_mount_then_live_write_probe",
+        "evidence": "fstab_mount_root_then_canonical_vault_write_probe",
     })
 
 
@@ -232,6 +258,14 @@ def refresh_acceptance(idempotency_key):
     network = network_status()
     vault = vault_node.status()
     coordinates = [dict(x) for x in snapshot.get("coordinates", []) if isinstance(x, dict)]
+    by_id = {row.get("id"): row for row in coordinates if row.get("id")}
+    for required_id in ("CI.ORANGE", "CI.HOME", "CI.VAULT"):
+        if required_id not in by_id:
+            row = {"id": required_id}
+            coordinates.append(row)
+            by_id[required_id] = row
+
+    authority = _load_home_authority()
     refreshed = []
     for row in coordinates:
         cid = row.get("id")
@@ -243,6 +277,8 @@ def refresh_acceptance(idempotency_key):
                 "provenance": {"source": "CI.OPERATOR.ORANGE", "checks": ["local_runtime"], "secret_material": False},
                 "blocker": None,
             })
+            if authority:
+                row["authority"] = authority
             refreshed.append(cid)
         elif cid == "CI.HOME":
             state = "VERIFIED" if network.get("linkUp") else "VERIFIED_PARTIAL"
@@ -253,17 +289,23 @@ def refresh_acceptance(idempotency_key):
                 "provenance": {"source": "CI.OPERATOR.ORANGE", "checks": ["network_status"], "secret_material": False},
                 "blocker": None if network.get("linkUp") else "ethernet_not_up",
             })
+            if authority:
+                row["authority"] = authority
             refreshed.append(cid)
         elif cid == "CI.VAULT":
-            state = "VERIFIED" if vault.get("ok") and vault.get("writable") else ("VERIFIED_PARTIAL" if vault.get("ok") else "BLOCKED")
+            write_probe = vault.get("writeProbe") if isinstance(vault.get("writeProbe"), dict) else {}
+            vault_rw = bool(vault.get("ok") and vault.get("writable") and write_probe.get("ok"))
+            state = "VERIFIED" if vault_rw else ("VERIFIED_PARTIAL" if vault.get("ok") else "BLOCKED")
             row.update({
                 "state": state,
                 "last_verified": now,
-                "access": ["read", "write"] if vault.get("writable") else (["read"] if vault.get("readable") else []),
-                "evidence": now + ": live vault filesystem probe; readable=" + str(bool(vault.get("readable"))) + "; writable=" + str(bool(vault.get("writable"))),
-                "provenance": {"source": "CI.OPERATOR.ORANGE", "checks": ["vault.status"], "secret_material": False},
-                "blocker": None if vault.get("writable") else "vault_not_rw",
+                "access": ["read", "write"] if vault_rw else (["read"] if vault.get("readable") else []),
+                "evidence": now + ": live vault filesystem+write probe; root=" + str(vault.get("root")) + "; readable=" + str(bool(vault.get("readable"))) + "; writable=" + str(vault_rw),
+                "provenance": {"source": "CI.OPERATOR.ORANGE", "checks": ["vault.status", "create_fsync_delete_probe"], "secret_material": False},
+                "blocker": None if vault_rw else "vault_not_rw",
             })
+            if authority:
+                row["authority"] = authority
             refreshed.append(cid)
     snapshot = dict(snapshot)
     snapshot["generated_at"] = now
@@ -313,7 +355,7 @@ def resource_trust_refresh(idempotency_key):
         "executed": True,
         "verified": True,
         "acceptance": {"snapshot": refreshed.get("snapshot"), "sha256": refreshed.get("sha256"), "refreshed": refreshed.get("refreshed")},
-        "note": "Trust is recomputed by ci_operator from refreshed evidence; missing authority is never invented.",
+        "note": "Trust is recomputed by ci_operator from refreshed evidence; authority is accepted only from the HOME.CI local authority marker.",
         "evidence": "acceptance_refreshed_for_resource_trust_recompute",
     })
 

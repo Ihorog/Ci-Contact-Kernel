@@ -16,8 +16,10 @@ or a reachable LAN node.
 - No public HTTPS endpoint is built into the Android core.
 - No ChatGPT/OpenAI package or URL is required or launched by the offline build.
 - No household IP address is hardcoded into the APK.
-- LAN transport is optional and disabled unless an explicit private-network endpoint
+- LAN/Wi-Fi transport is optional and disabled unless an explicit private-network endpoint
   is stored by the user/environment.
+- When configured, the network path is additive: local core remains available before,
+  during, and after a network failure.
 - Accepted explicit LAN hosts: localhost/127.0.0.1, 10/8, 172.16/12, 192.168/16.
 - Failure of an explicitly configured LAN endpoint falls back to the local core.
 

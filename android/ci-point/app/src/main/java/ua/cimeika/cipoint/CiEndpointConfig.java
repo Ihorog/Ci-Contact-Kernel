@@ -10,6 +10,7 @@ import java.util.List;
 final class CiEndpointConfig {
     private static final String PREFS = "ci_point";
     private static final String PREF_AI_ENDPOINT = "local_ai_endpoint";
+    private static final String TRUSTED_HOME_CI_BASE = "http://192.168.1.54:8791";
 
     private CiEndpointConfig() { }
 
@@ -23,6 +24,7 @@ final class CiEndpointConfig {
                 values.add(endpointFor(configured, path));
             }
         }
+        values.add(TRUSTED_HOME_CI_BASE + path);
         return new ArrayList<>(values);
     }
 

@@ -34,10 +34,6 @@ final class CiVoiceController {
         void onError(String error);
     }
 
-    private static final String PREFS = "ci_point";
-    private static final String PREF_AI_ENDPOINT = "local_ai_endpoint";
-    private static final String DEFAULT_AI_ENDPOINT = "http://192.168.1.38:8791/ci/intent";
-
     private final Context context;
     private final Callback callback;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -79,7 +75,7 @@ final class CiVoiceController {
                         if (closed || !conversationActive) return;
                         if (resumeAfterSpeech) {
                             resumeAfterSpeech = false;
-                            scheduleRetry(false, 220L);
+                            scheduleRetry(true, 220L);
                         }
                     });
                 }
@@ -186,14 +182,15 @@ final class CiVoiceController {
                         || error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE)
                         && preferOfflineActive) {
                     try { recognizer.cancel(); } catch (Exception ignored) { }
-                    scheduleRetry(false, 180L);
+                    conversationActive = false;
+                    callback.onError("offline_speech_pack_required");
                     return;
                 }
 
                 if (error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
                         || error == SpeechRecognizer.ERROR_NO_MATCH
                         || error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
-                    scheduleRetry(false, 320L);
+                    scheduleRetry(true, 320L);
                     return;
                 }
 
@@ -263,19 +260,21 @@ final class CiVoiceController {
                 body.put("conversation", true);
                 body.put("verified_resources", CiVerifiedResources.snapshot());
 
-                JSONObject result = null;
+                JSONObject result = resolveOfflineIntent(text);
                 Exception lastError = null;
-                for (String endpoint : CiEndpointConfig.candidates(context, "/ci/intent")) {
-                    try {
-                        result = postJson(endpoint, body);
-                        CiEndpointConfig.remember(context, endpoint);
-                        break;
-                    } catch (Exception exc) {
-                        lastError = exc;
+                if (result == null) {
+                    for (String endpoint : CiEndpointConfig.candidates(context, "/ci/intent")) {
+                        try {
+                            result = postJson(endpoint, body);
+                            CiEndpointConfig.remember(context, endpoint);
+                            break;
+                        } catch (Exception exc) {
+                            lastError = exc;
+                        }
                     }
                 }
                 if (result == null) {
-                    throw lastError != null ? lastError : new IllegalStateException("no_ci_endpoint");
+                    result = offlineFallback(text, lastError);
                 }
                 if (closed || !conversationActive) return;
                 callback.onResult(result);
@@ -297,6 +296,67 @@ final class CiVoiceController {
         });
     }
 
+    private JSONObject resolveOfflineIntent(String text) {
+        String value = text == null ? "" : text.trim().toLowerCase(Locale.ROOT);
+        if (value.isEmpty()) return offlineFallback("", null);
+
+        if (value.contains("контекст") || value.contains("покажи")) {
+            return localResult("materialize_context", "Показую локальний контекст.", text);
+        }
+        if (value.contains("далі") || value.contains("наступ")) {
+            return localResult("next_stage", "Далі.", text);
+        }
+        if (value.contains("назад") || value.contains("поперед")) {
+            return localResult("previous_state", "Назад.", text);
+        }
+        if (value.contains("згорни") || value.contains("сховай")) {
+            return localResult("collapse_all", "Згортаю контекст.", text);
+        }
+        if (value.contains("обнули") || value.contains("нуль")
+                || value.contains("очисти") || value.contains("скинь")) {
+            return localResult("zero_state", "Стан очищено.", text);
+        }
+        if (value.contains("інструмент")) {
+            return localResult("tools", "Локальні інструменти.", text);
+        }
+        return null;
+    }
+
+    private JSONObject offlineFallback(String text, Exception networkError) {
+        String answer = CiEndpointConfig.hasConfiguredLan(context)
+                ? "Локальний мережевий вузол недоступний. Працюю офлайн."
+                : "Офлайн ядро активне. Ця команда не входить до локального набору дій.";
+        JSONObject result = localResult("answer", answer, text);
+        try {
+            result.put("fallback", true);
+            if (networkError != null) {
+                result.put("lan_error", networkError.getClass().getSimpleName());
+            }
+        } catch (Exception ignored) { }
+        return result;
+    }
+
+    private JSONObject localResult(String action, String answer, String text) {
+        JSONObject result = new JSONObject();
+        try {
+            result.put("ok", true);
+            result.put("action", action);
+            result.put("answer", answer);
+            result.put("query", text == null ? "" : text);
+            result.put("processor", "ci-point-offline-core");
+            result.put("offline", true);
+            result.put("network_required", false);
+            result.put(
+                    "evidence",
+                    new JSONObject()
+                            .put("state", "local")
+                            .put("verified", true)
+                            .put("source", "ci-point-offline-core")
+            );
+        } catch (Exception ignored) { }
+        return result;
+    }
+
     private String spokenAnswer(JSONObject result) {
         String answer = result.optString("answer", "").trim();
         if (!answer.isEmpty()) return answer;
@@ -304,7 +364,7 @@ final class CiVoiceController {
             return "Потрібне твоє підтвердження.";
         }
         String action = result.optString("action", "answer");
-        if ("open_gpt".equals(action)) return "Відкриваю GPT.";
+        if ("open_gpt".equals(action)) return "Зовнішній GPT вимкнено в офлайн режимі.";
         if ("previous".equals(action) || "previous_state".equals(action)) return "Назад.";
         if ("next".equals(action) || "next_stage".equals(action)) return "Далі.";
         if ("context_newer".equals(action)) return "Показую новіший контекст.";

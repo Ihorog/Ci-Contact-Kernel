@@ -136,6 +136,7 @@ forbid(voice, 'scheduleRetry(false', "online speech-recognition fallback")
 need(endpoint, "isExplicitLanEndpoint", "explicit private-LAN gate")
 need(voice, '"ci-point-offline-core"', "offline intent resolver")
 need(resources, '"network_required", false', "offline resource state")
+need(resources, '"network_optional", true', "optional network state")
 need(offline_docs, "Core behavior MUST work with airplane mode enabled", "offline acceptance contract")
 if workflow.count(".github/scripts/ci-presence-contract-audit.py") < 2:
     errors.append("MISSING Presence audit path coverage for both PR and main push")

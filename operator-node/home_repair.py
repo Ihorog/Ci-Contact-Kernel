@@ -15,6 +15,7 @@ ACCEPTANCE = Path("/home/kazkar/cimeika/cit/registry/ci-registry/v1.1.0/acceptan
 END0 = os.getenv("CI_HOME_PRIMARY_INTERFACE", "end0")
 VAULT_ROOT = Path(os.getenv("CI_VAULT_ROOT", "/mnt/cimeika_vault/92482E5D482E3FF9"))
 VAULT_MOUNT_ROOT = Path(os.getenv("CI_VAULT_MOUNT_ROOT", "/mnt/cimeika_vault"))
+HOME_AUTHORITY = Path(os.getenv("CI_HOME_AUTHORITY_PATH", "/home/kazkar/cit/state/home_authority.json"))
 
 
 def _run(argv, timeout=12):
@@ -123,6 +124,27 @@ def _atomic_json(path, body):
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(body, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     os.replace(tmp, path)
+
+
+def _load_home_authority():
+    try:
+        body = json.loads(HOME_AUTHORITY.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(body, dict):
+        return None
+    if str(body.get("kind", "")).lower() not in {"owner", "delegated"}:
+        return None
+    if body.get("scope") != "HOME.CI":
+        return None
+    if body.get("externalAccess") is not False:
+        return None
+    return {
+        "kind": str(body.get("kind")).lower(),
+        "scope": "HOME.CI",
+        "source": str(body.get("source") or "local_authority_marker"),
+        "externalAccess": False,
+    }
 
 
 def _cached(action, key):
@@ -240,12 +262,7 @@ def refresh_acceptance(idempotency_key):
             coordinates.append(row)
             by_id[required_id] = row
 
-    authority = {
-        "kind": "owner",
-        "scope": "HOME.CI",
-        "source": "explicit_local_owner_authorization",
-        "externalAccess": False,
-    }
+    authority = _load_home_authority()
     refreshed = []
     for row in coordinates:
         cid = row.get("id")
@@ -253,22 +270,24 @@ def refresh_acceptance(idempotency_key):
             row.update({
                 "state": "VERIFIED",
                 "last_verified": now,
-                "authority": authority,
                 "evidence": now + ": direct Orange runtime acceptance refresh",
                 "provenance": {"source": "CI.OPERATOR.ORANGE", "checks": ["local_runtime"], "secret_material": False},
                 "blocker": None,
             })
+            if authority:
+                row["authority"] = authority
             refreshed.append(cid)
         elif cid == "CI.HOME":
             state = "VERIFIED" if network.get("linkUp") else "VERIFIED_PARTIAL"
             row.update({
                 "state": state,
                 "last_verified": now,
-                "authority": authority,
                 "evidence": now + ": end0 live probe; linkUp=" + str(bool(network.get("linkUp"))),
                 "provenance": {"source": "CI.OPERATOR.ORANGE", "checks": ["network_status"], "secret_material": False},
                 "blocker": None if network.get("linkUp") else "ethernet_not_up",
             })
+            if authority:
+                row["authority"] = authority
             refreshed.append(cid)
         elif cid == "CI.VAULT":
             write_probe = vault.get("writeProbe") if isinstance(vault.get("writeProbe"), dict) else {}
@@ -277,12 +296,13 @@ def refresh_acceptance(idempotency_key):
             row.update({
                 "state": state,
                 "last_verified": now,
-                "authority": authority,
                 "access": ["read", "write"] if vault_rw else (["read"] if vault.get("readable") else []),
                 "evidence": now + ": live vault filesystem+write probe; root=" + str(vault.get("root")) + "; readable=" + str(bool(vault.get("readable"))) + "; writable=" + str(vault_rw),
                 "provenance": {"source": "CI.OPERATOR.ORANGE", "checks": ["vault.status", "create_fsync_delete_probe"], "secret_material": False},
                 "blocker": None if vault_rw else "vault_not_rw",
             })
+            if authority:
+                row["authority"] = authority
             refreshed.append(cid)
     snapshot = dict(snapshot)
     snapshot["generated_at"] = now
@@ -332,7 +352,7 @@ def resource_trust_refresh(idempotency_key):
         "executed": True,
         "verified": True,
         "acceptance": {"snapshot": refreshed.get("snapshot"), "sha256": refreshed.get("sha256"), "refreshed": refreshed.get("refreshed")},
-        "note": "Trust is recomputed by ci_operator from refreshed evidence; missing authority is never invented.",
+        "note": "Trust is recomputed by ci_operator from refreshed evidence; authority is accepted only from the HOME.CI local authority marker.",
         "evidence": "acceptance_refreshed_for_resource_trust_recompute",
     })
 

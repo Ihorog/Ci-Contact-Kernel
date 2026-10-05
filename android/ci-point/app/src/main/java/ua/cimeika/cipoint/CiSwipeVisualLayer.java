@@ -69,9 +69,9 @@ final class CiSwipeVisualLayer {
         clear();
         suppressCallback = false;
 
-        int width = dp(WIDTH_DP);
-        int height = dp(HEIGHT_DP);
         int edge = dp(8);
+        int width = Math.max(1, Math.min(dp(WIDTH_DP), screenWidth - edge * 2));
+        int height = Math.max(1, Math.min(dp(HEIGHT_DP), screenHeight - edge * 2));
         float anchorCenterX = anchorX + pointSize / 2f;
         float anchorCenterY = anchorY + pointSize / 2f;
 
@@ -102,6 +102,9 @@ final class CiSwipeVisualLayer {
         params.gravity = Gravity.TOP | Gravity.START;
         params.x = x;
         params.y = y;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            params.alpha = 0.79f;
+        }
         windowManager.addView(view, params);
 
         callbackFired = false;

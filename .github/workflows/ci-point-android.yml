@@ -127,7 +127,7 @@ jobs:
           set -euo pipefail
           mv delivery/app-debug.apk delivery/Ci-Point-v0.5.3.apk
           sha256sum delivery/Ci-Point-v0.5.3.apk
-          if gh release view "$TAG" >/dev/null 2>&1; then
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $TAG already exists; refusing to replace an immutable versioned APK."
             exit 0
           fi

@@ -12,7 +12,7 @@ BACKUPS=TARGET/'.backups'
 SOURCE=os.getenv('CI_OPERATOR_UPDATE_SOURCE','local').strip().lower()
 CORE=['ci_operator.py','provider_adapters.py','ci_operator_runtime.py','operator_telemetry.py',
       'queue_contract.py','vault_node.py','release_manager.py','self_update.py','mcp_probe.py',
-      'technical_model.py','ci_pipeline.py','organism_biology.py','local_selftest.py']
+      'technical_model.py','ci_pipeline.py','organism_biology.py','local_selftest.py','home_repair.py']
 OPTIONAL=['executor_mesh.py','evidence_aggregator.py','ci_orchestrator.py','executor_queue_server.py']
 ALLOWED=CORE+OPTIONAL
 SHA_RE=re.compile(r'^[0-9a-f]{40}$')

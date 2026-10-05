@@ -35,6 +35,8 @@ def main():
         " tooldef('ci_operator_update','Оновити runtime Ci Operator','Update only allowlisted Orange runtime modules from an exact 40-character commit SHA in Ihorog/Ci-Contact-Kernel.',{'type':'object','properties':{'commit':{'type':'string','pattern':'^[0-9a-f]{40}$'},'activate':{'type':'boolean','default':False}},'required':['commit']},scope='act',read_only=False,open_world=True),",
         " tooldef('ci_operator_release','Реліз Ci Operator','Atomically deploy an exact canonical Git commit to Orange runtime and MCP connector with compile checks, rollback backups and optional supervised restart.',{'type':'object','properties':{'commit':{'type':'string','pattern':'^[0-9a-f]{40}$'},'activate':{'type':'boolean','default':False}},'required':['commit']},scope='act',read_only=False,open_world=True),",
         " tooldef('ci_operator_metrics','Метрики Ci Operator','Return PII-safe execution KPIs from Orange telemetry: success, evidence completeness, fallback, executed rate and latency percentiles.',{'type':'object','properties':{'limit':{'type':'integer','minimum':1,'maximum':5000,'default':500}}},read_only=True,open_world=False),",
+        " tooldef('ci_home_status','Стан HOME.CI','Read live end0 and CI.VAULT state directly on Orange.',{'type':'object','properties':{}},read_only=True,open_world=False),",
+        " tooldef('ci_home_repair','Відновити HOME.CI','Execute one narrowly allowlisted HOME repair action with idempotency and live verification.',{'type':'object','properties':{'action':{'type':'string','enum':['network.ensure_end0','vault.ensure_rw','acceptance.refresh','resource_trust.refresh']},'idempotency_key':{'type':'string','minLength':8,'maxLength':200}},'required':['action','idempotency_key']},scope='act',read_only=False,open_world=False),",
     ]
     for tool in tools:
         name = tool.split("tooldef('", 1)[1].split("'", 1)[0]
@@ -53,6 +55,8 @@ def main():
         ("ci_operator_update", "    if name=='ci_operator_update': return ci_operator.operator_update(args.get('commit',''),args.get('activate',False))"),
         ("ci_operator_release", "    if name=='ci_operator_release': return ci_operator.operator_release(args.get('commit',''),args.get('activate',False))"),
         ("ci_operator_metrics", "    if name=='ci_operator_metrics': return ci_operator.metrics(args.get('limit',500))"),
+        ("ci_home_status", "    if name=='ci_home_status': return ci_operator.home_status()"),
+        ("ci_home_repair", "    if name=='ci_home_repair': return ci_operator.home_repair_action(args.get('action',''),args.get('idempotency_key',''))"),
     ]
     for name, call in calls:
         if f"if name=='{name}'" not in source:
@@ -67,7 +71,7 @@ def main():
     ]:
         source = source.replace(
             old,
-            "return 'ci:act' if name in {'ci_plan','ci_action','ci_memory_append','ci_dispatch','ci_operator_update','ci_operator_release','ci_vault_write'} else 'ci:read'",
+            "return 'ci:act' if name in {'ci_plan','ci_action','ci_memory_append','ci_dispatch','ci_operator_update','ci_operator_release','ci_vault_write','ci_home_repair'} else 'ci:read'",
         )
 
     for old in ('1.2.0', '1.3.0', '1.4.0', '1.5.0', '1.6.0', '1.7.0'):
@@ -85,8 +89,9 @@ def main():
     ]
     new_instructions = (
         "Use ci_resolve for routing and ci_delegate for already-known operation-to-node binding. The user device is a thin surface; execution happens on external Ci nodes. "
-        "Safe registered operations may proceed automatically with evidence; gated operations keep the bound executor and request only permission. Use ci_operator_release for a complete pinned Orange release; ci_operator_update is runtime-only. "
-        "Use ci_vault_read/ci_vault_write for CI.VAULT operations; delete requires explicit confirmDelete. Use ci_operator_metrics for PII-safe operational KPI evidence. Require live evidence for execution."
+        "Safe registered operations may proceed automatically with evidence; gated operations keep the bound executor and request only permission. Use ci_home_status before HOME repair and ci_home_repair only for the four allowlisted idempotent HOME actions; never substitute arbitrary shell. "
+        "Use ci_operator_release for a complete pinned Orange release; ci_operator_update is runtime-only. Use ci_vault_read/ci_vault_write for normal CI.VAULT content operations; delete requires explicit confirmDelete. "
+        "Use ci_operator_metrics for PII-safe operational KPI evidence. Require live evidence for execution."
     )
     for old in instruction_candidates:
         source = source.replace(old, new_instructions)

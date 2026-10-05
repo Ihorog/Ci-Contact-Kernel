@@ -3,7 +3,6 @@ package ua.cimeika.cipoint;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
-import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -105,8 +104,8 @@ final class CiContextHalo {
         card.setEllipsize(android.text.TextUtils.TruncateAt.END);
         card.setPadding(dp(24), dp(8), dp(24), dp(8));
         card.setContentDescription("Сі: " + model.label);
-        card.setBackground(backgroundFor(model));
-        card.setElevation(dp(14));
+        card.setBackgroundColor(Color.TRANSPARENT);
+        card.setElevation(0f);
         card.setAlpha(0f);
         card.setScaleX(0.82f);
         card.setScaleY(0.82f);
@@ -128,19 +127,9 @@ final class CiContextHalo {
         windowManager.addView(card, p);
 
         long delay = 25L + index * 45L;
-        card.animate().alpha(0.96f).scaleX(1f).scaleY(1f)
-                .translationZ(dp(10 + index * 2))
+        card.animate().alpha(CiPresenceSpec.CONTENT_ALPHA).scaleX(1f).scaleY(1f)
+                .translationZ(0f)
                 .setStartDelay(delay).setDuration(170L).start();
-    }
-
-    private Drawable backgroundFor(CiContextCard card) {
-        int alpha = "predicted".equals(card.state) ? 174 : 214;
-        if ("past".equals(card.state)) alpha = 156;
-        return new CiHexagonDrawable(
-                Color.argb(alpha, 15, 18, 24),
-                Color.argb(92, 255, 255, 255),
-                dp(1)
-        );
     }
 
     private void attachTouch(TextView view, CiContextCard model) {
@@ -183,11 +172,13 @@ final class CiContextHalo {
         int cardWidth = dp(CARD_WIDTH_DP);
         int cardHeight = dp(CARD_HEIGHT_DP);
         int gap = dp(GAP_DP);
-        int x = anchorX - cardWidth - gap;
-        if (index == 1) x -= dp(10);
+        int edge = dp(EDGE_DP);
+        boolean opensLeft = anchorX - cardWidth - gap - dp(10) >= edge;
+        int x = opensLeft
+                ? anchorX - cardWidth - gap - (index == 1 ? dp(10) : 0)
+                : anchorX + pointSize + gap + (index == 1 ? dp(10) : 0);
         int yOffset = (index - 1) * dp(ARC_STEP_DP);
         int y = anchorY + pointSize / 2 - cardHeight / 2 + yOffset;
-        int edge = dp(EDGE_DP);
         p.x = Math.max(edge, Math.min(x, screenWidth - cardWidth - edge));
         p.y = Math.max(edge, Math.min(y, screenHeight - cardHeight - edge));
     }

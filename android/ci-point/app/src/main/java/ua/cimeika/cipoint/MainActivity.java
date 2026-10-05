@@ -61,7 +61,19 @@ public final class MainActivity extends Activity {
 
     private void startCi() {
         Intent serviceIntent = new Intent(this, CiOverlayService.class);
-        serviceIntent.setAction(CiOverlayService.ACTION_SHOW);
+        boolean debugBuild =
+                (getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+        String presenceState = debugBuild && getIntent() != null
+                ? getIntent().getStringExtra("ci_presence_state")
+                : null;
+        if (presenceState != null && !presenceState.trim().isEmpty()) {
+            serviceIntent.setAction(CiOverlayService.ACTION_CI_ACTIVITY);
+            serviceIntent.putExtra("state", presenceState);
+            serviceIntent.putExtra("target_x", getIntent().getFloatExtra("target_x", Float.NaN));
+            serviceIntent.putExtra("target_y", getIntent().getFloatExtra("target_y", Float.NaN));
+        } else {
+            serviceIntent.setAction(CiOverlayService.ACTION_SHOW);
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(serviceIntent);
         else startService(serviceIntent);
         finish();

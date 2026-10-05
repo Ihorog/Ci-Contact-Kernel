@@ -570,7 +570,7 @@ public final class CiOverlayService extends Service {
                         pointParams.x, pointParams.y, pointSize,
                         metrics.widthPixels, metrics.heightPixels,
                         () -> {
-                            if (overlayState != OverlayState.HIDDEN) performCiClick();
+                            if (overlayState != OverlayState.HIDDEN) activateVoiceFromSwipe();
                         }
                 );
             } else {
@@ -686,6 +686,20 @@ public final class CiOverlayService extends Service {
         float tx = "left".equals(dockSide) ? -dp(18) : dp(18);
         ciLogo.animate().translationX(tx).alpha(0.16f).scaleX(0.82f).scaleY(0.82f).setDuration(150)
                 .withEndAction(this::hideCi).start();
+    }
+
+    private void activateVoiceFromSwipe() {
+        if (ciLogo != null) {
+            ciLogo.animate().cancel();
+            ciLogo.setTranslationX(0f);
+            ciLogo.setTranslationY(0f);
+            ciLogo.setRotationX(0f);
+            ciLogo.setRotationY(0f);
+            ciLogo.setScaleX(1f);
+            ciLogo.setScaleY(1f);
+            ciLogo.setTranslationZ(dp(8));
+        }
+        performCiClick();
     }
 
     private void performCiClick() {

@@ -405,11 +405,18 @@ def resolve(intent: str, target=None):
     evidence_current = freshness.get("status") == "FRESH"
     if selected == "CI.VAULT":
         live = vault_node.status()
-        state = "VERIFIED" if live.get("ok") else "UNAVAILABLE"
+        write_probe = live.get("writeProbe") if isinstance(live.get("writeProbe"), dict) else {}
+        live_rw = bool(live.get("ok") and live.get("writable") and write_probe.get("ok"))
+        if live_rw:
+            state = "VERIFIED"
+        elif live.get("ok"):
+            state = "VERIFIED_PARTIAL"
+        else:
+            state = "UNAVAILABLE"
         state_source = "live_probe"
         evidence = live
-        evidence_current = bool(live.get("ok"))
-        freshness = {"status": "FRESH" if live.get("ok") else "UNKNOWN", "source": "live_probe", "checkedAt": datetime.now(timezone.utc).isoformat()}
+        evidence_current = live_rw
+        freshness = {"status": "FRESH" if live_rw else "UNKNOWN", "source": "live_probe", "checkedAt": datetime.now(timezone.utc).isoformat()}
     if state == "BLOCKED":
         execution = "BLOCKED"
     elif selected == "CI.LINK":

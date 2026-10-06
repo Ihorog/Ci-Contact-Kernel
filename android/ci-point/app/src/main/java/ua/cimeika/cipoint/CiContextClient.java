@@ -330,17 +330,18 @@ final class CiContextClient implements CiContextProvider {
             result.put("selected_card_id", card.optString("id", ""));
             result.put("context_state", state);
 
-            boolean historyVerified = "past".equals(state);
+            boolean fromHistory = "past".equals(state);
             result.put(
                     "evidence",
                     new JSONObject()
                             .put(
                                     "state",
-                                    historyVerified
-                                            ? "local_history_resolved"
+                                    fromHistory
+                                            ? "local_history_replayed"
                                             : "local_context_resolved"
                             )
-                            .put("verified", historyVerified)
+                            .put("verified", false)
+                            .put("recorded_history", fromHistory)
                             .put("source", "ci-operation-registry")
                             .put("execution_plane", "device_offline")
             );

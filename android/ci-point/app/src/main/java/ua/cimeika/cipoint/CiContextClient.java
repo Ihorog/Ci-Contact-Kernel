@@ -269,7 +269,11 @@ final class CiContextClient implements CiContextProvider {
         JSONObject state = body.optJSONObject("context");
         if (state == null) state = new JSONObject();
 
-        JSONObject historyPayload = localContextEngine.materialize(gesture, state);
+        JSONObject historyPayload = localContextEngine.materialize(
+                gesture,
+                state,
+                body.optString("operation_id", "")
+        );
         if (historyPayload.optInt("history_depth", 0) > 0) {
             return historyPayload;
         }

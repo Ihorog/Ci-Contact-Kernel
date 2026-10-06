@@ -67,6 +67,7 @@ public final class CiOverlayService extends Service {
     private CiExternalAssistantAdapter externalAssistant;
     private org.json.JSONObject lastDisplayableResult;
     private long contextGeneration;
+    private long interactionGeneration;
 
     private enum OverlayState { PASSIVE, CONTEXT, MOVE, DOCKED, PULSE, HIDDEN }
     private OverlayState overlayState = OverlayState.PASSIVE;
@@ -233,6 +234,8 @@ public final class CiOverlayService extends Service {
     private boolean onPointTouch(View view, MotionEvent event) {
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
+                interactionGeneration++;
+                if (swipeVisuals != null) swipeVisuals.clear();
                 downRawX = event.getRawX();
                 downRawY = event.getRawY();
                 downTime = System.currentTimeMillis();
@@ -516,6 +519,7 @@ public final class CiOverlayService extends Service {
     }
 
     private void animateSwipe(float dx, float dy, long duration) {
+        final long gestureGeneration = interactionGeneration;
         String direction = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? "right" : "left") : (dy >= 0 ? "down" : "up");
         cancelPendingTapActivation();
         if (overlayState == OverlayState.HIDDEN) {
@@ -556,7 +560,8 @@ public final class CiOverlayService extends Service {
                         pointParams.x, pointParams.y, pointSize,
                         metrics.widthPixels, metrics.heightPixels,
                         () -> {
-                            if (overlayState != OverlayState.HIDDEN) {
+                            if (gestureGeneration == interactionGeneration
+                                    && overlayState != OverlayState.HIDDEN) {
                                 requestContext("materialize_context", "left");
                             }
                         }
@@ -579,7 +584,10 @@ public final class CiOverlayService extends Service {
                         pointParams.x, pointParams.y, pointSize,
                         metrics.widthPixels, metrics.heightPixels,
                         () -> {
-                            if (overlayState != OverlayState.HIDDEN) activateVoiceFromSwipe();
+                            if (gestureGeneration == interactionGeneration
+                                    && overlayState != OverlayState.HIDDEN) {
+                                activateVoiceFromSwipe();
+                            }
                         }
                 );
             } else {

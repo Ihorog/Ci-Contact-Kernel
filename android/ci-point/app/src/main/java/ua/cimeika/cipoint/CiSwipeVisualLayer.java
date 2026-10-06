@@ -29,6 +29,7 @@ final class CiSwipeVisualLayer {
     private ValueAnimator animator;
     private boolean callbackFired;
     private boolean suppressCallback;
+    private long generation;
 
     CiSwipeVisualLayer(Context context, WindowManager windowManager) {
         this.context = context;
@@ -44,6 +45,7 @@ final class CiSwipeVisualLayer {
     }
 
     void clear() {
+        generation++;
         suppressCallback = true;
         if (animator != null) {
             animator.cancel();
@@ -67,6 +69,7 @@ final class CiSwipeVisualLayer {
             Runnable onFormed
     ) {
         clear();
+        final long visualGeneration = generation;
         suppressCallback = false;
 
         int edge = dp(8);
@@ -115,17 +118,22 @@ final class CiSwipeVisualLayer {
             if (view == null) return;
             float p = (float) a.getAnimatedValue();
             view.setProgress(p);
-            if (!callbackFired && p >= 0.70f) {
+            if (generation == visualGeneration
+                    && !callbackFired
+                    && p >= 0.70f) {
                 callbackFired = true;
                 if (onFormed != null) onFormed.run();
             }
         });
         animator.addListener(new AnimatorListenerAdapter() {
             @Override public void onAnimationEnd(Animator animation) {
-                if (!suppressCallback && !callbackFired) {
+                if (generation == visualGeneration
+                        && !suppressCallback
+                        && !callbackFired) {
                     callbackFired = true;
                     if (onFormed != null) onFormed.run();
                 }
+                if (generation != visualGeneration) return;
                 if (view != null) {
                     try { windowManager.removeView(view); } catch (Exception ignored) { }
                 }

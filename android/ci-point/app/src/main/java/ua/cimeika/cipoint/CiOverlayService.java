@@ -404,8 +404,26 @@ public final class CiOverlayService extends Service {
         watchHalo.setVoiceState(CiWatchHalo.STATE_READY);
         vibrate();
         emitSemanticGesture("voice_ready", "up");
+
         handler.postDelayed(() -> {
             if (watchHalo == null || !watchHalo.isVisible()) return;
+
+            String handoff = launchCiGpt();
+            Intent event = new Intent(ACTION_CI_RESULT);
+            event.putExtra("timestamp", System.currentTimeMillis());
+            event.putExtra("source", "ci-watch-halo");
+            event.putExtra("phase", "voice_handoff");
+            event.putExtra("action", "open_chatgpt_account");
+            event.putExtra("status", handoff);
+            sendBroadcast(event);
+
+            if (handoff != null && handoff.startsWith("accepted_")) {
+                // ChatGPT owns microphone/session after the explicit user gesture.
+                // Ci keeps only the visual READY state; there is no background mic in Ci.
+                return;
+            }
+
+            // Functional fallback when ChatGPT is unavailable.
             performCiClick();
         }, 160L);
     }

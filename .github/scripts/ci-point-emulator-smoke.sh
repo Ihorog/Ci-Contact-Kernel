@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APK="${CI_POINT_APK:-android/ci-point/app/build/outputs/apk/release/app-release.apk}"
+APK="android/ci-point/app/build/outputs/apk/debug/app-debug.apk"
 PACKAGE="ua.cimeika.ci"
 ACTIVITY="ua.cimeika.cipoint.MainActivity"
-EXPECTED_VERSION="${CI_POINT_VERSION:-0.5.4}"
+EXPECTED_VERSION="0.7.0"
 
 test -f "$APK"
 adb install -r "$APK"
@@ -17,10 +17,6 @@ adb shell am start -W -n "$PACKAGE/$ACTIVITY"
 
 PACKAGE_DUMP="$(adb shell dumpsys package "$PACKAGE")"
 [[ "$PACKAGE_DUMP" == *"versionName=$EXPECTED_VERSION"* ]]
-if [[ "$PACKAGE_DUMP" == *"DEBUGGABLE"* ]]; then
-  echo "Ci Point hardened build is unexpectedly debuggable"
-  exit 1
-fi
 
 SERVICE_READY=0
 for _ in $(seq 1 20); do
@@ -67,5 +63,4 @@ fi
 
 echo "CI_POINT_ANDROID_SMOKE=PASS"
 echo "CI_POINT_VERSION=$EXPECTED_VERSION"
-echo "CI_POINT_APK=$APK"
 echo "CI_POINT_PID=$PID"

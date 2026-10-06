@@ -11,6 +11,8 @@ import org.json.JSONObject;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 final class CiOperationRegistry extends SQLiteOpenHelper {
@@ -137,6 +139,32 @@ final class CiOperationRegistry extends SQLiteOpenHelper {
             out.put("contract", "ci-intent-authorization-registry/v1");
         } catch (Exception ignored) {
             return new JSONObject();
+        } finally {
+            cursor.close();
+        }
+        return out;
+    }
+
+    List<String> pendingCloudSync(int limit, String excludeOperationId) {
+        List<String> out = new ArrayList<>();
+        int safeLimit = Math.max(1, Math.min(limit, 16));
+        Cursor cursor = getReadableDatabase().query(
+                TABLE,
+                new String[]{"operation_id"},
+                "cloud_sync IN ('pending','deferred')" +
+                        (excludeOperationId == null || excludeOperationId.isEmpty()
+                                ? ""
+                                : " AND operation_id<>?"),
+                excludeOperationId == null || excludeOperationId.isEmpty()
+                        ? null
+                        : new String[]{excludeOperationId},
+                null,
+                null,
+                "updated_at_ms ASC",
+                Integer.toString(safeLimit)
+        );
+        try {
+            while (cursor.moveToNext()) out.add(cursor.getString(0));
         } finally {
             cursor.close();
         }

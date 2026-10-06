@@ -10,6 +10,8 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 
 final class CiVerifiedResources {
+    private static final String STATUS_ENDPOINT =
+            BuildConfig.CI_OPERATOR_HEALTH_URL;
     private static final long CACHE_MS = 60_000L;
     private static final long RETRY_BACKOFF_MS = 120_000L;
 
@@ -73,18 +75,13 @@ final class CiVerifiedResources {
     }
 
     private static JSONObject fetch() throws Exception {
-        URL endpoint = new URL(BuildConfig.CI_OPERATOR_HEALTH_URL);
-        if (!"https".equalsIgnoreCase(endpoint.getProtocol())) {
-            throw new IllegalStateException("health_endpoint_requires_https");
-        }
-
         HttpURLConnection connection =
-                (HttpURLConnection) endpoint.openConnection();
+                (HttpURLConnection) new URL(STATUS_ENDPOINT).openConnection();
         connection.setRequestMethod("GET");
         connection.setConnectTimeout(2500);
         connection.setReadTimeout(4000);
         connection.setRequestProperty("Accept", "application/json");
-        connection.setRequestProperty("User-Agent", "CiPoint/0.5.4");
+        connection.setRequestProperty("User-Agent", "CiPoint/0.7.0");
 
         int status = connection.getResponseCode();
         InputStream stream = status >= 200 && status < 300

@@ -191,3 +191,195 @@ def metrics(limit=500):
     value["node"] = NODE_ID
     value["operatorRuntimeVersion"] = VERSION
     return value
+
+
+# --- H8: one-time sealed secret transfer (values are never returned or logged) ---
+import base64 as _b64
+import hashlib as _hashlib
+import json as _json
+import os as _os
+import re as _re
+import secrets as _secrets
+import subprocess as _subprocess
+from pathlib import Path as _Path
+
+SECRETS_DIR = _Path('/home/kazkar/cit/state/.ci-secrets')
+PENDING_DIR = SECRETS_DIR / '.pending'
+SECRET_TTL = 900
+_NAME_RE = _re.compile(r'^[A-Za-z0-9_]{1,64}$')
+_RID_RE = _re.compile(r'^[a-f0-9]{32}$')
+
+
+def _secret_dirs():
+    old = _os.umask(0o077)
+    try:
+        for d in (SECRETS_DIR, PENDING_DIR):
+            d.mkdir(parents=True, exist_ok=True)
+            _os.chmod(d, 0o700)
+    finally:
+        _os.umask(old)
+
+
+def _purge_pending():
+    now = time.time()
+    for p in PENDING_DIR.glob('*'):
+        try:
+            if now - p.stat().st_mtime > SECRET_TTL:
+                p.unlink()
+        except OSError:
+            pass
+
+
+def _crypto_backend():
+    try:
+        from cryptography.hazmat.primitives.asymmetric import rsa, padding  # noqa: F401
+        return 'cryptography'
+    except Exception:
+        return 'openssl'
+
+
+def secret_keygen(name: str):
+    try:
+        if not isinstance(name, str) or not _NAME_RE.fullmatch(name):
+            return {'ok': False, 'error': 'invalid_name'}
+        _secret_dirs(); _purge_pending()
+        rid = _secrets.token_hex(16)
+        key_path = PENDING_DIR / f'{rid}.key'
+        backend = _crypto_backend()
+        old = _os.umask(0o077)
+        try:
+            if backend == 'cryptography':
+                from cryptography.hazmat.primitives.asymmetric import rsa
+                from cryptography.hazmat.primitives import serialization
+                key = rsa.generate_private_key(public_exponent=65537, key_size=3072)
+                pem = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                                        serialization.NoEncryption())
+                fd = _os.open(str(key_path), _os.O_WRONLY | _os.O_CREAT | _os.O_EXCL, 0o600)
+                with _os.fdopen(fd, 'wb') as f:
+                    f.write(pem)
+                pub = key.public_key().public_bytes(serialization.Encoding.PEM,
+                                                    serialization.PublicFormat.SubjectPublicKeyInfo).decode()
+            else:
+                p = _subprocess.run(['openssl', 'genpkey', '-algorithm', 'RSA', '-pkeyopt', 'rsa_keygen_bits:3072',
+                                     '-out', str(key_path)], capture_output=True, timeout=120)
+                if p.returncode:
+                    return {'ok': False, 'error': 'keygen_failed', 'backend': backend}
+                _os.chmod(key_path, 0o600)
+                p = _subprocess.run(['openssl', 'pkey', '-in', str(key_path), '-pubout'], capture_output=True, timeout=30)
+                if p.returncode:
+                    key_path.unlink(missing_ok=True)
+                    return {'ok': False, 'error': 'pubkey_failed', 'backend': backend}
+                pub = p.stdout.decode()
+        finally:
+            _os.umask(old)
+        (PENDING_DIR / f'{rid}.json').write_text(_json.dumps({'name': name, 'created': int(time.time())}))
+        return {'ok': True, 'request_id': rid, 'name': name, 'algorithm': 'RSA-OAEP-3072-SHA256',
+                'public_key_pem': pub, 'ttl_seconds': SECRET_TTL, 'backend': backend}
+    except Exception as exc:
+        return {'ok': False, 'error': 'keygen_exception', 'type': type(exc).__name__}
+
+
+def _rsa_decrypt(key_path, ciphertext):
+    if _crypto_backend() == 'cryptography':
+        from cryptography.hazmat.primitives import serialization, hashes
+        from cryptography.hazmat.primitives.asymmetric import padding
+        key = serialization.load_pem_private_key(key_path.read_bytes(), password=None)
+        return key.decrypt(ciphertext, padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                                                    algorithm=hashes.SHA256(), label=None))
+    p = _subprocess.run(['openssl', 'pkeyutl', '-decrypt', '-inkey', str(key_path),
+                         '-pkeyopt', 'rsa_padding_mode:oaep', '-pkeyopt', 'rsa_oaep_md:sha256',
+                         '-pkeyopt', 'rsa_mgf1_md:sha256'],
+                        input=ciphertext, capture_output=True, timeout=30)
+    if p.returncode:
+        raise RuntimeError('decrypt_failed')
+    return p.stdout
+
+
+def secret_set(request_id: str, name: str, ciphertext_b64: str):
+    key_path = meta_path = None
+    try:
+        if not isinstance(request_id, str) or not _RID_RE.fullmatch(request_id):
+            return {'ok': False, 'error': 'invalid_request_id'}
+        if not isinstance(name, str) or not _NAME_RE.fullmatch(name):
+            return {'ok': False, 'error': 'invalid_name'}
+        _secret_dirs()
+        key_path = PENDING_DIR / f'{request_id}.key'
+        meta_path = PENDING_DIR / f'{request_id}.json'
+        if not key_path.exists() or not meta_path.exists():
+            return {'ok': False, 'error': 'unknown_or_used_request'}
+        meta = _json.loads(meta_path.read_text())
+        if meta.get('name') != name:
+            return {'ok': False, 'error': 'name_mismatch'}
+        if time.time() - float(meta.get('created', 0)) > SECRET_TTL:
+            return {'ok': False, 'error': 'request_expired'}
+        try:
+            value = _rsa_decrypt(key_path, _b64.b64decode(str(ciphertext_b64), validate=True))
+        except Exception:
+            return {'ok': False, 'error': 'decrypt_failed'}
+        value = value.strip()
+        if not value or b'\n' in value or b'\r' in value:
+            return {'ok': False, 'error': 'invalid_value_shape'}
+        target = SECRETS_DIR / name.lower()
+        tmp = SECRETS_DIR / f'.{name.lower()}.tmp.{_secrets.token_hex(4)}'
+        old = _os.umask(0o077)
+        try:
+            fd = _os.open(str(tmp), _os.O_WRONLY | _os.O_CREAT | _os.O_EXCL, 0o600)
+            with _os.fdopen(fd, 'wb') as f:
+                f.write(value); f.flush(); _os.fsync(f.fileno())
+            _os.chmod(tmp, 0o600)
+            _os.replace(tmp, target)
+        finally:
+            _os.umask(old)
+            if tmp.exists():
+                tmp.unlink()
+        st = target.stat()
+        return {'ok': True, 'name': name, 'path': str(target), 'mode': oct(st.st_mode & 0o777),
+                'length': len(value), 'sha256_prefix': _hashlib.sha256(value).hexdigest()[:8]}
+    except Exception as exc:
+        return {'ok': False, 'error': 'set_exception', 'type': type(exc).__name__}
+    finally:
+        for p in (key_path, meta_path):
+            try:
+                if p is not None:
+                    p.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+
+def groq_health():
+    from urllib.request import Request, urlopen
+    from urllib.error import HTTPError
+    out = {'ok': False}
+    try:
+        path = SECRETS_DIR / 'groq_api_key'
+        if not path.exists():
+            return {'ok': False, 'error': 'secret_missing'}
+        key = path.read_text().strip()
+        hdr = {'Authorization': 'Bearer ' + key, 'User-Agent': 'ci-operator-groq-health/1',
+               'Content-Type': 'application/json'}
+
+        def _call(url, body=None):
+            req = Request(url, data=body, headers=hdr, method='POST' if body else 'GET')
+            try:
+                with urlopen(req, timeout=20) as r:
+                    return r.status, r.read()
+            except HTTPError as e:
+                return e.code, b''
+        code, raw = _call('https://api.groq.com/openai/v1/models')
+        out['models_http'] = code
+        ids = []
+        if code == 200:
+            ids = [m.get('id') for m in (_json.loads(raw).get('data') or []) if isinstance(m, dict)]
+            out['model_count'] = len(ids)
+        prefs = ['llama-3.1-8b-instant', 'llama3-8b-8192', 'gemma2-9b-it', 'llama-3.3-70b-versatile']
+        model = next((m for m in prefs if m in ids), None) or next((m for m in ids if m and 'whisper' not in m and 'guard' not in m and 'tts' not in m), None)
+        if model:
+            body = _json.dumps({'model': model, 'messages': [{'role': 'user', 'content': 'ping'}], 'max_tokens': 5}).encode()
+            ccode, _ = _call('https://api.groq.com/openai/v1/chat/completions', body)
+            out['chat_http'] = ccode
+            out['model'] = model
+        out['ok'] = out.get('models_http') == 200 and out.get('chat_http') == 200
+        return out
+    except Exception as exc:
+        out['error'] = 'health_exception'; out['type'] = type(exc).__name__
+        return out

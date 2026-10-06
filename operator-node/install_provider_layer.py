@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import re
 import shutil
 import time
 
@@ -37,6 +38,9 @@ def main():
         " tooldef('ci_operator_metrics','Метрики Ci Operator','Return PII-safe execution KPIs from Orange telemetry: success, evidence completeness, fallback, executed rate and latency percentiles.',{'type':'object','properties':{'limit':{'type':'integer','minimum':1,'maximum':5000,'default':500}}},read_only=True,open_world=False),",
         " tooldef('ci_home_status','Стан HOME.CI','Read live end0 and CI.VAULT state directly on Orange.',{'type':'object','properties':{}},read_only=True,open_world=False),",
         " tooldef('ci_home_repair','Відновити HOME.CI','Execute one narrowly allowlisted HOME repair action with idempotency and live verification.',{'type':'object','properties':{'action':{'type':'string','enum':['network.ensure_end0','vault.ensure_rw','acceptance.refresh','resource_trust.refresh']},'idempotency_key':{'type':'string','minLength':8,'maxLength':200}},'required':['action','idempotency_key']},scope='act',read_only=False,open_world=False),",
+        " tooldef('ci_secret_keygen','Ключ секрету Ci','Generate a one-time RSA-OAEP-3072 public key on Orange for sealed transfer of one named secret (15 min TTL, single use). Returns only the public key and request id.',{'type':'object','properties':{'name':{'type':'string','pattern':'^[A-Za-z0-9_]{1,64}$'}},'required':['name']},scope='act',read_only=False,open_world=False),",
+        " tooldef('ci_secret_set','Записати секрет Ci','Decrypt a sealed secret on Orange with a pending ci_secret_keygen request and store it as a mode-600 file. Returns only name, path, mode, length and sha256 prefix.',{'type':'object','properties':{'request_id':{'type':'string'},'name':{'type':'string','pattern':'^[A-Za-z0-9_]{1,64}$'},'ciphertext_b64':{'type':'string'}},'required':['request_id','name','ciphertext_b64']},scope='act',read_only=False,open_world=False),",
+        " tooldef('ci_groq_health','Перевірка Groq','Check the Orange-stored Groq API key against the Groq API. Returns only HTTP status codes, model count and the model used.',{'type':'object','properties':{}},read_only=True,open_world=True),",
     ]
     for tool in tools:
         name = tool.split("tooldef('", 1)[1].split("'", 1)[0]
@@ -57,6 +61,9 @@ def main():
         ("ci_operator_metrics", "    if name=='ci_operator_metrics': return ci_operator.metrics(args.get('limit',500))"),
         ("ci_home_status", "    if name=='ci_home_status': return ci_operator.home_status()"),
         ("ci_home_repair", "    if name=='ci_home_repair': return ci_operator.home_repair_action(args.get('action',''),args.get('idempotency_key',''))"),
+        ("ci_secret_keygen", "    if name=='ci_secret_keygen': return ci_operator.secret_keygen(args.get('name',''))"),
+        ("ci_secret_set", "    if name=='ci_secret_set': return ci_operator.secret_set(args.get('request_id',''),args.get('name',''),args.get('ciphertext_b64',''))"),
+        ("ci_groq_health", "    if name=='ci_groq_health': return ci_operator.groq_health()"),
     ]
     for name, call in calls:
         if f"if name=='{name}'" not in source:
@@ -73,6 +80,16 @@ def main():
             old,
             "return 'ci:act' if name in {'ci_plan','ci_action','ci_memory_append','ci_dispatch','ci_operator_update','ci_operator_release','ci_vault_write','ci_home_repair'} else 'ci:read'",
         )
+
+    scope_re = re.compile(r"return 'ci:act' if name in \{([^}]*)\} else 'ci:read'")
+    match = scope_re.search(source)
+    if not match:
+        raise RuntimeError('provider install marker not found: required scope')
+    names = [x.strip() for x in match.group(1).split(',') if x.strip()]
+    for extra in ("'ci_secret_keygen'", "'ci_secret_set'"):
+        if extra not in names:
+            names.append(extra)
+    source = source[:match.start()] + "return 'ci:act' if name in {" + ','.join(names) + "} else 'ci:read'" + source[match.end():]
 
     for old in ('1.2.0', '1.3.0', '1.4.0', '1.5.0', '1.6.0', '1.7.0'):
         source = source.replace(

@@ -75,8 +75,13 @@ final class CiVerifiedResources {
     }
 
     private static JSONObject fetch() throws Exception {
+        URL endpoint = new URL(STATUS_ENDPOINT);
+        if (!"https".equalsIgnoreCase(endpoint.getProtocol())) {
+            throw new IllegalStateException("health_endpoint_requires_https");
+        }
+
         HttpURLConnection connection =
-                (HttpURLConnection) new URL(STATUS_ENDPOINT).openConnection();
+                (HttpURLConnection) endpoint.openConnection();
         connection.setRequestMethod("GET");
         connection.setConnectTimeout(2500);
         connection.setReadTimeout(4000);

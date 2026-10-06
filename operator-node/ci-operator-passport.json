@@ -41,9 +41,10 @@
     "ci_dispatch": {"scope": "ci:act", "read_only": false, "external_write_authority": false},
     "ci_executor_status": {"scope": "ci:read", "read_only": true},
     "ci_execute_read": {"scope": "ci:read", "read_only": true, "allowlisted": true},
-    "ci_operator_update": {"scope": "ci:act", "read_only": false, "exact_commit_required": true, "canonical_repo_only": true, "runtime_only": true},
-    "ci_operator_release": {"scope": "ci:act", "read_only": false, "exact_commit_required": true, "canonical_repo_only": true, "connector_patch": true, "rollback": true},
-    "ci_operator_metrics": {"scope": "ci:read", "read_only": true, "pii_safe": true}
+    "ci_operator_update": {"scope": "ci:act", "read_only": false, "exact_commit_required": true, "canonical_repo_only": true, "runtime_only": true, "update_authority": "local_technical_model", "github_required": false},
+    "ci_operator_release": {"scope": "ci:act", "read_only": false, "exact_commit_required": true, "canonical_repo_only": true, "connector_patch": true, "rollback": true, "update_authority": "local_technical_model", "github_required": false},
+    "ci_operator_metrics": {"scope": "ci:read", "read_only": true, "pii_safe": true},
+    "ci_technical_model_ingest": {"scope": "ci:act", "read_only": false, "github_required": false, "input": "vault_path + sha256 (+ optional expected_commit)", "allowlisted_vault_prefixes": ["ci/staging/technical-model/", "ci/backups/"], "format": "git bundle (.bundle/.gitbundle)", "confirm_required_to_execute": true}
   },
   "registry": {
     "id": "CI.REGISTRY",
@@ -106,7 +107,13 @@
     ],
     "staged_compile_required": true,
     "rollback_backup_required": true,
-    "release_manager_version": "1.0.0"
+    "release_manager_version": "1.0.0",
+    "github_required": false,
+    "github_fallback_available_when_source_local": false,
+    "github_fallback_automatic": false,
+    "update_authority_when_source_local": "local_technical_model",
+    "canonical_repository_role": "optional_provenance_label",
+    "technical_model_root": "/home/kazkar/cit/technical-model"
   },
   "observability": {
     "schema": "ci.operator.metrics/v1",

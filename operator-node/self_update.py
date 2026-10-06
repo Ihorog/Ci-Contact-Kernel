@@ -44,8 +44,22 @@ def _is_missing(exc):
     return 'local_model_missing:' in text or 'HTTP Error 404' in text or 'Not Found' in text
 
 def source_status():
-    return {'source':SOURCE,'localModel':technical_model.status(),'githubRepository':REPO,
-            'githubRequired':False,'githubFallbackAvailable':True}
+    local = SOURCE == 'local'
+    return {
+        'source': SOURCE,
+        'localModel': technical_model.status(),
+        'githubRepository': REPO,
+        'canonicalRepository': REPO,
+        'githubRequired': False,
+        'githubFallbackAvailable': False if local else True,
+        'githubFallbackAutomatic': False,
+        'updateAuthority': 'local_technical_model' if local else 'github_contents_api',
+        'note': (
+            'Updates read exact commits from local technical-model only; no GitHub auto-fallback.'
+            if local else
+            'UPDATE_SOURCE is not local; Contents API may be used.'
+        ),
+    }
 
 def prepare(commit):
     if not SHA_RE.fullmatch(str(commit or '')):

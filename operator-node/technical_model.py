@@ -102,8 +102,149 @@ def export_bundle(commit=None):
     side=Path(str(v)+'.sha256'); side.write_text(digest+'  '+v.name+'\n',encoding='utf-8')
     return {'ok':True,'commit':commit,'artifact':str(out),'vault':str(v),'sha256':digest,'bytes':out.stat().st_size}
 
+
+# Allowlisted vault-relative prefixes for model ingest (sha256-pinned git bundles only).
+INGEST_PREFIXES = (
+    'ci/staging/technical-model/',
+    'ci/backups/',
+)
+BUNDLE_SUFFIXES = ('.bundle', '.gitbundle')
+SHA256_RE = re.compile(r'^[0-9a-f]{64}$')
+COMMIT_RE = re.compile(r'^[0-9a-f]{40}$')
+VAULT_ROOT = Path('/mnt/cimeika_vault/92482E5D482E3FF9')
+
+
+def _vault_ingest_path(vault_rel_path):
+    raw = str(vault_rel_path or '').replace('\\', '/').strip('/')
+    if not raw or any(part == '..' for part in raw.split('/')):
+        raise RuntimeError('ingest_path_invalid')
+    if not any(raw.startswith(prefix) for prefix in INGEST_PREFIXES):
+        raise RuntimeError('ingest_path_not_allowlisted')
+    if not raw.endswith(BUNDLE_SUFFIXES):
+        raise RuntimeError('ingest_not_git_bundle')
+    target = (VAULT_ROOT / raw).resolve(strict=False)
+    root = VAULT_ROOT.resolve(strict=False)
+    if target != root and root not in target.parents:
+        raise RuntimeError('ingest_path_outside_vault')
+    return raw, target
+
+
+def ingest_from_vault(vault_rel_path, expected_sha256, confirm=False, expected_commit=None):
+    """Import a sha256-pinned git bundle from CI.VAULT into local technical-model.
+
+    Preserves original commit object SHAs so ci_operator_release/update can pin them.
+    Never calls github.com. Never writes secrets. Vault-confined + prefix-allowlisted.
+    """
+    try:
+        rel, bundle_path = _vault_ingest_path(vault_rel_path)
+    except RuntimeError as exc:
+        return {'ok': False, 'executed': False, 'error': str(exc)}
+    digest = str(expected_sha256 or '').strip().lower()
+    if not SHA256_RE.fullmatch(digest):
+        return {'ok': False, 'executed': False, 'error': 'exact_64_hex_sha256_required'}
+    if expected_commit is not None and str(expected_commit).strip():
+        commit = str(expected_commit).strip().lower()
+        if not COMMIT_RE.fullmatch(commit):
+            return {'ok': False, 'executed': False, 'error': 'exact_40_hex_commit_required'}
+    else:
+        commit = None
+    if not bundle_path.is_file():
+        return {'ok': False, 'executed': False, 'error': 'bundle_not_found', 'path': rel}
+    actual = sha256(bundle_path)
+    if actual != digest:
+        return {
+            'ok': False, 'executed': False, 'error': 'sha256_mismatch',
+            'path': rel, 'expectedSha256': digest, 'actualSha256': actual,
+        }
+    init_repo()
+    verify = run(['git', 'bundle', 'verify', str(bundle_path)], ROOT, check=False)
+    if verify.returncode:
+        return {
+            'ok': False, 'executed': False, 'error': 'git_bundle_verify_failed',
+            'path': rel, 'detail': ((verify.stderr or verify.stdout) or '')[:300],
+        }
+    list_heads = run(['git', 'bundle', 'list-heads', str(bundle_path)], ROOT, check=False)
+    heads = []
+    if list_heads.returncode == 0:
+        for line in (list_heads.stdout or '').splitlines():
+            parts = line.split()
+            if parts and COMMIT_RE.fullmatch(parts[0]):
+                heads.append({'commit': parts[0], 'ref': parts[1] if len(parts) > 1 else None})
+    preview = {
+        'ok': True, 'executed': False, 'prepared': True,
+        'path': rel, 'sha256': actual, 'bytes': bundle_path.stat().st_size,
+        'bundleHeads': heads[:20], 'expectedCommit': commit,
+        'localModelBefore': status(),
+        'githubRequired': False, 'source': 'vault_git_bundle',
+    }
+    if not confirm:
+        preview['confirmRequired'] = True
+        return preview
+    # Unbundle objects (preserves SHAs), then pin refs under refs/bundle-ingest/.
+    unbundle = run(['git', 'bundle', 'unbundle', str(bundle_path)], ROOT, check=False)
+    if unbundle.returncode:
+        # Fallback: fetch advertised heads / HEAD explicitly.
+        fetched = False
+        details = []
+        candidates = []
+        for head in heads:
+            ref = head.get('ref') or head['commit']
+            candidates.append(f"+{ref}:refs/bundle-ingest/{head['commit']}")
+        candidates.append('+HEAD:refs/bundle-ingest/HEAD')
+        for spec in candidates:
+            fr = run(['git', 'fetch', '--no-tags', str(bundle_path), spec], ROOT, check=False)
+            if fr.returncode == 0:
+                fetched = True
+            else:
+                details.append(((fr.stderr or fr.stdout) or '')[:120])
+        if not fetched:
+            return {
+                'ok': False, 'executed': False, 'error': 'git_bundle_ingest_failed',
+                'path': rel,
+                'detail': (((unbundle.stderr or unbundle.stdout) or '')[:200] + ' | ' + ' ; '.join(details))[:300],
+            }
+    for head in heads:
+        run(
+            ['git', 'update-ref', f"refs/bundle-ingest/{head['commit']}", head['commit']],
+            ROOT, check=False,
+        )
+    after = status()
+    present = None
+    if commit:
+        probe = run(['git', 'cat-file', '-t', commit], ROOT, check=False)
+        if probe.returncode or (probe.stdout or '').strip() != 'commit':
+            return {
+                'ok': False, 'executed': True, 'error': 'expected_commit_missing_after_ingest',
+                'path': rel, 'expectedCommit': commit, 'localModel': after,
+            }
+        present = commit
+        run(['git', 'update-ref', f'refs/bundle-ingest/{commit}', commit], ROOT, check=False)
+    elif heads:
+        present = heads[0]['commit']
+    return {
+        'ok': True, 'executed': True, 'path': rel, 'sha256': actual,
+        'bytes': bundle_path.stat().st_size, 'bundleHeads': heads[:20],
+        'ingestedCommit': present, 'localModel': after,
+        'githubRequired': False, 'source': 'vault_git_bundle',
+        'evidence': {
+            'exactSha256': actual, 'path': rel, 'updateAuthority': 'local_technical_model',
+            'githubFallback': False,
+        },
+    }
+
 if __name__=='__main__':
     import sys
     cmd=sys.argv[1] if len(sys.argv)>1 else 'status'
-    result=sync_runtime() if cmd=='sync' else export_bundle(sys.argv[2] if len(sys.argv)>2 else None) if cmd=='export' else status()
+    if cmd=='sync':
+        result=sync_runtime()
+    elif cmd=='export':
+        result=export_bundle(sys.argv[2] if len(sys.argv)>2 else None)
+    elif cmd=='ingest':
+        # CLI: ingest <vault-rel> <sha256> [--confirm] [expected_commit]
+        args=sys.argv[2:]
+        confirm='--confirm' in args
+        args=[a for a in args if a!='--confirm']
+        result=ingest_from_vault(args[0] if args else '', args[1] if len(args)>1 else '', confirm=confirm, expected_commit=args[2] if len(args)>2 else None)
+    else:
+        result=status()
     print(json.dumps(result,ensure_ascii=False,indent=2))

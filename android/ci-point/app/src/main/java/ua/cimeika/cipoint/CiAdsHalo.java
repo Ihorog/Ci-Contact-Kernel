@@ -93,7 +93,9 @@ final class CiAdsHalo {
 
     void update(String status, String channel, String budget, String nextAction) {
         SharedPreferences.Editor editor = prefs.edit();
-        if (status != null && !status.trim().isEmpty()) editor.putString(KEY_STATUS, status.trim());
+        if (status != null && !status.trim().isEmpty()) {
+            editor.putString(KEY_STATUS, normalizeStatus(status));
+        }
         if (channel != null && !channel.trim().isEmpty()) editor.putString(KEY_CHANNEL, channel.trim());
         if (budget != null && !budget.trim().isEmpty()) editor.putString(KEY_BUDGET, budget.trim());
         if (nextAction != null && !nextAction.trim().isEmpty()) editor.putString(KEY_NEXT, nextAction.trim());
@@ -101,8 +103,26 @@ final class CiAdsHalo {
         refresh();
     }
 
-    void markWorking() {
-        update(STATUS_WORKING, null, null, null);
+    void markDecisionRequired() {
+        update(STATUS_DECISION, null, null, null);
+    }
+
+    private String normalizeStatus(String value) {
+        String s = value == null ? "" : value.trim().toLowerCase(java.util.Locale.ROOT);
+        if (STATUS_READY.equals(s) || "ready".equals(s) || "done".equals(s) || "completed".equals(s)) {
+            return STATUS_READY;
+        }
+        if (STATUS_WORKING.equals(s) || "working".equals(s) || "in_progress".equals(s) || "running".equals(s)) {
+            return STATUS_WORKING;
+        }
+        if (STATUS_BLOCKED.equals(s) || "blocked".equals(s) || "unavailable".equals(s)) {
+            return STATUS_BLOCKED;
+        }
+        if (STATUS_DECISION.equals(s) || "decision_required".equals(s)
+                || "needs_decision".equals(s) || "approval_required".equals(s)) {
+            return STATUS_DECISION;
+        }
+        return STATUS_DECISION;
     }
 
     void reposition(int x, int y, int size, int width, int height) {

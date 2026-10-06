@@ -22,11 +22,12 @@ final class CiContextHalo {
         void onCardSwipe(CiContextCard card, String direction);
     }
 
-    private static final int CARD_WIDTH_DP = 176;
-    private static final int CARD_HEIGHT_DP = 72;
-    private static final int GAP_DP = 14;
+    private static final int CARD_WIDTH_DP = 152;
+    private static final int CARD_HEIGHT_DP = 78;
+    private static final int GAP_DP = 10;
     private static final int EDGE_DP = 12;
-    private static final int ARC_STEP_DP = 78;
+    private static final int HONEY_X_DP = 72;
+    private static final int HONEY_Y_DP = 68;
 
     private final Context context;
     private final WindowManager windowManager;
@@ -108,8 +109,10 @@ final class CiContextHalo {
         card.setBackground(backgroundFor(model));
         card.setElevation(dp(14));
         card.setAlpha(0f);
-        card.setScaleX(0.82f);
-        card.setScaleY(0.82f);
+        card.setScaleX(0.72f);
+        card.setScaleY(0.72f);
+        card.setTranslationX(dp(26));
+        card.setRotationY(7f);
         attachTouch(card, model);
 
         WindowManager.LayoutParams p = new WindowManager.LayoutParams(
@@ -129,16 +132,23 @@ final class CiContextHalo {
 
         long delay = 25L + index * 45L;
         card.animate().alpha(0.96f).scaleX(1f).scaleY(1f)
+                .translationX(0f).rotationY(0f)
                 .translationZ(dp(10 + index * 2))
-                .setStartDelay(delay).setDuration(170L).start();
+                .setStartDelay(delay).setDuration(220L).start();
     }
 
     private Drawable backgroundFor(CiContextCard card) {
-        int alpha = "predicted".equals(card.state) ? 174 : 214;
-        if ("past".equals(card.state)) alpha = 156;
+        int alpha = "predicted".equals(card.state) ? 188 : 174;
+        if ("past".equals(card.state)) alpha = 142;
+        int stroke = "predicted".equals(card.state)
+                ? Color.rgb(177, 255, 96)
+                : Color.rgb(54, 226, 207);
+        int fill = "past".equals(card.state)
+                ? Color.argb(alpha, 12, 24, 28)
+                : Color.argb(alpha, 10, 30, 31);
         return new CiHexagonDrawable(
-                Color.argb(alpha, 15, 18, 24),
-                Color.argb(92, 255, 255, 255),
+                fill,
+                Color.argb(190, Color.red(stroke), Color.green(stroke), Color.blue(stroke)),
                 dp(1)
         );
     }
@@ -183,10 +193,18 @@ final class CiContextHalo {
         int cardWidth = dp(CARD_WIDTH_DP);
         int cardHeight = dp(CARD_HEIGHT_DP);
         int gap = dp(GAP_DP);
+        int centerY = anchorY + pointSize / 2 - cardHeight / 2;
         int x = anchorX - cardWidth - gap;
-        if (index == 1) x -= dp(10);
-        int yOffset = (index - 1) * dp(ARC_STEP_DP);
-        int y = anchorY + pointSize / 2 - cardHeight / 2 + yOffset;
+        int y = centerY;
+
+        if (index == 0) {
+            y -= dp(HONEY_Y_DP);
+        } else if (index == 1) {
+            x -= dp(HONEY_X_DP);
+        } else if (index == 2) {
+            y += dp(HONEY_Y_DP);
+        }
+
         int edge = dp(EDGE_DP);
         p.x = Math.max(edge, Math.min(x, screenWidth - cardWidth - edge));
         p.y = Math.max(edge, Math.min(y, screenHeight - cardHeight - edge));

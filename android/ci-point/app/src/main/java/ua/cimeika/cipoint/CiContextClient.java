@@ -25,11 +25,14 @@ final class CiContextClient implements CiContextProvider {
 
     private final Context context;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final ExecutorService cloudExecutor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final CiOperationRegistry operationRegistry;
     private volatile boolean closed;
 
     CiContextClient(Context context) {
         this.context = context.getApplicationContext();
+        this.operationRegistry = new CiOperationRegistry(this.context);
     }
 
     @Override
@@ -69,6 +72,10 @@ final class CiContextClient implements CiContextProvider {
             String keyId = CiDeviceIdentity.keyId();
             if (!keyId.isEmpty()) body.put("device_key_id", keyId);
             body.put("context", state == null ? new JSONObject() : state);
+            body.put("operation_registry", operationRegistry.status());
+            body.put("live_contact", new JSONObject()
+                    .put("last_base", CiEndpointConfig.lastLiveBase(context))
+                    .put("last_seen_at_ms", CiEndpointConfig.lastLiveAt(context)));
         } catch (Exception ignored) { }
         return body;
     }
@@ -76,13 +83,21 @@ final class CiContextClient implements CiContextProvider {
     private void submit(String path, JSONObject body, Callback callback) {
         if (closed) return;
         executor.execute(() -> {
+            String operationId = "";
+            try {
+                operationId = operationRegistry.begin(path, body);
+                if (!operationId.isEmpty()) body.put("operation_id", operationId);
+            } catch (Exception ignored) { }
+
             try {
                 body.put("verified_resources", CiVerifiedResources.snapshot());
                 JSONObject payload = null;
+                String resolvedEndpoint = "";
                 Exception lastError = null;
                 for (String endpoint : CiEndpointConfig.candidates(context, path)) {
                     try {
                         payload = postJson(endpoint, body);
+                        resolvedEndpoint = endpoint;
                         CiEndpointConfig.remember(context, endpoint);
                         break;
                     } catch (Exception exc) {
@@ -94,6 +109,13 @@ final class CiContextClient implements CiContextProvider {
                 }
                 if (closed) return;
                 if ("/ci/context".equals(path)) cacheContext(payload);
+                operationRegistry.finish(
+                        operationId,
+                        true,
+                        executionPlane(resolvedEndpoint),
+                        payload
+                );
+                syncCloud(operationId);
                 deliverSuccess(callback, payload);
             } catch (Exception exc) {
                 if (closed) return;
@@ -101,13 +123,72 @@ final class CiContextClient implements CiContextProvider {
                         ? localActionFallback(body)
                         : localContextFallback(body);
                 if (fallback != null) {
+                    operationRegistry.finish(
+                            operationId,
+                            true,
+                            "device_offline",
+                            fallback
+                    );
+                    syncCloud(operationId);
                     deliverSuccess(callback, fallback);
                 } else {
+                    JSONObject evidence = new JSONObject();
+                    try {
+                        evidence.put("state", "failed");
+                        evidence.put("error", exc.getClass().getSimpleName());
+                    } catch (Exception ignored) { }
+                    operationRegistry.finish(
+                            operationId,
+                            false,
+                            "device_offline",
+                            evidence
+                    );
+                    syncCloud(operationId);
                     deliverError(
                             callback,
                             "context_runtime_error:" + exc.getClass().getSimpleName()
                     );
                 }
+            }
+        });
+    }
+
+    private String executionPlane(String endpoint) {
+        if (endpoint == null) return "unknown";
+        String value = endpoint.toLowerCase(java.util.Locale.ROOT);
+        if (value.startsWith("http://192.168.")
+                || value.startsWith("http://10.")
+                || value.startsWith("http://172.")) {
+            return "local_node";
+        }
+        if (value.startsWith("https://")) return "remote_node";
+        return "unknown";
+    }
+
+    private void syncCloud(String operationId) {
+        if (operationId == null || operationId.isEmpty() || closed) return;
+        cloudExecutor.execute(() -> {
+            boolean ok = false;
+            try {
+                String endpoint = BuildConfig.CI_CLOUD_SIGNAL_URL;
+                if (endpoint == null || endpoint.trim().isEmpty()) return;
+                JSONObject envelope = operationRegistry.cloudEnvelope(
+                        operationId,
+                        CiDeviceIdentity.keyId()
+                );
+                if (envelope.length() == 0) return;
+                JSONObject signal = new JSONObject();
+                signal.put("type", "ci_operation_registry");
+                signal.put("signalId", operationId);
+                signal.put("source", "ci-point");
+                signal.put("priority", "normal");
+                signal.put("operation", envelope);
+                postJson(endpoint, signal);
+                ok = true;
+            } catch (Exception ignored) {
+                ok = false;
+            } finally {
+                operationRegistry.markCloudSync(operationId, ok);
             }
         });
     }
@@ -417,5 +498,7 @@ final class CiContextClient implements CiContextProvider {
     public void close() {
         closed = true;
         executor.shutdownNow();
+        cloudExecutor.shutdownNow();
+        operationRegistry.close();
     }
 }

@@ -75,12 +75,41 @@ jobs:
           print("CI_LOCAL_AI_INTENT=PASS", result.get("processor"))
           PY
 
-      - name: Lint and build APK
-        run: ./gradlew :app:lintDebug :app:assembleDebug --stacktrace
+      - name: Prepare stable Android signing identity
+        id: signing
+        env:
+          CI_ANDROID_KEYSTORE_B64: ${{ secrets.CI_ANDROID_KEYSTORE_B64 }}
+          CI_ANDROID_STORE_PASSWORD: ${{ secrets.CI_ANDROID_STORE_PASSWORD }}
+          CI_ANDROID_KEY_ALIAS: ${{ secrets.CI_ANDROID_KEY_ALIAS }}
+          CI_ANDROID_KEY_PASSWORD: ${{ secrets.CI_ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$CI_ANDROID_KEYSTORE_B64" &&
+                -n "$CI_ANDROID_STORE_PASSWORD" &&
+                -n "$CI_ANDROID_KEY_ALIAS" &&
+                -n "$CI_ANDROID_KEY_PASSWORD" ]]; then
+            KEYSTORE="$RUNNER_TEMP/ci-point-release.keystore"
+            printf '%s' "$CI_ANDROID_KEYSTORE_B64" | base64 --decode > "$KEYSTORE"
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "keystore=$KEYSTORE" >> "$GITHUB_OUTPUT"
+            echo "CI_ANDROID_SIGNING=STABLE"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "keystore=" >> "$GITHUB_OUTPUT"
+            echo "CI_ANDROID_SIGNING=CANDIDATE_ONLY"
+          fi
+
+      - name: Lint and build APKs
+        env:
+          CI_ANDROID_KEYSTORE_FILE: ${{ steps.signing.outputs.keystore }}
+          CI_ANDROID_STORE_PASSWORD: ${{ secrets.CI_ANDROID_STORE_PASSWORD }}
+          CI_ANDROID_KEY_ALIAS: ${{ secrets.CI_ANDROID_KEY_ALIAS }}
+          CI_ANDROID_KEY_PASSWORD: ${{ secrets.CI_ANDROID_KEY_PASSWORD }}
+        run: ./gradlew :app:lintDebug :app:assembleDebug :app:assembleRelease --stacktrace
         working-directory: android/ci-point
 
-      - name: Hash APK
-        run: sha256sum android/ci-point/app/build/outputs/apk/debug/app-debug.apk
+      - name: Hash hardened APK
+        run: sha256sum android/ci-point/app/build/outputs/apk/release/app-release.apk
 
       - name: Enable KVM access
         run: |
@@ -98,15 +127,15 @@ jobs:
           emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
           script: bash .github/scripts/ci-point-emulator-smoke.sh
 
-      - name: Upload APK
+      - name: Upload hardened APK candidate
         uses: actions/upload-artifact@v4
         with:
-          name: ci-point-debug-apk
-          path: android/ci-point/app/build/outputs/apk/debug/app-debug.apk
+          name: ci-point-release-apk
+          path: android/ci-point/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
 
   deliver:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.build.outputs.stable_signing == 'true'
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -115,17 +144,17 @@ jobs:
       - name: Download verified APK
         uses: actions/download-artifact@v4
         with:
-          name: ci-point-debug-apk
+          name: ci-point-release-apk
           path: delivery
 
-      - name: Publish Ci Point v0.6.0
+      - name: Publish Ci Point v0.7.0
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ci-point-v0.6.0
+          TAG: ci-point-v0.7.0
           TARGET_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          mv delivery/app-debug.apk delivery/Ci-Point-v0.6.0.apk
+          mv delivery/app-release.apk delivery/Ci-Point-v0.7.0.apk
           sha256sum delivery/Ci-Point-v0.6.0.apk
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $TAG already exists; refusing to replace an immutable versioned APK."
@@ -135,4 +164,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$TARGET_SHA" \
             --title "Ci Point v0.6.0" \
-            --notes "Verified Android build: lint/build green, Android 35 install/runtime smoke passed, resilient Orange endpoint routing enabled, and local Ci runtime smoke passed."
+            --notes "Verified Android 0.7.0 operation-layer build: offline-first local registry, remembered live-node routing, sanitized cloud ledger sync, swipe visual grammar, Android 35 runtime smoke, and hardened release candidate."

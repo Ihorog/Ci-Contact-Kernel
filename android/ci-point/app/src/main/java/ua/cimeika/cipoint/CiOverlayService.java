@@ -66,6 +66,8 @@ public final class CiOverlayService extends Service {
     private CiContextHalo contextHalo;
     private CiWatchHalo watchHalo;
     private CiAdsHalo adsHalo;
+    private CiStateMachine surfaceState;
+    private CiSurfaceRouter surfaceRouter;
     private org.json.JSONObject pendingConfirmationResult;
     private CiGestureRouter gestureRouter;
     private CiExternalAssistantAdapter externalAssistant;
@@ -119,6 +121,15 @@ public final class CiOverlayService extends Service {
             @Override public void onResult(org.json.JSONObject result) { handler.post(() -> handleVoiceResult(result)); }
             @Override public void onError(String error) { handler.post(() -> handleVoiceError(error)); }
         });
+        surfaceState = new CiStateMachine();
+        surfaceRouter = new CiSurfaceRouter(
+                surfaceState,
+                watchHalo,
+                adsHalo,
+                contextHalo,
+                resultProjection,
+                this::stopVoiceContact
+        );
         pointSize = dp(72);
         edgeInset = dp(18);
         touchSlop = ViewConfiguration.get(this).getScaledTouchSlop();
@@ -180,6 +191,9 @@ public final class CiOverlayService extends Service {
         externalAssistant = null;
         clearContextHalo();
         contextHalo = null;
+        if (surfaceRouter != null) surfaceRouter.activate(CiStateMachine.Surface.IDLE, "destroy");
+        surfaceRouter = null;
+        surfaceState = null;
         clearWatchHalo();
         watchHalo = null;
         clearAdsHalo();
@@ -384,11 +398,11 @@ public final class CiOverlayService extends Service {
     private void showWatchHalo() {
         if (activePoint == null || ciLogo == null || pointParams == null) return;
         longPressTriggered = true;
-        stopVoiceContact();
         pendingConfirmationResult = null;
         invalidateContextRequests();
-        clearContextHalo();
-        clearResultProjection();
+        if (surfaceRouter != null) {
+            surfaceRouter.activate(CiStateMachine.Surface.WATCH, "long_press");
+        }
         vibrate();
 
         DisplayMetrics metrics = new DisplayMetrics();
@@ -416,13 +430,17 @@ public final class CiOverlayService extends Service {
             return;
         }
         if (distance >= dp(30) && Math.abs(dy) > Math.abs(dx) && dy > 0f) {
-            clearWatchHalo();
+            if (surfaceRouter != null) surfaceRouter.activate(CiStateMachine.Surface.IDLE, "watch_swipe_down");
+            else clearWatchHalo();
             setState(stableStateFromPrefs());
         }
     }
 
     private void activateWatchVoice() {
         if (watchHalo == null || !watchHalo.isVisible()) return;
+        if (surfaceRouter != null) {
+            surfaceRouter.activate(CiStateMachine.Surface.VOICE, "watch_swipe_up");
+        }
         watchHalo.setVoiceState(CiWatchHalo.STATE_READY);
         vibrate();
         emitSemanticGesture("voice_ready", "up");
@@ -463,11 +481,10 @@ public final class CiOverlayService extends Service {
 
     private void showAdsHalo() {
         if (activePoint == null || ciLogo == null || pointParams == null) return;
-        stopVoiceContact();
         pendingConfirmationResult = null;
-        clearWatchHalo();
-        clearContextHalo();
-        clearResultProjection();
+        if (surfaceRouter != null) {
+            surfaceRouter.activate(CiStateMachine.Surface.ADS, "watch_swipe_left");
+        }
 
         DisplayMetrics metrics = new DisplayMetrics();
         windowManager.getDefaultDisplay().getRealMetrics(metrics);
@@ -486,6 +503,9 @@ public final class CiOverlayService extends Service {
 
     private void activateAdsNextAction() {
         if (adsHalo == null || !adsHalo.isVisible()) return;
+        if (surfaceRouter != null) {
+            surfaceRouter.activate(CiStateMachine.Surface.CONFIRM, "ads_next_action");
+        }
         // Requesting an action is not execution. Keep the canonical
         // "потрібне рішення" state until an operator acknowledges execution.
         adsHalo.markDecisionRequired();
@@ -698,7 +718,8 @@ public final class CiOverlayService extends Service {
                 activateAdsNextAction();
             } else if ("down".equals(direction)) {
                 emitSemanticGesture("ads_dismiss", direction);
-                clearAdsHalo();
+                if (surfaceRouter != null) surfaceRouter.activate(CiStateMachine.Surface.IDLE, "ads_swipe_down");
+                else clearAdsHalo();
                 setState(stableStateFromPrefs());
             }
             return;
@@ -712,8 +733,11 @@ public final class CiOverlayService extends Service {
                 showAdsHalo();
             } else if ("down".equals(direction) || "right".equals(direction)) {
                 emitSemanticGesture("watch_dismiss", direction);
-                clearWatchHalo();
-                stopVoiceContact();
+                if (surfaceRouter != null) surfaceRouter.activate(CiStateMachine.Surface.IDLE, "watch_dismiss");
+                else {
+                    clearWatchHalo();
+                    stopVoiceContact();
+                }
                 setState(stableStateFromPrefs());
             }
             return;
@@ -831,8 +855,12 @@ public final class CiOverlayService extends Service {
     private void performCiClick() {
         vibrate();
         invalidateContextRequests();
-        clearContextHalo();
-        clearResultProjection();
+        if (surfaceRouter != null) {
+            surfaceRouter.activate(CiStateMachine.Surface.VOICE, "voice_contact");
+        } else {
+            clearContextHalo();
+            clearResultProjection();
+        }
         setState(OverlayState.CONTEXT);
         if (ciLogo != null) {
             ciLogo.animate().alpha(0.48f).scaleX(0.90f).scaleY(0.90f).translationZ(dp(2)).setDuration(80)
@@ -899,6 +927,12 @@ public final class CiOverlayService extends Service {
             state.put("overlay_state", overlayState.name().toLowerCase(java.util.Locale.ROOT));
             state.put("dock_side", dockSide);
             state.put("halo_visible", contextHalo != null && contextHalo.isVisible());
+            if (surfaceRouter != null) {
+                CiStateMachine.Snapshot surface = surfaceRouter.snapshot();
+                state.put("surface_state", surface.surface.name().toLowerCase(java.util.Locale.ROOT));
+                state.put("surface_revision", surface.revision);
+                state.put("surface_reason", surface.reason);
+            }
             state.put("timestamp", System.currentTimeMillis());
             if (lastDisplayableResult != null) state.put("last_result", lastDisplayableResult);
         } catch (Exception ignored) { }
@@ -907,6 +941,9 @@ public final class CiOverlayService extends Service {
 
     private void showContextHalo(org.json.JSONObject payload) {
         if (contextHalo == null || pointParams == null || payload == null) return;
+        if (surfaceRouter != null) {
+            surfaceRouter.activate(CiStateMachine.Surface.CONTEXT, "context_payload");
+        }
         DisplayMetrics metrics = new DisplayMetrics();
         windowManager.getDefaultDisplay().getRealMetrics(metrics);
         contextHalo.show(payload, pointParams.x, pointParams.y, pointSize, metrics.widthPixels, metrics.heightPixels);
@@ -960,11 +997,16 @@ public final class CiOverlayService extends Service {
         org.json.JSONObject result = payload.optJSONObject("result");
         if (result != null) {
             if (isDisplayableResult(result)) lastDisplayableResult = result;
-            showResultProjection(result);
             String action = result.optString("action", "answer");
             if (result.optBoolean("requires_confirmation", false)) {
-                emitExecutionEvidence(action, "confirmation_required", "not_executed", result);
+                pendingConfirmationResult = result;
+                if (surfaceRouter != null) {
+                    surfaceRouter.activate(CiStateMachine.Surface.CONFIRM, "context_confirmation");
+                }
+                projectResult(result);
+                emitExecutionEvidence(action, "confirmation_required", "center_confirm", result);
             } else {
+                showResultProjection(result);
                 executeResolvedAction(action, result);
             }
         }
@@ -993,8 +1035,11 @@ public final class CiOverlayService extends Service {
 
     private void dismissContextHalo(String direction) {
         invalidateContextRequests();
-        clearContextHalo();
-        clearResultProjection();
+        if (surfaceRouter != null) surfaceRouter.activate(CiStateMachine.Surface.IDLE, "context_dismiss");
+        else {
+            clearContextHalo();
+            clearResultProjection();
+        }
         setState(stableStateFromPrefs());
         emitSemanticGesture("reset_context", direction == null ? "" : direction);
     }
@@ -1011,13 +1056,16 @@ public final class CiOverlayService extends Service {
     }
 
     private void resetToZeroState() {
-        stopVoiceContact();
         pendingConfirmationResult = null;
-        clearWatchHalo();
-        clearAdsHalo();
         invalidateContextRequests();
-        clearContextHalo();
-        clearResultProjection();
+        if (surfaceRouter != null) surfaceRouter.activate(CiStateMachine.Surface.IDLE, "zero_state");
+        else {
+            stopVoiceContact();
+            clearWatchHalo();
+            clearAdsHalo();
+            clearContextHalo();
+            clearResultProjection();
+        }
         lastDisplayableResult = null;
         setState(OverlayState.PASSIVE);
         emitSemanticGesture("zero_state", "double_tap");
@@ -1033,6 +1081,9 @@ public final class CiOverlayService extends Service {
     }
 
     private void handleVoiceListening(boolean listening) {
+        if (listening && surfaceRouter != null) {
+            surfaceRouter.activate(CiStateMachine.Surface.VOICE, "voice_listening");
+        }
         if (watchHalo != null && watchHalo.isVisible()) {
             watchHalo.setVoiceState(listening
                     ? CiWatchHalo.STATE_LISTENING
@@ -1053,6 +1104,9 @@ public final class CiOverlayService extends Service {
     }
 
     private void handleVoiceTranscript(String text) {
+        if (surfaceRouter != null) {
+            surfaceRouter.activate(CiStateMachine.Surface.VOICE, "voice_transcript");
+        }
         if (watchHalo != null && watchHalo.isVisible()) {
             watchHalo.setVoiceState(CiWatchHalo.STATE_PROCESSING);
         }
@@ -1076,18 +1130,21 @@ public final class CiOverlayService extends Service {
         event.putExtra("result", result.toString());
         sendBroadcast(event);
 
-        showResultProjection(result);
         if (result.optBoolean("requires_confirmation", false)) {
             pendingConfirmationResult = result;
+            if (surfaceRouter != null) {
+                surfaceRouter.activate(CiStateMachine.Surface.CONFIRM, "voice_confirmation");
+            }
             if (watchHalo != null && watchHalo.isVisible()) {
                 watchHalo.setVoiceState(CiWatchHalo.STATE_CONFIRM);
             }
+            projectResult(result);
             setState(OverlayState.CONTEXT);
             emitExecutionEvidence(action, "confirmation_required", "center_confirm", result);
             return;
         }
         pendingConfirmationResult = null;
-        if (watchHalo != null && watchHalo.isVisible()) watchHalo.confirmed();
+        showResultProjection(result);
         executeResolvedAction(action, result);
     }
 
@@ -1159,6 +1216,13 @@ public final class CiOverlayService extends Service {
     }
 
     private void showResultProjection(org.json.JSONObject result) {
+        if (surfaceRouter != null) {
+            surfaceRouter.activate(CiStateMachine.Surface.RESULT, "result_projection");
+        }
+        projectResult(result);
+    }
+
+    private void projectResult(org.json.JSONObject result) {
         if (resultProjection == null || pointParams == null || result == null) return;
         DisplayMetrics metrics = new DisplayMetrics();
         windowManager.getDefaultDisplay().getRealMetrics(metrics);
@@ -1229,13 +1293,16 @@ public final class CiOverlayService extends Service {
 
     private void hideCi() {
         if (pointParams == null || ciLogo == null) return;
-        stopVoiceContact();
         invalidateContextRequests();
-        clearContextHalo();
-        clearWatchHalo();
-        clearAdsHalo();
+        if (surfaceRouter != null) surfaceRouter.activate(CiStateMachine.Surface.IDLE, "hide");
+        else {
+            stopVoiceContact();
+            clearContextHalo();
+            clearWatchHalo();
+            clearAdsHalo();
+            clearResultProjection();
+        }
         pendingConfirmationResult = null;
-        clearResultProjection();
         if (prefs != null) prefs.edit().putBoolean(PREF_HIDDEN, true).apply();
         cancelLongPress();
         cancelPassiveBreath();
@@ -1254,10 +1321,14 @@ public final class CiOverlayService extends Service {
     }
 
     private void detachCiViews() {
-        clearAdsHalo();
-        clearWatchHalo();
+        if (surfaceRouter != null) surfaceRouter.activate(CiStateMachine.Surface.IDLE, "detach");
+        else {
+            clearAdsHalo();
+            clearWatchHalo();
+            clearContextHalo();
+            clearResultProjection();
+        }
         pendingConfirmationResult = null;
-        clearResultProjection();
         removeOverlay(activePoint);
         removeOverlay(ciLogo);
         activePoint = null;

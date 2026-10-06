@@ -25,6 +25,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      stable_signing: ${{ steps.signing.outputs.ready }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -155,13 +157,13 @@ jobs:
         run: |
           set -euo pipefail
           mv delivery/app-release.apk delivery/Ci-Point-v0.7.0.apk
-          sha256sum delivery/Ci-Point-v0.6.0.apk
+          sha256sum delivery/Ci-Point-v0.7.0.apk
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $TAG already exists; refusing to replace an immutable versioned APK."
             exit 0
           fi
-          gh release create "$TAG" delivery/Ci-Point-v0.6.0.apk \
+          gh release create "$TAG" delivery/Ci-Point-v0.7.0.apk \
             --repo "$GITHUB_REPOSITORY" \
             --target "$TARGET_SHA" \
-            --title "Ci Point v0.6.0" \
-            --notes "Verified Android 0.7.0 operation-layer build: offline-first local registry, remembered live-node routing, sanitized cloud ledger sync, swipe visual grammar, Android 35 runtime smoke, and hardened release candidate."
+            --title "Ci Point v0.7.0" \
+            --notes "Verified Android 0.7.0 operation-layer build: offline-first local registry, remembered live-node routing, sanitized cloud ledger sync, swipe visual grammar, Android 35 runtime smoke, and hardened release."

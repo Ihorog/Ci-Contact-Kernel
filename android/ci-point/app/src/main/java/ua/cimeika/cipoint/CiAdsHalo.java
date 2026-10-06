@@ -107,6 +107,10 @@ final class CiAdsHalo {
         update(STATUS_DECISION, null, null, null);
     }
 
+    void markWorking() {
+        update(STATUS_WORKING, null, null, null);
+    }
+
     private String normalizeStatus(String value) {
         String s = value == null ? "" : value.trim().toLowerCase(java.util.Locale.ROOT);
         if (STATUS_READY.equals(s) || "ready".equals(s) || "done".equals(s) || "completed".equals(s)) {

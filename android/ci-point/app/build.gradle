@@ -38,8 +38,8 @@ android {
         applicationId 'ua.cimeika.ci'
         minSdk 26
         targetSdk 33
-        versionCode 14
-        versionName '0.5.5-watch'
+        versionCode 13
+        versionName '0.5.4'
 
         buildConfigField 'String', 'CI_OPERATOR_BASE_URL',
                 quoteBuildConfig(ciOperatorBaseUrl)

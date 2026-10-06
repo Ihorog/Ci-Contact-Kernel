@@ -183,9 +183,16 @@ final class CiOperationRegistry extends SQLiteOpenHelper {
         );
     }
 
-    JSONArray recentHistory(int limit) {
+    JSONArray recentHistory(int limit, String excludeOperationId) {
         JSONArray out = new JSONArray();
         int safeLimit = Math.max(1, Math.min(limit, 64));
+        boolean hasExclude =
+                excludeOperationId != null && !excludeOperationId.isEmpty();
+        String selection = "status='resolved'" +
+                (hasExclude ? " AND operation_id<>?" : "");
+        String[] args = hasExclude
+                ? new String[]{excludeOperationId}
+                : null;
         Cursor cursor = getReadableDatabase().query(
                 TABLE,
                 new String[]{
@@ -193,8 +200,8 @@ final class CiOperationRegistry extends SQLiteOpenHelper {
                         "context_json", "status", "execution_plane",
                         "evidence_json"
                 },
-                null,
-                null,
+                selection,
+                args,
                 null,
                 null,
                 "created_at_ms DESC",

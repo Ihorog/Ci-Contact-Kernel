@@ -6,6 +6,7 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.nio.charset.StandardCharsets;
@@ -155,6 +156,43 @@ final class CiOperationRegistry extends SQLiteOpenHelper {
         );
     }
 
+    JSONArray recentHistory(int limit) {
+        JSONArray out = new JSONArray();
+        int safeLimit = Math.max(1, Math.min(limit, 64));
+        Cursor cursor = getReadableDatabase().query(
+                TABLE,
+                new String[]{
+                        "operation_id", "created_at_ms", "kind",
+                        "context_json", "status", "execution_plane",
+                        "evidence_json"
+                },
+                null,
+                null,
+                null,
+                null,
+                "created_at_ms DESC",
+                Integer.toString(safeLimit)
+        );
+        try {
+            while (cursor.moveToNext()) {
+                JSONObject row = new JSONObject();
+                try {
+                    row.put("operation_id", cursor.getString(0));
+                    row.put("created_at_ms", cursor.getLong(1));
+                    row.put("kind", cursor.getString(2));
+                    row.put("context", parseObject(cursor.getString(3)));
+                    row.put("status", cursor.getString(4));
+                    row.put("execution_plane", cursor.getString(5));
+                    row.put("evidence", parseObject(cursor.getString(6)));
+                    out.put(row);
+                } catch (Exception ignored) { }
+            }
+        } finally {
+            cursor.close();
+        }
+        return out;
+    }
+
     JSONObject status() {
         JSONObject out = new JSONObject();
         SQLiteDatabase db = getReadableDatabase();
@@ -176,6 +214,15 @@ final class CiOperationRegistry extends SQLiteOpenHelper {
             out.put("cloud_pending", pending);
         } catch (Exception ignored) { }
         return out;
+    }
+
+    private JSONObject parseObject(String raw) {
+        if (raw == null || raw.trim().isEmpty()) return new JSONObject();
+        try {
+            return new JSONObject(raw);
+        } catch (Exception ignored) {
+            return new JSONObject();
+        }
     }
 
     private long scalar(SQLiteDatabase db, String sql) {

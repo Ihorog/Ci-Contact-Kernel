@@ -20,8 +20,14 @@ final class CiLocalContextEngine {
         this.registry = registry;
     }
 
-    JSONObject materialize(String gesture, JSONObject liveState) {
-        JSONArray history = registry.recentHistory(HISTORY_SCAN);
+    JSONObject materialize(
+            String gesture,
+            JSONObject liveState,
+            String excludeOperationId) {
+        JSONArray history = registry.recentHistory(
+                HISTORY_SCAN,
+                excludeOperationId
+        );
         String current = currentText(liveState);
         List<Candidate> ranked = rank(history, current);
 

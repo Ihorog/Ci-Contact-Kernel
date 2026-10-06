@@ -25,11 +25,16 @@ final class CiContextClient implements CiContextProvider {
 
     private final Context context;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final ExecutorService cloudExecutor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final CiOperationRegistry operationRegistry;
+    private final CiLocalContextEngine localContextEngine;
     private volatile boolean closed;
 
     CiContextClient(Context context) {
         this.context = context.getApplicationContext();
+        this.operationRegistry = new CiOperationRegistry(this.context);
+        this.localContextEngine = new CiLocalContextEngine(this.operationRegistry);
     }
 
     @Override
@@ -69,6 +74,10 @@ final class CiContextClient implements CiContextProvider {
             String keyId = CiDeviceIdentity.keyId();
             if (!keyId.isEmpty()) body.put("device_key_id", keyId);
             body.put("context", state == null ? new JSONObject() : state);
+            body.put("operation_registry", operationRegistry.status());
+            body.put("live_contact", new JSONObject()
+                    .put("last_base", CiEndpointConfig.lastLiveBase(context))
+                    .put("last_seen_at_ms", CiEndpointConfig.lastLiveAt(context)));
         } catch (Exception ignored) { }
         return body;
     }
@@ -76,13 +85,21 @@ final class CiContextClient implements CiContextProvider {
     private void submit(String path, JSONObject body, Callback callback) {
         if (closed) return;
         executor.execute(() -> {
+            String operationId = "";
+            try {
+                operationId = operationRegistry.begin(path, body);
+                if (!operationId.isEmpty()) body.put("operation_id", operationId);
+            } catch (Exception ignored) { }
+
             try {
                 body.put("verified_resources", CiVerifiedResources.snapshot());
                 JSONObject payload = null;
+                String resolvedEndpoint = "";
                 Exception lastError = null;
                 for (String endpoint : CiEndpointConfig.candidates(context, path)) {
                     try {
                         payload = postJson(endpoint, body);
+                        resolvedEndpoint = endpoint;
                         CiEndpointConfig.remember(context, endpoint);
                         break;
                     } catch (Exception exc) {
@@ -94,6 +111,13 @@ final class CiContextClient implements CiContextProvider {
                 }
                 if (closed) return;
                 if ("/ci/context".equals(path)) cacheContext(payload);
+                operationRegistry.finish(
+                        operationId,
+                        true,
+                        executionPlane(resolvedEndpoint),
+                        payload
+                );
+                syncCloud(operationId);
                 deliverSuccess(callback, payload);
             } catch (Exception exc) {
                 if (closed) return;
@@ -101,8 +125,27 @@ final class CiContextClient implements CiContextProvider {
                         ? localActionFallback(body)
                         : localContextFallback(body);
                 if (fallback != null) {
+                    operationRegistry.finish(
+                            operationId,
+                            true,
+                            "device_offline",
+                            fallback
+                    );
+                    syncCloud(operationId);
                     deliverSuccess(callback, fallback);
                 } else {
+                    JSONObject evidence = new JSONObject();
+                    try {
+                        evidence.put("state", "failed");
+                        evidence.put("error", exc.getClass().getSimpleName());
+                    } catch (Exception ignored) { }
+                    operationRegistry.finish(
+                            operationId,
+                            false,
+                            "device_offline",
+                            evidence
+                    );
+                    syncCloud(operationId);
                     deliverError(
                             callback,
                             "context_runtime_error:" + exc.getClass().getSimpleName()
@@ -110,6 +153,57 @@ final class CiContextClient implements CiContextProvider {
                 }
             }
         });
+    }
+
+    private String executionPlane(String endpoint) {
+        if (endpoint == null) return "unknown";
+        String value = endpoint.toLowerCase(java.util.Locale.ROOT);
+        if (value.startsWith("http://192.168.")
+                || value.startsWith("http://10.")
+                || value.startsWith("http://172.")) {
+            return "local_node";
+        }
+        if (value.startsWith("https://")) return "remote_node";
+        return "unknown";
+    }
+
+    private void syncCloud(String operationId) {
+        if (operationId == null || operationId.isEmpty() || closed) return;
+        cloudExecutor.execute(() -> {
+            boolean currentOk = syncCloudOne(operationId);
+            if (!currentOk || closed) return;
+
+            for (String pending : operationRegistry.pendingCloudSync(8, operationId)) {
+                if (closed) return;
+                if (!syncCloudOne(pending)) return;
+            }
+        });
+    }
+
+    private boolean syncCloudOne(String operationId) {
+        boolean ok = false;
+        try {
+            String endpoint = BuildConfig.CI_CLOUD_SIGNAL_URL;
+            if (endpoint == null || endpoint.trim().isEmpty()) return false;
+            JSONObject envelope = operationRegistry.cloudEnvelope(
+                    operationId,
+                    CiDeviceIdentity.keyId()
+            );
+            if (envelope.length() == 0) return false;
+            JSONObject signal = new JSONObject();
+            signal.put("type", "ci_operation_registry");
+            signal.put("signalId", operationId);
+            signal.put("source", "ci-point");
+            signal.put("priority", "normal");
+            signal.put("operation", envelope);
+            postJson(endpoint, signal);
+            ok = true;
+            return true;
+        } catch (Exception ignored) {
+            return false;
+        } finally {
+            operationRegistry.markCloudSync(operationId, ok);
+        }
     }
 
     private void deliverSuccess(Callback callback, JSONObject payload) {
@@ -172,6 +266,14 @@ final class CiContextClient implements CiContextProvider {
 
     private JSONObject localContextFallback(JSONObject body) {
         String gesture = body.optString("gesture", "materialize_context");
+        JSONObject state = body.optJSONObject("context");
+        if (state == null) state = new JSONObject();
+
+        JSONObject historyPayload = localContextEngine.materialize(gesture, state);
+        if (historyPayload.optInt("history_depth", 0) > 0) {
+            return historyPayload;
+        }
+
         if ("materialize_context".equals(gesture)
                 || "swipe_left".equals(gesture)
                 || "after_action".equals(gesture)) {
@@ -179,80 +281,7 @@ final class CiContextClient implements CiContextProvider {
             if (cached != null) return cached;
         }
 
-        JSONObject state = body.optJSONObject("context");
-        if (state == null) state = new JSONObject();
-        String current = currentLabel(state);
-
-        JSONArray cards = new JSONArray();
-        if ("context_newer".equals(gesture) || "next_stage".equals(gesture)) {
-            cards.put(makeCard(
-                    "Ймовірно: наступний крок",
-                    "Наступний крок у поточному контексті",
-                    "predicted",
-                    "context_newer".equals(gesture) ? "context_newer" : "next_stage"
-            ));
-            cards.put(makeCard(
-                    "Поточний контекст",
-                    current,
-                    "actual",
-                    "resolve_intent"
-            ));
-            cards.put(makeCard(
-                    "Попередній стан",
-                    "Повернути попередній стан",
-                    "past",
-                    "previous_state"
-            ));
-        } else if ("context_older".equals(gesture)
-                || "previous_state".equals(gesture)) {
-            cards.put(makeCard(
-                    "Попередній стан",
-                    "Повернути попередній стан",
-                    "past",
-                    "previous_state"
-            ));
-            cards.put(makeCard(
-                    "Поточний контекст",
-                    current,
-                    "actual",
-                    "resolve_intent"
-            ));
-            cards.put(makeCard(
-                    "Ймовірно: наступний крок",
-                    "Наступний крок у поточному контексті",
-                    "predicted",
-                    "context_newer"
-            ));
-        } else {
-            cards.put(makeCard(
-                    "Поточний контекст",
-                    current,
-                    "actual",
-                    "resolve_intent"
-            ));
-            cards.put(makeCard(
-                    "Ймовірно: продовжити",
-                    "Продовжити поточний контекст",
-                    "predicted",
-                    "context_newer"
-            ));
-            cards.put(makeCard(
-                    "Попередній стан",
-                    "Повернути попередній контекст",
-                    "past",
-                    "previous_state"
-            ));
-        }
-
-        JSONObject payload = new JSONObject();
-        try {
-            payload.put("ok", true);
-            payload.put("fallback", true);
-            payload.put("source", "ci-android-local-context");
-            payload.put("cards", cards);
-            payload.put("protocol", "ci-context-local-v1");
-        } catch (Exception ignored) { }
-        return payload;
+        return historyPayload;
     }
 
     private JSONObject localActionFallback(JSONObject body) {
@@ -273,15 +302,23 @@ final class CiContextClient implements CiContextProvider {
         String intent = cardContext.optString(
                 "intent",
                 card.optString("label", "Контекст")
-        );
+        ).trim();
+        String state = cardContext.optString("state", "actual");
+
+        boolean localContextAction =
+                "resolve_intent".equals(action)
+                        || "restore_context".equals(action)
+                        || "previous_state".equals(action)
+                        || "context_newer".equals(action)
+                        || "next_stage".equals(action);
 
         JSONObject result = new JSONObject();
         try {
-            if ("resolve_intent".equals(action)) {
+            if (localContextAction) {
                 result.put("action", "answer");
                 result.put(
                         "answer",
-                        "Контекстний виконавець зараз недоступний."
+                        intent.isEmpty() ? "Поточний локальний контекст" : intent
                 );
             } else {
                 result.put("action", action);
@@ -289,14 +326,23 @@ final class CiContextClient implements CiContextProvider {
             }
             result.put("query", intent);
             result.put("requires_confirmation", confirmation);
-            result.put("processor", "ci-android-local-context");
+            result.put("processor", "ci-local-context-engine");
             result.put("selected_card_id", card.optString("id", ""));
+            result.put("context_state", state);
+
+            boolean historyVerified = "past".equals(state);
             result.put(
                     "evidence",
                     new JSONObject()
-                            .put("state", "local_fallback")
-                            .put("verified", false)
-                            .put("source", "ci-android-local-context")
+                            .put(
+                                    "state",
+                                    historyVerified
+                                            ? "local_history_resolved"
+                                            : "local_context_resolved"
+                            )
+                            .put("verified", historyVerified)
+                            .put("source", "ci-operation-registry")
+                            .put("execution_plane", "device_offline")
             );
         } catch (Exception ignored) { }
 
@@ -311,12 +357,13 @@ final class CiContextClient implements CiContextProvider {
         try {
             payload.put("ok", true);
             payload.put("fallback", true);
+            payload.put("offline", true);
             payload.put("result", result);
             payload.put(
                     "next_cards",
                     nextPayload.optJSONArray("cards")
             );
-            payload.put("protocol", "ci-context-local-v1");
+            payload.put("protocol", "ci-local-context-v2");
         } catch (Exception ignored) { }
         return payload;
     }
@@ -417,5 +464,7 @@ final class CiContextClient implements CiContextProvider {
     public void close() {
         closed = true;
         executor.shutdownNow();
+        cloudExecutor.shutdownNow();
+        operationRegistry.close();
     }
 }

@@ -7,6 +7,9 @@ def ciOperatorBaseUrl =
 def ciOperatorHealthUrl =
         project.findProperty('CI_OPERATOR_HEALTH_URL') ?:
                 'https://mcp-http.cimeika.com.ua/operator/health'
+def ciCloudSignalUrl =
+        project.findProperty('CI_CLOUD_SIGNAL_URL') ?:
+                'https://ci-link.vercel.app/ci/signal'
 
 def envOrProperty = { name ->
     def envValue = System.getenv(name)
@@ -38,13 +41,15 @@ android {
         applicationId 'ua.cimeika.ci'
         minSdk 26
         targetSdk 33
-        versionCode 13
-        versionName '0.5.4'
+        versionCode 14
+        versionName '0.7.0'
 
         buildConfigField 'String', 'CI_OPERATOR_BASE_URL',
                 quoteBuildConfig(ciOperatorBaseUrl)
         buildConfigField 'String', 'CI_OPERATOR_HEALTH_URL',
                 quoteBuildConfig(ciOperatorHealthUrl)
+        buildConfigField 'String', 'CI_CLOUD_SIGNAL_URL',
+                quoteBuildConfig(ciCloudSignalUrl)
     }
 
     buildFeatures {
@@ -73,8 +78,6 @@ android {
             if (ciStableSigningReady) {
                 signingConfig signingConfigs.ciRelease
             } else {
-                // Verification-only fallback. CI may install this candidate,
-                // but delivery is blocked unless stable signing is configured.
                 signingConfig signingConfigs.debug
             }
 

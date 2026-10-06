@@ -63,9 +63,11 @@ public final class CiOverlayService extends Service {
     private CiContextProvider contextProvider;
     private CiContextHalo contextHalo;
     private CiGestureRouter gestureRouter;
+    private CiSwipeVisualLayer swipeVisuals;
     private CiExternalAssistantAdapter externalAssistant;
     private org.json.JSONObject lastDisplayableResult;
     private long contextGeneration;
+    private long interactionGeneration;
 
     private enum OverlayState { PASSIVE, CONTEXT, MOVE, DOCKED, PULSE, HIDDEN }
     private OverlayState overlayState = OverlayState.PASSIVE;
@@ -101,6 +103,7 @@ public final class CiOverlayService extends Service {
         resultProjection = new CiResultProjection(this, windowManager);
         contextProvider = new CiContextClient(this);
         gestureRouter = new CiGestureRouter();
+        swipeVisuals = new CiSwipeVisualLayer(this, windowManager);
         externalAssistant = new ChatGptAndroidAdapter(this);
         contextHalo = new CiContextHalo(this, windowManager, new CiContextHalo.Callback() {
             @Override public void onCardTap(CiContextCard card) { handler.post(() -> handleContextCardTap(card)); }
@@ -159,6 +162,8 @@ public final class CiOverlayService extends Service {
         if (contextProvider != null) contextProvider.close();
         contextProvider = null;
         gestureRouter = null;
+        if (swipeVisuals != null) swipeVisuals.clear();
+        swipeVisuals = null;
         externalAssistant = null;
         clearContextHalo();
         contextHalo = null;
@@ -229,6 +234,8 @@ public final class CiOverlayService extends Service {
     private boolean onPointTouch(View view, MotionEvent event) {
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
+                interactionGeneration++;
+                if (swipeVisuals != null) swipeVisuals.clear();
                 downRawX = event.getRawX();
                 downRawY = event.getRawY();
                 downTime = System.currentTimeMillis();
@@ -290,6 +297,14 @@ public final class CiOverlayService extends Service {
             handler.removeCallbacks(pendingLongPress);
             pendingLongPress = null;
         }
+    }
+
+    private void cancelPendingTapActivation() {
+        if (pendingSingleTap != null && handler != null) {
+            handler.removeCallbacks(pendingSingleTap);
+        }
+        pendingSingleTap = null;
+        lastTapUpTime = 0L;
     }
 
     private void handleTap() {
@@ -472,6 +487,8 @@ public final class CiOverlayService extends Service {
         if (ciLogo == null) return;
         cancelPassiveBreath();
         ciLogo.animate().cancel();
+        ciLogo.setTranslationX(0f);
+        ciLogo.setTranslationY(0f);
         long d = animate ? 150L : 0L;
         float scale = 1f, alpha = 0.96f, z = dp(8);
         if (overlayState == OverlayState.DOCKED) { scale = 0.94f; alpha = 0.80f; z = dp(5); }
@@ -502,7 +519,9 @@ public final class CiOverlayService extends Service {
     }
 
     private void animateSwipe(float dx, float dy, long duration) {
+        final long gestureGeneration = interactionGeneration;
         String direction = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? "right" : "left") : (dy >= 0 ? "down" : "up");
+        cancelPendingTapActivation();
         if (overlayState == OverlayState.HIDDEN) {
             boolean inward = ("left".equals(dockSide) && "right".equals(direction))
                     || ("right".equals(dockSide) && "left".equals(direction));
@@ -511,39 +530,112 @@ public final class CiOverlayService extends Service {
             return;
         }
         if (overlayState == OverlayState.DOCKED) {
-            boolean outward = ("left".equals(dockSide) && "left".equals(direction)) || ("right".equals(dockSide) && "right".equals(direction));
-            boolean inward = ("left".equals(dockSide) && "right".equals(direction)) || ("right".equals(dockSide) && "left".equals(direction));
+            boolean outward = ("left".equals(dockSide) && "left".equals(direction))
+                    || ("right".equals(dockSide) && "right".equals(direction));
+            boolean inward = ("left".equals(dockSide) && "right".equals(direction))
+                    || ("right".equals(dockSide) && "left".equals(direction));
             if (outward) { emitGesture(dx, dy, duration, direction); pulseThenHide(); return; }
             if (inward) { emitGesture(dx, dy, duration, direction); undock(false); return; }
         }
-        OverlayState returnState = stableStateFromPrefs();
-        setState(OverlayState.PULSE);
-        float distance = dp(15);
-        float tx = 0f, ty = 0f, rx = 0f, ry = 0f;
-        if ("left".equals(direction)) { tx = -distance; ry = -7f; }
-        if ("right".equals(direction)) { tx = distance; ry = 7f; }
-        if ("up".equals(direction)) { ty = -distance; rx = 7f; }
-        if ("down".equals(direction)) { ty = distance; rx = -7f; }
-        final float ftx = tx, fty = ty, frx = rx, fry = ry;
-        ciLogo.animate().translationX(ftx).translationY(fty).rotationX(frx).rotationY(fry).scaleX(1.05f).scaleY(1.05f).setDuration(105)
-                .withEndAction(() -> ciLogo.animate().translationX(0f).translationY(0f).rotationX(0f).rotationY(0f)
-                        .scaleX(1f).scaleY(1f).setDuration(180)
-                        .withEndAction(() -> setState(returnState)).start()).start();
-        emitGesture(dx, dy, duration, direction);
+
         boolean haloVisible = contextHalo != null && contextHalo.isVisible();
         CiGestureRouter.Command command = gestureRouter != null
                 ? gestureRouter.routeOverlaySwipe(direction, haloVisible)
                 : CiGestureRouter.Command.RESERVED;
-        if (command != CiGestureRouter.Command.RESERVED) stopVoiceContact();
+        emitGesture(dx, dy, duration, direction, semanticForSwipeCommand(command, direction));
+
+        OverlayState returnState = stableStateFromPrefs();
+        setState(OverlayState.PULSE);
+        animateSwipeLogo(direction, returnState);
+
         if (command == CiGestureRouter.Command.MATERIALIZE_CONTEXT) {
-            requestContext("materialize_context", "left");
-        } else if (command == CiGestureRouter.Command.DISMISS_CONTEXT) {
-            dismissContextHalo("right");
+            stopVoiceContact();
+            invalidateContextRequests();
+            clearContextHalo();
+            clearResultProjection();
+            DisplayMetrics metrics = new DisplayMetrics();
+            windowManager.getDefaultDisplay().getRealMetrics(metrics);
+            if (swipeVisuals != null && pointParams != null) {
+                swipeVisuals.showContext(
+                        pointParams.x, pointParams.y, pointSize,
+                        metrics.widthPixels, metrics.heightPixels,
+                        () -> {
+                            if (gestureGeneration == interactionGeneration
+                                    && overlayState != OverlayState.HIDDEN) {
+                                requestContext("materialize_context", "left");
+                            }
+                        }
+                );
+            } else {
+                requestContext("materialize_context", "left");
+            }
+            return;
+        }
+
+        if (command == CiGestureRouter.Command.ACTIVATE_ACTION) {
+            stopVoiceContact();
+            invalidateContextRequests();
+            clearContextHalo();
+            clearResultProjection();
+            DisplayMetrics metrics = new DisplayMetrics();
+            windowManager.getDefaultDisplay().getRealMetrics(metrics);
+            if (swipeVisuals != null && pointParams != null) {
+                swipeVisuals.showAction(
+                        pointParams.x, pointParams.y, pointSize,
+                        metrics.widthPixels, metrics.heightPixels,
+                        () -> {
+                            if (gestureGeneration == interactionGeneration
+                                    && overlayState != OverlayState.HIDDEN) {
+                                activateVoiceFromSwipe();
+                            }
+                        }
+                );
+            } else {
+                activateVoiceFromSwipe();
+            }
+            return;
+        }
+
+        if (command != CiGestureRouter.Command.RESERVED) stopVoiceContact();
+        if (command == CiGestureRouter.Command.DISMISS_CONTEXT) {
+            dismissContextHalo(direction);
         } else if (command == CiGestureRouter.Command.BROWSE_NEWER) {
             requestContext("context_newer", "up");
         } else if (command == CiGestureRouter.Command.BROWSE_OLDER) {
             requestContext("context_older", "down");
         }
+    }
+
+    private void animateSwipeLogo(String direction, OverlayState returnState) {
+        if (ciLogo == null) return;
+        float distance = dp(("left".equals(direction) || "right".equals(direction)) ? 22 : 17);
+        float tx = 0f, ty = 0f, rx = 0f, ry = 0f;
+        if ("left".equals(direction)) { tx = -distance; ry = -11f; }
+        if ("right".equals(direction)) { tx = distance; ry = 11f; }
+        if ("up".equals(direction)) { ty = -distance; rx = 8f; }
+        if ("down".equals(direction)) { ty = distance; rx = -8f; }
+        final float ftx = tx, fty = ty, frx = rx, fry = ry;
+        ciLogo.animate().cancel();
+        ciLogo.animate()
+                .translationX(ftx).translationY(fty)
+                .rotationX(frx).rotationY(fry)
+                .translationZ(dp(2)).scaleX(0.94f).scaleY(0.94f)
+                .setDuration(105L)
+                .withEndAction(() -> ciLogo.animate()
+                        .translationX(ftx * 0.34f).translationY(fty * 0.34f)
+                        .rotationX(frx * 0.30f).rotationY(fry * 0.30f)
+                        .translationZ(dp(24)).scaleX(1.08f).scaleY(1.08f)
+                        .setDuration(135L)
+                        .withEndAction(() -> ciLogo.animate()
+                                .translationX(0f).translationY(0f)
+                                .rotationX(0f).rotationY(0f)
+                                .translationZ(dp(8)).scaleX(1f).scaleY(1f)
+                                .setDuration(210L)
+                                .withEndAction(() -> {
+                                    if (overlayState == OverlayState.PULSE) setState(returnState);
+                                }).start())
+                        .start())
+                .start();
     }
 
     private void updateCircularGesture(float rawX, float rawY) {
@@ -613,6 +705,20 @@ public final class CiOverlayService extends Service {
                 .withEndAction(this::hideCi).start();
     }
 
+    private void activateVoiceFromSwipe() {
+        if (ciLogo != null) {
+            ciLogo.animate().cancel();
+            ciLogo.setTranslationX(0f);
+            ciLogo.setTranslationY(0f);
+            ciLogo.setRotationX(0f);
+            ciLogo.setRotationY(0f);
+            ciLogo.setScaleX(1f);
+            ciLogo.setScaleY(1f);
+            ciLogo.setTranslationZ(dp(8));
+        }
+        performCiClick();
+    }
+
     private void performCiClick() {
         vibrate();
         invalidateContextRequests();
@@ -643,15 +749,31 @@ public final class CiOverlayService extends Service {
         voiceController.toggle();
     }
 
+    private String semanticForSwipeCommand(CiGestureRouter.Command command, String direction) {
+        if (command == CiGestureRouter.Command.MATERIALIZE_CONTEXT) return "materialize_context";
+        if (command == CiGestureRouter.Command.ACTIVATE_ACTION) return "activate_action";
+        if (command == CiGestureRouter.Command.DISMISS_CONTEXT) return "reset_context";
+        if (command == CiGestureRouter.Command.BROWSE_NEWER) return "context_newer";
+        if (command == CiGestureRouter.Command.BROWSE_OLDER) return "context_older";
+        return defaultSemanticForDirection(direction);
+    }
+
+    private String defaultSemanticForDirection(String direction) {
+        return "right".equals(direction) ? "reset_context"
+                : ("left".equals(direction) ? "materialize_context"
+                : ("up".equals(direction) ? "context_newer" : "context_older"));
+    }
+
     private void emitGesture(float dx, float dy, long duration, String direction) {
+        emitGesture(dx, dy, duration, direction, defaultSemanticForDirection(direction));
+    }
+
+    private void emitGesture(float dx, float dy, long duration, String direction, String semantic) {
         Intent event = new Intent(ACTION_CI_GESTURE);
         event.putExtra("dx", dx);
         event.putExtra("dy", dy);
         event.putExtra("duration", duration);
         event.putExtra("direction", direction);
-        String semantic = "right".equals(direction) ? "reset_context"
-                : ("left".equals(direction) ? "materialize_context"
-                : ("up".equals(direction) ? "context_newer" : "context_older"));
         event.putExtra("semantic", semantic);
         event.putExtra("timestamp", System.currentTimeMillis());
         event.putExtra("source", "ci-active-point");
@@ -797,6 +919,7 @@ public final class CiOverlayService extends Service {
 
     private void resetToZeroState() {
         stopVoiceContact();
+        if (swipeVisuals != null) swipeVisuals.clear();
         invalidateContextRequests();
         clearContextHalo();
         clearResultProjection();
@@ -989,6 +1112,7 @@ public final class CiOverlayService extends Service {
 
     private void hideCi() {
         if (pointParams == null || ciLogo == null) return;
+        if (swipeVisuals != null) swipeVisuals.clear();
         stopVoiceContact();
         invalidateContextRequests();
         clearContextHalo();

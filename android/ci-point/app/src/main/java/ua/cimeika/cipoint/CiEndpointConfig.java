@@ -12,6 +12,7 @@ import java.util.Locale;
 final class CiEndpointConfig {
     private static final String PREFS = "ci_point";
     private static final String PREF_AI_ENDPOINT = "local_ai_endpoint";
+    private static final String PREF_LAST_LIVE_AT = "local_ai_endpoint_live_at";
     private static final String LEGACY_ENDPOINT = "http://192.168.1.38:8791/ci/intent";
     private static final String CURRENT_CLEAR_TEXT_LAN_HOST = "192.168.1.54";
 
@@ -35,7 +36,19 @@ final class CiEndpointConfig {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .edit()
                 .putString(PREF_AI_ENDPOINT, base)
+                .putLong(PREF_LAST_LIVE_AT, System.currentTimeMillis())
                 .apply();
+    }
+
+    static long lastLiveAt(Context context) {
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getLong(PREF_LAST_LIVE_AT, 0L);
+    }
+
+    static String lastLiveBase(Context context) {
+        String value = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getString(PREF_AI_ENDPOINT, "");
+        return normalizedBase(value == null ? "" : value);
     }
 
     private static void addCandidate(

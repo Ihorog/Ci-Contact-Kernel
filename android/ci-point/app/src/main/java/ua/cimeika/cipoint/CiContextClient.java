@@ -170,29 +170,40 @@ final class CiContextClient implements CiContextProvider {
     private void syncCloud(String operationId) {
         if (operationId == null || operationId.isEmpty() || closed) return;
         cloudExecutor.execute(() -> {
-            boolean ok = false;
-            try {
-                String endpoint = BuildConfig.CI_CLOUD_SIGNAL_URL;
-                if (endpoint == null || endpoint.trim().isEmpty()) return;
-                JSONObject envelope = operationRegistry.cloudEnvelope(
-                        operationId,
-                        CiDeviceIdentity.keyId()
-                );
-                if (envelope.length() == 0) return;
-                JSONObject signal = new JSONObject();
-                signal.put("type", "ci_operation_registry");
-                signal.put("signalId", operationId);
-                signal.put("source", "ci-point");
-                signal.put("priority", "normal");
-                signal.put("operation", envelope);
-                postJson(endpoint, signal);
-                ok = true;
-            } catch (Exception ignored) {
-                ok = false;
-            } finally {
-                operationRegistry.markCloudSync(operationId, ok);
+            boolean currentOk = syncCloudOne(operationId);
+            if (!currentOk || closed) return;
+
+            for (String pending : operationRegistry.pendingCloudSync(8, operationId)) {
+                if (closed) return;
+                if (!syncCloudOne(pending)) return;
             }
         });
+    }
+
+    private boolean syncCloudOne(String operationId) {
+        boolean ok = false;
+        try {
+            String endpoint = BuildConfig.CI_CLOUD_SIGNAL_URL;
+            if (endpoint == null || endpoint.trim().isEmpty()) return false;
+            JSONObject envelope = operationRegistry.cloudEnvelope(
+                    operationId,
+                    CiDeviceIdentity.keyId()
+            );
+            if (envelope.length() == 0) return false;
+            JSONObject signal = new JSONObject();
+            signal.put("type", "ci_operation_registry");
+            signal.put("signalId", operationId);
+            signal.put("source", "ci-point");
+            signal.put("priority", "normal");
+            signal.put("operation", envelope);
+            postJson(endpoint, signal);
+            ok = true;
+            return true;
+        } catch (Exception ignored) {
+            return false;
+        } finally {
+            operationRegistry.markCloudSync(operationId, ok);
+        }
     }
 
     private void deliverSuccess(Callback callback, JSONObject payload) {

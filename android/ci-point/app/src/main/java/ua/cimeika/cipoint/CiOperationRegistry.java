@@ -60,10 +60,9 @@ final class CiOperationRegistry extends SQLiteOpenHelper {
     String begin(String path, JSONObject body) {
         long now = System.currentTimeMillis();
         String id = "ci-op-" + UUID.randomUUID();
-        String raw = body == null ? "{}" : body.toString();
-        String bounded = raw.length() > MAX_LOCAL_JSON
-                ? raw.substring(0, MAX_LOCAL_JSON)
-                : raw;
+        JSONObject safeBody = body == null ? new JSONObject() : body;
+        String raw = safeBody.toString();
+        String bounded = boundedJson(safeBody);
 
         ContentValues values = new ContentValues();
         values.put("operation_id", id);
@@ -97,7 +96,7 @@ final class CiOperationRegistry extends SQLiteOpenHelper {
         );
         values.put(
                 "evidence_json",
-                payload == null ? "{}" : bounded(payload.toString())
+                boundedJson(payload == null ? new JSONObject() : payload)
         );
         getWritableDatabase().update(
                 TABLE,
@@ -276,11 +275,110 @@ final class CiOperationRegistry extends SQLiteOpenHelper {
         return "operation";
     }
 
-    private String bounded(String value) {
-        if (value == null) return "{}";
-        return value.length() > MAX_LOCAL_JSON
-                ? value.substring(0, MAX_LOCAL_JSON)
-                : value;
+    private String boundedJson(JSONObject value) {
+        JSONObject safe = value == null ? new JSONObject() : value;
+        String raw = safe.toString();
+        if (raw.length() <= MAX_LOCAL_JSON) return raw;
+
+        JSONObject compact = new JSONObject();
+        try {
+            compact.put("truncated", true);
+            compact.put("content_hash", sha256(raw));
+            copyString(safe, compact, "source", 256);
+            copyString(safe, compact, "platform", 64);
+            copyString(safe, compact, "device", 256);
+            copyString(safe, compact, "surface", 128);
+            copyString(safe, compact, "locale", 32);
+            copyString(safe, compact, "gesture", 128);
+            copyString(safe, compact, "direction", 32);
+            copyString(safe, compact, "operation_id", 128);
+
+            JSONObject context = safe.optJSONObject("context");
+            if (context != null) compact.put("context", compactContext(context));
+
+            JSONObject card = safe.optJSONObject("card");
+            if (card != null) compact.put("card", compactCard(card));
+
+            JSONObject evidence = safe.optJSONObject("evidence");
+            if (evidence != null) compact.put("evidence", compactEvidence(evidence));
+
+            compact.put(
+                    "preview",
+                    raw.substring(0, Math.min(2048, raw.length()))
+            );
+        } catch (Exception ignored) { }
+        return compact.toString();
+    }
+
+    private JSONObject compactContext(JSONObject source) {
+        JSONObject out = new JSONObject();
+        try {
+            copyString(source, out, "intent", 2048);
+            copyString(source, out, "overlay_state", 64);
+            copyString(source, out, "dock_side", 32);
+            if (source.has("timestamp")) {
+                out.put("timestamp", source.optLong("timestamp", 0L));
+            }
+            JSONObject last = source.optJSONObject("last_result");
+            if (last != null) {
+                JSONObject compactLast = new JSONObject();
+                copyString(last, compactLast, "answer", 2048);
+                copyString(last, compactLast, "query", 2048);
+                copyString(last, compactLast, "action", 128);
+                out.put("last_result", compactLast);
+            }
+        } catch (Exception ignored) { }
+        return out;
+    }
+
+    private JSONObject compactCard(JSONObject source) {
+        JSONObject out = new JSONObject();
+        try {
+            copyString(source, out, "id", 256);
+            copyString(source, out, "label", 1024);
+            JSONObject context = source.optJSONObject("context");
+            if (context != null) {
+                JSONObject compactContext = new JSONObject();
+                copyString(context, compactContext, "intent", 2048);
+                copyString(context, compactContext, "state", 64);
+                if (context.has("relevance")) {
+                    compactContext.put(
+                            "relevance",
+                            context.optDouble("relevance", 0d)
+                    );
+                }
+                out.put("context", compactContext);
+            }
+        } catch (Exception ignored) { }
+        return out;
+    }
+
+    private JSONObject compactEvidence(JSONObject source) {
+        JSONObject out = new JSONObject();
+        try {
+            copyString(source, out, "state", 128);
+            copyString(source, out, "source", 256);
+            copyString(source, out, "execution_plane", 128);
+            if (source.has("verified")) {
+                out.put("verified", source.optBoolean("verified", false));
+            }
+        } catch (Exception ignored) { }
+        return out;
+    }
+
+    private void copyString(
+            JSONObject source,
+            JSONObject target,
+            String key,
+            int maxLength) {
+        if (source == null || target == null || !source.has(key)) return;
+        String value = source.optString(key, "");
+        if (value.length() > maxLength) {
+            value = value.substring(0, maxLength);
+        }
+        try {
+            target.put(key, value);
+        } catch (Exception ignored) { }
     }
 
     private String sha256(String value) {

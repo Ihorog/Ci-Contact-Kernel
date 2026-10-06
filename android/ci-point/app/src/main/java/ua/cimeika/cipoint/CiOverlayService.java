@@ -62,6 +62,8 @@ public final class CiOverlayService extends Service {
     private CiResultProjection resultProjection;
     private CiContextProvider contextProvider;
     private CiContextHalo contextHalo;
+    private CiWatchHalo watchHalo;
+    private org.json.JSONObject pendingConfirmationResult;
     private CiGestureRouter gestureRouter;
     private CiExternalAssistantAdapter externalAssistant;
     private org.json.JSONObject lastDisplayableResult;
@@ -106,6 +108,7 @@ public final class CiOverlayService extends Service {
             @Override public void onCardTap(CiContextCard card) { handler.post(() -> handleContextCardTap(card)); }
             @Override public void onCardSwipe(CiContextCard card, String direction) { handler.post(() -> handleContextCardSwipe(card, direction)); }
         });
+        watchHalo = new CiWatchHalo(this, windowManager);
         voiceController = new CiVoiceController(this, new CiVoiceController.Callback() {
             @Override public void onListeningChanged(boolean listening) { handler.post(() -> handleVoiceListening(listening)); }
             @Override public void onTranscript(String text) { handler.post(() -> handleVoiceTranscript(text)); }
@@ -162,6 +165,9 @@ public final class CiOverlayService extends Service {
         externalAssistant = null;
         clearContextHalo();
         contextHalo = null;
+        clearWatchHalo();
+        watchHalo = null;
+        pendingConfirmationResult = null;
         clearResultProjection();
         resultProjection = null;
         removeOverlay(activePoint);
@@ -241,7 +247,7 @@ public final class CiOverlayService extends Service {
                 lastGestureAngle = Math.atan2(event.getRawY() - gestureCenterY, event.getRawX() - gestureCenterX);
                 accumulatedGestureAngle = 0d;
                 gestureAngleSamples = 0;
-                pendingLongPress = this::enterMoveMode;
+                pendingLongPress = this::showWatchHalo;
                 handler.postDelayed(pendingLongPress, LONG_PRESS_MS);
                 return true;
 
@@ -253,7 +259,8 @@ public final class CiOverlayService extends Service {
                 if (overlayState == OverlayState.MOVE) {
                     dragging = true;
                     moveCi(startX + Math.round(moveDx), startY + Math.round(moveDy));
-                } else if (moveDistance > dp(22)) {
+                } else if (!(longPressTriggered && watchHalo != null && watchHalo.isVisible())
+                        && moveDistance > dp(22)) {
                     cancelLongPress();
                 }
                 return true;
@@ -266,6 +273,8 @@ public final class CiOverlayService extends Service {
                 double distance = Math.hypot(dx, dy);
                 if (overlayState == OverlayState.MOVE) {
                     finishMove();
+                } else if (longPressTriggered && watchHalo != null && watchHalo.isVisible()) {
+                    handleWatchLongPressRelease(dx, dy, duration);
                 } else if (isCircularGesture() && duration <= 1800L) {
                     animateCircularGesture(accumulatedGestureAngle > 0d);
                 } else if (distance <= touchSlop && duration < 650) {
@@ -293,6 +302,25 @@ public final class CiOverlayService extends Service {
     }
 
     private void handleTap() {
+        if (watchHalo != null && watchHalo.isVisible()) {
+            if (pendingConfirmationResult != null) {
+                org.json.JSONObject confirmed = pendingConfirmationResult;
+                pendingConfirmationResult = null;
+                String action = confirmed.optString("action", "answer");
+                watchHalo.confirmed();
+                stopVoiceContact();
+                executeResolvedAction(action, confirmed);
+                emitExecutionEvidence(action, "verified", "center_confirm", confirmed);
+            } else if (voiceController != null && voiceController.isConversationActive()) {
+                stopVoiceContact();
+                watchHalo.confirmed();
+            } else {
+                clearWatchHalo();
+                setState(stableStateFromPrefs());
+            }
+            return;
+        }
+
         long now = System.currentTimeMillis();
         if (lastTapUpTime > 0 && now - lastTapUpTime <= DOUBLE_TAP_MS) {
             lastTapUpTime = 0;
@@ -306,8 +334,8 @@ public final class CiOverlayService extends Service {
             lastTapUpTime = 0;
             pendingSingleTap = null;
             if (overlayState == OverlayState.HIDDEN) revealFromHidden(false);
-            else if (overlayState == OverlayState.DOCKED) undock(true);
-            else performCiClick();
+            else if (overlayState == OverlayState.DOCKED) undock(false);
+            else pulseResult();
         };
         handler.postDelayed(pendingSingleTap, DOUBLE_TAP_MS);
     }
@@ -331,6 +359,68 @@ public final class CiOverlayService extends Service {
                 .rotationX(-4f).translationZ(dp(18)).setDuration(150).start();
     }
 
+    private void showWatchHalo() {
+        if (activePoint == null || ciLogo == null || pointParams == null) return;
+        longPressTriggered = true;
+        stopVoiceContact();
+        pendingConfirmationResult = null;
+        invalidateContextRequests();
+        clearContextHalo();
+        clearResultProjection();
+        vibrate();
+
+        DisplayMetrics metrics = new DisplayMetrics();
+        windowManager.getDefaultDisplay().getRealMetrics(metrics);
+        if (watchHalo != null) {
+            watchHalo.show(
+                    pointParams.x,
+                    pointParams.y,
+                    pointSize,
+                    metrics.widthPixels,
+                    metrics.heightPixels
+            );
+        }
+        setState(OverlayState.CONTEXT);
+        ciLogo.animate().cancel();
+        ciLogo.animate().alpha(1f).scaleX(1.04f).scaleY(1.04f)
+                .translationZ(dp(20)).setDuration(150L).start();
+    }
+
+    private void handleWatchLongPressRelease(float dx, float dy, long duration) {
+        longPressTriggered = false;
+        double distance = Math.hypot(dx, dy);
+        if (distance >= dp(30) && Math.abs(dy) > Math.abs(dx) && dy < 0f) {
+            activateWatchVoice();
+            return;
+        }
+        if (distance >= dp(30) && Math.abs(dy) > Math.abs(dx) && dy > 0f) {
+            clearWatchHalo();
+            setState(stableStateFromPrefs());
+        }
+    }
+
+    private void activateWatchVoice() {
+        if (watchHalo == null || !watchHalo.isVisible()) return;
+        watchHalo.setVoiceState(CiWatchHalo.STATE_READY);
+        vibrate();
+        emitSemanticGesture("voice_ready", "up");
+        handler.postDelayed(() -> {
+            if (watchHalo == null || !watchHalo.isVisible()) return;
+            performCiClick();
+        }, 160L);
+    }
+
+    private void clearWatchHalo() {
+        if (watchHalo != null) watchHalo.clear();
+    }
+
+    private void repositionWatchHalo(int x, int y) {
+        if (watchHalo == null || !watchHalo.isVisible()) return;
+        DisplayMetrics metrics = new DisplayMetrics();
+        windowManager.getDefaultDisplay().getRealMetrics(metrics);
+        watchHalo.reposition(x, y, pointSize, metrics.widthPixels, metrics.heightPixels);
+    }
+
     private void moveCi(int requestedX, int requestedY) {
         if (windowManager == null || activePoint == null || ciLogo == null) return;
         DisplayMetrics metrics = new DisplayMetrics();
@@ -345,6 +435,7 @@ public final class CiOverlayService extends Service {
         windowManager.updateViewLayout(ciLogo, logoParams);
         repositionProjection(x, y);
         repositionContextHalo(x, y);
+        repositionWatchHalo(x, y);
     }
 
     private int clampX(int value, int width) {
@@ -447,6 +538,7 @@ public final class CiOverlayService extends Service {
                 windowManager.updateViewLayout(ciLogo, logoParams);
                 repositionProjection(x, y);
                 repositionContextHalo(x, y);
+                repositionWatchHalo(x, y);
             } catch (Exception ignored) { }
         });
         if (endAction != null) animator.addListener(new android.animation.AnimatorListenerAdapter() {
@@ -503,6 +595,18 @@ public final class CiOverlayService extends Service {
 
     private void animateSwipe(float dx, float dy, long duration) {
         String direction = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? "right" : "left") : (dy >= 0 ? "down" : "up");
+
+        if (watchHalo != null && watchHalo.isVisible()) {
+            if ("up".equals(direction)) {
+                activateWatchVoice();
+            } else if ("down".equals(direction) || "right".equals(direction)) {
+                emitSemanticGesture("watch_dismiss", direction);
+                clearWatchHalo();
+                stopVoiceContact();
+                setState(stableStateFromPrefs());
+            }
+            return;
+        }
         if (overlayState == OverlayState.HIDDEN) {
             boolean inward = ("left".equals(dockSide) && "right".equals(direction))
                     || ("right".equals(dockSide) && "left".equals(direction));
@@ -797,6 +901,8 @@ public final class CiOverlayService extends Service {
 
     private void resetToZeroState() {
         stopVoiceContact();
+        pendingConfirmationResult = null;
+        clearWatchHalo();
         invalidateContextRequests();
         clearContextHalo();
         clearResultProjection();
@@ -809,9 +915,19 @@ public final class CiOverlayService extends Service {
         if (voiceController != null && voiceController.isConversationActive()) {
             voiceController.stop();
         }
+        if (watchHalo != null && watchHalo.isVisible() && pendingConfirmationResult == null) {
+            watchHalo.setVoiceState(CiWatchHalo.STATE_IDLE);
+        }
     }
 
     private void handleVoiceListening(boolean listening) {
+        if (watchHalo != null && watchHalo.isVisible()) {
+            watchHalo.setVoiceState(listening
+                    ? CiWatchHalo.STATE_LISTENING
+                    : (voiceController != null && voiceController.isConversationActive()
+                        ? CiWatchHalo.STATE_PROCESSING
+                        : CiWatchHalo.STATE_IDLE));
+        }
         setState(listening ? OverlayState.CONTEXT : OverlayState.PULSE);
         if (ciLogo == null) return;
         ciLogo.animate().cancel();
@@ -825,6 +941,9 @@ public final class CiOverlayService extends Service {
     }
 
     private void handleVoiceTranscript(String text) {
+        if (watchHalo != null && watchHalo.isVisible()) {
+            watchHalo.setVoiceState(CiWatchHalo.STATE_PROCESSING);
+        }
         setState(OverlayState.PULSE);
         Intent event = new Intent(ACTION_CI_CLICK);
         event.putExtra("timestamp", System.currentTimeMillis());
@@ -847,10 +966,16 @@ public final class CiOverlayService extends Service {
 
         showResultProjection(result);
         if (result.optBoolean("requires_confirmation", false)) {
+            pendingConfirmationResult = result;
+            if (watchHalo != null && watchHalo.isVisible()) {
+                watchHalo.setVoiceState(CiWatchHalo.STATE_CONFIRM);
+            }
             setState(OverlayState.CONTEXT);
-            emitExecutionEvidence(action, "confirmation_required", "not_executed", result);
+            emitExecutionEvidence(action, "confirmation_required", "center_confirm", result);
             return;
         }
+        pendingConfirmationResult = null;
+        if (watchHalo != null && watchHalo.isVisible()) watchHalo.confirmed();
         executeResolvedAction(action, result);
     }
 
@@ -952,6 +1077,9 @@ public final class CiOverlayService extends Service {
     }
 
     private void handleVoiceError(String error) {
+        if (watchHalo != null && watchHalo.isVisible()) {
+            watchHalo.setVoiceState(CiWatchHalo.STATE_ERROR);
+        }
         Intent event = new Intent(ACTION_CI_RESULT);
         event.putExtra("timestamp", System.currentTimeMillis());
         event.putExtra("source", "ci-overlay-v3");
@@ -992,6 +1120,8 @@ public final class CiOverlayService extends Service {
         stopVoiceContact();
         invalidateContextRequests();
         clearContextHalo();
+        clearWatchHalo();
+        pendingConfirmationResult = null;
         clearResultProjection();
         if (prefs != null) prefs.edit().putBoolean(PREF_HIDDEN, true).apply();
         cancelLongPress();
@@ -1011,6 +1141,8 @@ public final class CiOverlayService extends Service {
     }
 
     private void detachCiViews() {
+        clearWatchHalo();
+        pendingConfirmationResult = null;
         clearResultProjection();
         removeOverlay(activePoint);
         removeOverlay(ciLogo);

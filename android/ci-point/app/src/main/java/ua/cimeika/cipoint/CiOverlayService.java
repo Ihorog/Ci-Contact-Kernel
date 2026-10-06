@@ -486,7 +486,9 @@ public final class CiOverlayService extends Service {
 
     private void activateAdsNextAction() {
         if (adsHalo == null || !adsHalo.isVisible()) return;
-        adsHalo.markWorking();
+        // Requesting an action is not execution. Keep the canonical
+        // "потрібне рішення" state until an operator acknowledges execution.
+        adsHalo.markDecisionRequired();
         vibrate();
 
         Intent event = new Intent(ACTION_CI_ADS_ACTION);

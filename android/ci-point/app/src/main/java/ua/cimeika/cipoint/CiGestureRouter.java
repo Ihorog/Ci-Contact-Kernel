@@ -3,6 +3,7 @@ package ua.cimeika.cipoint;
 final class CiGestureRouter {
     enum Command {
         MATERIALIZE_CONTEXT,
+        ACTIVATE_ACTION,
         DISMISS_CONTEXT,
         BROWSE_NEWER,
         BROWSE_OLDER,
@@ -12,9 +13,9 @@ final class CiGestureRouter {
 
     Command routeOverlaySwipe(String direction, boolean haloVisible) {
         if ("left".equals(direction)) return Command.MATERIALIZE_CONTEXT;
-        if ("right".equals(direction)) return Command.DISMISS_CONTEXT;
-        if (haloVisible && "up".equals(direction)) return Command.BROWSE_NEWER;
-        if (haloVisible && "down".equals(direction)) return Command.BROWSE_OLDER;
+        if ("right".equals(direction)) return Command.ACTIVATE_ACTION;
+        if ("up".equals(direction)) return Command.BROWSE_NEWER;
+        if ("down".equals(direction)) return Command.BROWSE_OLDER;
         return Command.RESERVED;
     }
 

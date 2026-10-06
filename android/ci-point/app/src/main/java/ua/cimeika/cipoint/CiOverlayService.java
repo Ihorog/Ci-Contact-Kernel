@@ -334,7 +334,11 @@ public final class CiOverlayService extends Service {
 
     private void handleTap() {
         if (adsHalo != null && adsHalo.isVisible()) {
-            activateAdsNextAction();
+            if (surfaceRouter != null && surfaceRouter.is(CiStateMachine.Surface.CONFIRM)) {
+                confirmAdsNextAction();
+            } else {
+                activateAdsNextAction();
+            }
             return;
         }
 
@@ -520,6 +524,26 @@ public final class CiOverlayService extends Service {
         sendBroadcast(event);
 
         emitSemanticGesture("ads_next_action", "center");
+    }
+
+    private void confirmAdsNextAction() {
+        if (adsHalo == null || !adsHalo.isVisible()) return;
+        if (surfaceRouter != null) {
+            surfaceRouter.activate(CiStateMachine.Surface.ADS, "ads_confirmed");
+        }
+        adsHalo.markWorking();
+        vibrate();
+
+        Intent event = new Intent(ACTION_CI_ADS_ACTION);
+        event.setPackage(getPackageName());
+        event.putExtra("timestamp", System.currentTimeMillis());
+        event.putExtra("source", "ci-ads-halo");
+        event.putExtra("action", "confirm_next_action");
+        event.putExtra("requires_confirmation", false);
+        event.putExtra("confirmed", true);
+        sendBroadcast(event);
+
+        emitSemanticGesture("ads_confirmed", "center");
     }
 
     private void clearAdsHalo() {

@@ -11,7 +11,7 @@ import java.nio.charset.StandardCharsets;
 
 final class CiVerifiedResources {
     private static final String STATUS_ENDPOINT =
-            "https://mcp-http.cimeika.com.ua/operator/health";
+            BuildConfig.CI_OPERATOR_HEALTH_URL;
     private static final long CACHE_MS = 60_000L;
     private static final long RETRY_BACKOFF_MS = 120_000L;
 
@@ -81,7 +81,7 @@ final class CiVerifiedResources {
         connection.setConnectTimeout(2500);
         connection.setReadTimeout(4000);
         connection.setRequestProperty("Accept", "application/json");
-        connection.setRequestProperty("User-Agent", "CiPoint/0.5.2");
+        connection.setRequestProperty("User-Agent", "CiPoint/0.7.0");
 
         int status = connection.getResponseCode();
         InputStream stream = status >= 200 && status < 300

@@ -72,6 +72,9 @@ final class CiWatchHalo {
                     PixelFormat.TRANSLUCENT
             );
             params.gravity = Gravity.TOP | Gravity.START;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                params.alpha = 0.55f;
+            }
             place();
             windowManager.addView(view, params);
             view.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(180L).start();
@@ -139,6 +142,12 @@ final class CiWatchHalo {
         int maxY = Math.max(0, screenHeight - height);
         params.x = Math.max(0, Math.min(requestedX, maxX));
         params.y = Math.max(0, Math.min(requestedY, maxY));
+        if (view != null) {
+            view.setAnchorLocal(
+                    anchorX + pointSize / 2f - params.x,
+                    anchorY + pointSize / 2f - params.y
+            );
+        }
     }
 
     private void startTicker() {
@@ -179,10 +188,14 @@ final class CiWatchHalo {
 
         private int pointSize;
         private String state = STATE_IDLE;
+        private float anchorCenterX;
+        private float anchorCenterY;
 
         WatchView(Context context) {
             super(context);
             density = context.getResources().getDisplayMetrics().density;
+            anchorCenterX = dpF(CENTER_X_DP);
+            anchorCenterY = dpF(CENTER_Y_DP);
             setBackgroundColor(Color.TRANSPARENT);
             setLayerType(View.LAYER_TYPE_SOFTWARE, null);
 
@@ -219,6 +232,12 @@ final class CiWatchHalo {
             invalidate();
         }
 
+        void setAnchorLocal(float x, float y) {
+            anchorCenterX = x;
+            anchorCenterY = y;
+            invalidate();
+        }
+
         void setState(String next) {
             state = next == null ? STATE_IDLE : next;
             invalidate();
@@ -226,11 +245,21 @@ final class CiWatchHalo {
 
         @Override protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
-            final float cx = dpF(CENTER_X_DP);
-            final float cy = dpF(CENTER_Y_DP);
+            final float cx = anchorCenterX;
+            final float cy = anchorCenterY;
             final float pointRadius = Math.max(dpF(28f), pointSize / 2f);
             final float innerRadius = pointRadius + dpF(6f);
-            final float pipRadius = dpF(89f);
+            final float visibleRadius = Math.max(
+                    0f,
+                    Math.min(
+                            Math.min(cx, getWidth() - cx),
+                            Math.min(cy, getHeight() - cy)
+                    ) - dpF(4f)
+            );
+            final float pipRadius = Math.min(dpF(89f), visibleRadius);
+            final float hourLength = Math.min(dpF(58f), Math.max(innerRadius, pipRadius - dpF(18f)));
+            final float minuteLength = Math.min(dpF(76f), Math.max(innerRadius, pipRadius - dpF(8f)));
+            final float secondLength = Math.min(dpF(84f), Math.max(innerRadius, pipRadius - dpF(3f)));
 
             boolean night = (getResources().getConfiguration().uiMode
                     & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
@@ -246,25 +275,48 @@ final class CiWatchHalo {
             timePaint.setColor(text);
             datePaint.setColor(Color.argb(night ? 205 : 190, Color.red(text), Color.green(text), Color.blue(text)));
 
-            drawPips(canvas, cx, cy, pipRadius);
+            if (pipRadius > innerRadius + dpF(2f)) {
+                drawPips(canvas, cx, cy, pipRadius);
+            }
 
             Calendar now = Calendar.getInstance();
+            timeFormat.setTimeZone(now.getTimeZone());
+            dateFormat.setTimeZone(now.getTimeZone());
             float second = now.get(Calendar.SECOND) + now.get(Calendar.MILLISECOND) / 1000f;
             float minute = now.get(Calendar.MINUTE) + second / 60f;
             float hour = (now.get(Calendar.HOUR) % 12) + minute / 60f;
 
-            drawHand(canvas, cx, cy, hour * 30f, innerRadius, dpF(58f), hourPaint);
-            drawHand(canvas, cx, cy, minute * 6f, innerRadius, dpF(76f), minutePaint);
-            drawHand(canvas, cx, cy, second * 6f, innerRadius, dpF(84f), secondPaint);
+            if (hourLength > innerRadius) {
+                drawHand(canvas, cx, cy, hour * 30f, innerRadius, hourLength, hourPaint);
+                drawHand(canvas, cx, cy, minute * 6f, innerRadius, minuteLength, minutePaint);
+                drawHand(canvas, cx, cy, second * 6f, innerRadius, secondLength, secondPaint);
+            }
 
-            Date date = new Date();
+            Date date = now.getTime();
             String dateText = dateFormat.format(date);
             if (!dateText.isEmpty()) {
                 dateText = dateText.substring(0, 1).toUpperCase(locale) + dateText.substring(1);
             }
 
-            canvas.drawText(timeFormat.format(date), dpF(12f), dpF(31f), timePaint);
-            canvas.drawText(dateText, dpF(12f), dpF(52f), datePaint);
+            String timeText = timeFormat.format(date);
+            float textWidth = Math.max(
+                    timePaint.measureText(timeText),
+                    datePaint.measureText(dateText)
+            );
+            float timeX = clamp(
+                    cx - dpF(138f),
+                    dpF(8f),
+                    Math.max(dpF(8f), getWidth() - textWidth - dpF(8f))
+            );
+            float timeY = clamp(
+                    cy - dpF(114f),
+                    dpF(31f),
+                    Math.max(dpF(31f), getHeight() - dpF(32f))
+            );
+            float dateY = Math.min(timeY + dpF(21f), getHeight() - dpF(8f));
+
+            canvas.drawText(timeText, timeX, timeY, timePaint);
+            canvas.drawText(dateText, timeX, dateY, datePaint);
 
             drawVoiceState(canvas, cx, cy, pointRadius, blue, rose, text);
         }
@@ -329,6 +381,10 @@ final class CiWatchHalo {
                 centerPaint.setTextSize(dpF(28f));
             }
             statePaint.setAlpha(255);
+        }
+
+        private float clamp(float value, float min, float max) {
+            return Math.max(min, Math.min(value, max));
         }
 
         private float dpF(float value) {

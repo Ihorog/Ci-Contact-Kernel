@@ -129,8 +129,16 @@ final class CiWatchHalo {
         if (params == null) return;
         int centerX = dp(CENTER_X_DP);
         int centerY = dp(CENTER_Y_DP);
-        params.x = anchorX + pointSize / 2 - centerX;
-        params.y = anchorY + pointSize / 2 - centerY;
+        int width = dp(WIDTH_DP);
+        int height = dp(HEIGHT_DP);
+
+        int requestedX = anchorX + pointSize / 2 - centerX;
+        int requestedY = anchorY + pointSize / 2 - centerY;
+
+        int maxX = Math.max(0, screenWidth - width);
+        int maxY = Math.max(0, screenHeight - height);
+        params.x = Math.max(0, Math.min(requestedX, maxX));
+        params.y = Math.max(0, Math.min(requestedY, maxY));
     }
 
     private void startTicker() {

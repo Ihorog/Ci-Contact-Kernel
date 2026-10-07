@@ -67,20 +67,16 @@ final class CiVoiceController {
                 @Override public void onDone(String utteranceId) {
                     mainHandler.post(() -> {
                         if (closed || !conversationActive) return;
-                        if (resumeAfterSpeech) {
-                            resumeAfterSpeech = false;
-                            mainHandler.postDelayed(() -> startListening(true), 140L);
-                        }
+                        resumeAfterSpeech = false;
+                        stopConversation();
                     });
                 }
 
                 @Override public void onError(String utteranceId) {
                     mainHandler.post(() -> {
                         if (closed || !conversationActive) return;
-                        if (resumeAfterSpeech) {
-                            resumeAfterSpeech = false;
-                            scheduleRetry(false, 220L);
-                        }
+                        resumeAfterSpeech = false;
+                        stopConversation();
                     });
                 }
             });
@@ -190,14 +186,19 @@ final class CiVoiceController {
                     return;
                 }
 
-                if (error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
-                        || error == SpeechRecognizer.ERROR_NO_MATCH
-                        || error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
-                    scheduleRetry(false, 320L);
+                if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
+                    scheduleRetry(false, 220L);
                     return;
                 }
 
-                conversationActive = false;
+                if (error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
+                        || error == SpeechRecognizer.ERROR_NO_MATCH) {
+                    stopConversation();
+                    callback.onError("speech_no_input");
+                    return;
+                }
+
+                stopConversation();
                 callback.onError("speech_error_" + error);
             }
 
@@ -207,12 +208,14 @@ final class CiVoiceController {
                 ArrayList<String> values =
                         results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                 if (values == null || values.isEmpty()) {
-                    scheduleRetry(false, 260L);
+                    stopConversation();
+                    callback.onError("speech_no_input");
                     return;
                 }
                 String text = values.get(0).trim();
                 if (text.isEmpty()) {
-                    scheduleRetry(false, 260L);
+                    stopConversation();
+                    callback.onError("speech_no_input");
                     return;
                 }
                 callback.onTranscript(text);
@@ -321,10 +324,10 @@ final class CiVoiceController {
         if (!conversationActive || closed) return;
         String value = text == null ? "" : text.trim();
         if (value.isEmpty() || tts == null || !ttsReady) {
-            scheduleRetry(true, 160L);
+            stopConversation();
             return;
         }
-        resumeAfterSpeech = true;
+        resumeAfterSpeech = false;
         try {
             tts.speak(
                     value,
@@ -334,7 +337,7 @@ final class CiVoiceController {
             );
         } catch (Exception exc) {
             resumeAfterSpeech = false;
-            scheduleRetry(true, 220L);
+            stopConversation();
         }
     }
 

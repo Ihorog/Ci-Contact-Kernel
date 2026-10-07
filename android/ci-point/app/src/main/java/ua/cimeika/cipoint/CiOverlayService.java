@@ -113,6 +113,7 @@ public final class CiOverlayService extends Service {
         watchHalo = new CiWatchHalo(this, windowManager);
         voiceController = new CiVoiceController(this, new CiVoiceController.Callback() {
             @Override public void onListeningChanged(boolean listening) { handler.post(() -> handleVoiceListening(listening)); }
+            @Override public void onConversationEnded() { handler.post(() -> handleVoiceConversationEnded()); }
             @Override public void onTranscript(String text) { handler.post(() -> handleVoiceTranscript(text)); }
             @Override public void onResult(org.json.JSONObject result) { handler.post(() -> handleVoiceResult(result)); }
             @Override public void onError(String error) { handler.post(() -> handleVoiceError(error)); }
@@ -502,6 +503,12 @@ public final class CiOverlayService extends Service {
             prefs.edit().putString(PREF_STATE, next.name()).apply();
         }
         applyStateVisual(true);
+        if (next != OverlayState.HIDDEN
+                && watchHalo != null
+                && !watchHalo.isVisible()
+                && pointParams != null) {
+            showWatchHalo();
+        }
     }
 
     private void applyStateVisual(boolean animate) {
@@ -955,6 +962,17 @@ public final class CiOverlayService extends Service {
         }
         if (watchHalo != null && watchHalo.isVisible()) {
             watchHalo.setVoiceState(CiWatchHalo.STATE_IDLE);
+        }
+    }
+
+    private void handleVoiceConversationEnded() {
+        if (watchHalo != null && watchHalo.isVisible()) {
+            watchHalo.setVoiceState(CiWatchHalo.STATE_IDLE);
+        }
+        if (overlayState != OverlayState.HIDDEN
+                && (contextHalo == null || !contextHalo.isVisible())
+                && (resultProjection == null || !resultProjection.isVisible())) {
+            setState(stableStateFromPrefs());
         }
     }
 

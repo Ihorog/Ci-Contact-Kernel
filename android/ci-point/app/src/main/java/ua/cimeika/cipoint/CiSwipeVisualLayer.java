@@ -106,7 +106,7 @@ final class CiSwipeVisualLayer {
         params.x = x;
         params.y = y;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            params.alpha = 0.79f;
+            params.alpha = 0.55f;
         }
         windowManager.addView(view, params);
 

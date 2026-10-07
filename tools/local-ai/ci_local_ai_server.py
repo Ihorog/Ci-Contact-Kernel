@@ -57,7 +57,7 @@ def _fallback(text):
         return {"action": "previous", "answer": "", "query": text, "media_kind": "any", "requires_confirmation": False}
     if "далі" in low or "вперед" in low:
         return {"action": "next", "answer": "", "query": text, "media_kind": "any", "requires_confirmation": False}
-    return {"action": "answer", "answer": "Я почув запит.", "query": text, "media_kind": "any", "requires_confirmation": False}
+    return {"action": "open_gpt", "answer": "", "query": text, "media_kind": "any", "requires_confirmation": False}
 
 def resolve_intent(text):
     payload = {

@@ -69,6 +69,7 @@ final class CiVoiceController {
                         if (closed || !conversationActive) return;
                         resumeAfterSpeech = false;
                         stopConversation();
+                        callback.onListeningChanged(false);
                     });
                 }
 
@@ -77,6 +78,7 @@ final class CiVoiceController {
                         if (closed || !conversationActive) return;
                         resumeAfterSpeech = false;
                         stopConversation();
+                        callback.onListeningChanged(false);
                     });
                 }
             });

@@ -29,6 +29,7 @@ import java.util.concurrent.Executors;
 final class CiVoiceController {
     interface Callback {
         void onListeningChanged(boolean listening);
+        void onConversationEnded();
         void onTranscript(String text);
         void onResult(JSONObject result);
         void onError(String error);
@@ -69,7 +70,6 @@ final class CiVoiceController {
                         if (closed || !conversationActive) return;
                         resumeAfterSpeech = false;
                         stopConversation();
-                        callback.onListeningChanged(false);
                     });
                 }
 
@@ -78,7 +78,6 @@ final class CiVoiceController {
                         if (closed || !conversationActive) return;
                         resumeAfterSpeech = false;
                         stopConversation();
-                        callback.onListeningChanged(false);
                     });
                 }
             });
@@ -110,6 +109,7 @@ final class CiVoiceController {
     }
 
     private void stopConversation() {
+        boolean wasActive = conversationActive;
         conversationActive = false;
         resumeAfterSpeech = false;
         cancelPendingRetry();
@@ -121,6 +121,7 @@ final class CiVoiceController {
             try { tts.stop(); } catch (Exception ignored) { }
         }
         setListening(false);
+        if (wasActive && !closed) callback.onConversationEnded();
     }
 
     private void startListening(boolean preferOffline) {
@@ -129,7 +130,7 @@ final class CiVoiceController {
         listenRequestId++;
         preferOfflineActive = preferOffline;
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
-            conversationActive = false;
+            stopConversation();
             callback.onError("speech_recognizer_unavailable");
             return;
         }
@@ -147,10 +148,10 @@ final class CiVoiceController {
         try {
             recognizer.startListening(intent);
         } catch (SecurityException exc) {
-            conversationActive = false;
+            stopConversation();
             callback.onError("microphone_permission_required");
         } catch (Exception exc) {
-            conversationActive = false;
+            stopConversation();
             callback.onError("speech_start_error:" + exc.getClass().getSimpleName());
         }
     }

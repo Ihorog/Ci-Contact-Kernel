@@ -41,8 +41,8 @@ android {
         applicationId 'ua.cimeika.ci'
         minSdk 26
         targetSdk 33
-        versionCode 14
-        versionName '0.7.0'
+        versionCode 15
+        versionName '0.7.1'
 
         buildConfigField 'String', 'CI_OPERATOR_BASE_URL',
                 quoteBuildConfig(ciOperatorBaseUrl)

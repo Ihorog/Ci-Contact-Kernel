@@ -12,10 +12,10 @@ final class CiGestureRouter {
     }
 
     Command routeOverlaySwipe(String direction, boolean haloVisible) {
-        if ("left".equals(direction)) return Command.MATERIALIZE_CONTEXT;
-        if ("right".equals(direction)) return Command.ACTIVATE_ACTION;
-        if ("up".equals(direction)) return Command.BROWSE_NEWER;
-        if ("down".equals(direction)) return Command.BROWSE_OLDER;
+        if ("up".equals(direction)) return Command.ACTIVATE_ACTION;
+        if ("down".equals(direction)) return Command.MATERIALIZE_CONTEXT;
+        if ("left".equals(direction)) return Command.BROWSE_NEWER;
+        if ("right".equals(direction)) return Command.BROWSE_OLDER;
         return Command.RESERVED;
     }
 

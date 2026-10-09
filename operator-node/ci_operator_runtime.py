@@ -9,8 +9,9 @@ import release_manager
 import self_update as updater
 import vault_node
 import home_repair
+import technical_model
 
-VERSION = "1.7.0"
+VERSION = "1.8.0"
 NODE_ID = base.NODE_ID
 
 
@@ -176,6 +177,21 @@ def operator_release(commit: str, activate=False):
     _record("operator_release", started, result, coordinate="CI.ORANGE", route="LOCAL_MODEL_RELEASE")
     return result
 
+
+
+def technical_model_ingest(vault_path: str, sha256: str, confirm=False, expected_commit=None):
+    started = time.perf_counter()
+    result = technical_model.ingest_from_vault(
+        vault_path, sha256, confirm=bool(confirm), expected_commit=expected_commit,
+    )
+    if isinstance(result, dict):
+        result["node"] = NODE_ID
+        result["operatorRuntimeVersion"] = VERSION
+    _record(
+        "technical_model_ingest", started, result,
+        coordinate="CI.ORANGE", route="VAULT_TO_LOCAL_MODEL",
+    )
+    return result
 
 def orchestrate(template="distributed_acceptance"):
     started = time.perf_counter()

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import re
 import shutil
 import time
 
@@ -32,11 +33,12 @@ def main():
         " tooldef('ci_execute_read','Пряме читання Ci','Run one allowlisted read-only provider operation directly on Orange when a local authenticated adapter is ready.',{'type':'object','properties':{'coordinate':{'type':'string','enum':['CI.GITHUB','CI.VERCEL','CI.SUPABASE','CI.CLOUDFLARE']},'operation':{'type':'string','enum':['identity','inventory']}},'required':['coordinate','operation']},read_only=True,open_world=True),",
         " tooldef('ci_vault_read','Читати Vault','Read/list/stat/download chunks from the live CI.VAULT node.',{'type':'object','properties':{'action':{'type':'string','enum':['status','list','stat','download']},'path':{'type':'string'},'offset':{'type':'integer','minimum':0},'limit':{'type':'integer','minimum':1,'maximum':4194304}},'required':['action']},read_only=True,open_world=False),",
         " tooldef('ci_vault_write','Змінювати Vault','Upload chunks, create folders, move, rename or explicitly confirmed delete inside CI.VAULT.',{'type':'object','properties':{'action':{'type':'string','enum':['upload','mkdir','move','rename','delete']},'path':{'type':'string'},'destination':{'type':'string'},'name':{'type':'string'},'contentBase64':{'type':'string'},'offset':{'type':'integer','minimum':0},'truncate':{'type':'boolean'},'confirmDelete':{'type':'boolean'}},'required':['action']},scope='act',read_only=False,open_world=False),",
-        " tooldef('ci_operator_update','Оновити runtime Ci Operator','Update only allowlisted Orange runtime modules from an exact 40-character commit SHA in Ihorog/Ci-Contact-Kernel.',{'type':'object','properties':{'commit':{'type':'string','pattern':'^[0-9a-f]{40}$'},'activate':{'type':'boolean','default':False}},'required':['commit']},scope='act',read_only=False,open_world=True),",
-        " tooldef('ci_operator_release','Реліз Ci Operator','Atomically deploy an exact canonical Git commit to Orange runtime and MCP connector with compile checks, rollback backups and optional supervised restart.',{'type':'object','properties':{'commit':{'type':'string','pattern':'^[0-9a-f]{40}$'},'activate':{'type':'boolean','default':False}},'required':['commit']},scope='act',read_only=False,open_world=True),",
+        " tooldef('ci_operator_update','Оновити runtime Ci Operator','Update only allowlisted Orange runtime modules from an exact 40-character commit SHA present in the local technical-model (optional provenance label: Ihorog/Ci-Contact-Kernel).',{'type':'object','properties':{'commit':{'type':'string','pattern':'^[0-9a-f]{40}$'},'activate':{'type':'boolean','default':False}},'required':['commit']},scope='act',read_only=False,open_world=True),",
+        " tooldef('ci_operator_release','Реліз Ci Operator','Atomically deploy an exact commit SHA present in the local technical-model to Orange runtime and MCP connector with compile checks, rollback backups and optional supervised restart. Does not fetch GitHub.',{'type':'object','properties':{'commit':{'type':'string','pattern':'^[0-9a-f]{40}$'},'activate':{'type':'boolean','default':False}},'required':['commit']},scope='act',read_only=False,open_world=True),",
         " tooldef('ci_operator_metrics','Метрики Ci Operator','Return PII-safe execution KPIs from Orange telemetry: success, evidence completeness, fallback, executed rate and latency percentiles.',{'type':'object','properties':{'limit':{'type':'integer','minimum':1,'maximum':5000,'default':500}}},read_only=True,open_world=False),",
         " tooldef('ci_home_status','Стан HOME.CI','Read live end0 and CI.VAULT state directly on Orange.',{'type':'object','properties':{}},read_only=True,open_world=False),",
         " tooldef('ci_home_repair','Відновити HOME.CI','Execute one narrowly allowlisted HOME repair action with idempotency and live verification.',{'type':'object','properties':{'action':{'type':'string','enum':['network.ensure_end0','vault.ensure_rw','acceptance.refresh','resource_trust.refresh']},'idempotency_key':{'type':'string','minLength':8,'maxLength':200}},'required':['action','idempotency_key']},scope='act',read_only=False,open_world=False),",
+        " tooldef('ci_technical_model_ingest','Імпорт technical-model','Import a sha256-pinned git bundle from an allowlisted CI.VAULT path into the local technical-model. Preserves commit SHAs for ci_operator_release. Never calls GitHub. confirm=false is dry-run.',{'type':'object','properties':{'vault_path':{'type':'string'},'sha256':{'type':'string','pattern':'^[0-9a-f]{64}$'},'confirm':{'type':'boolean','default':False},'expected_commit':{'type':'string','pattern':'^[0-9a-f]{40}$'}},'required':['vault_path','sha256']},scope='act',read_only=False,open_world=False),",
     ]
     for tool in tools:
         name = tool.split("tooldef('", 1)[1].split("'", 1)[0]
@@ -57,6 +59,7 @@ def main():
         ("ci_operator_metrics", "    if name=='ci_operator_metrics': return ci_operator.metrics(args.get('limit',500))"),
         ("ci_home_status", "    if name=='ci_home_status': return ci_operator.home_status()"),
         ("ci_home_repair", "    if name=='ci_home_repair': return ci_operator.home_repair_action(args.get('action',''),args.get('idempotency_key',''))"),
+        ("ci_technical_model_ingest", "    if name=='ci_technical_model_ingest': return ci_operator.technical_model_ingest(args.get('vault_path',''),args.get('sha256',''),args.get('confirm',False),args.get('expected_commit'))"),
     ]
     for name, call in calls:
         if f"if name=='{name}'" not in source:
@@ -64,15 +67,28 @@ def main():
                 raise RuntimeError(f'call marker not found for {name}')
             source = source.replace(call_marker, call + "\n" + call_marker, 1)
 
+    act_set = (
+        "return 'ci:act' if name in {'ci_plan','ci_action','ci_memory_append','ci_dispatch',"
+        "'ci_operator_update','ci_operator_release','ci_vault_write','ci_home_repair',"
+        "'ci_technical_model_ingest'} else 'ci:read'"
+    )
     for old in [
         "return 'ci:act' if name in {'ci_plan','ci_action','ci_memory_append','ci_dispatch'} else 'ci:read'",
         "return 'ci:act' if name in {'ci_plan','ci_action','ci_memory_append','ci_dispatch','ci_operator_update'} else 'ci:read'",
         "return 'ci:act' if name in {'ci_plan','ci_action','ci_memory_append','ci_dispatch','ci_operator_update','ci_operator_release'} else 'ci:read'",
+        "return 'ci:act' if name in {'ci_plan','ci_action','ci_memory_append','ci_dispatch','ci_operator_update','ci_operator_release','ci_vault_write','ci_home_repair'} else 'ci:read'",
     ]:
-        source = source.replace(
-            old,
-            "return 'ci:act' if name in {'ci_plan','ci_action','ci_memory_append','ci_dispatch','ci_operator_update','ci_operator_release','ci_vault_write','ci_home_repair'} else 'ci:read'",
-        )
+        source = source.replace(old, act_set)
+
+    scope_re = re.compile(r"return 'ci:act' if name in \{([^}]*)\} else 'ci:read'")
+    match = scope_re.search(source)
+    if not match:
+        raise RuntimeError('provider install marker not found: required scope')
+    names = [x.strip() for x in match.group(1).split(',') if x.strip()]
+    for extra in ("'ci_technical_model_ingest'",):
+        if extra not in names:
+            names.append(extra)
+    source = source[:match.start()] + "return 'ci:act' if name in {" + ','.join(names) + "} else 'ci:read'" + source[match.end():]
 
     for old in ('1.2.0', '1.3.0', '1.4.0', '1.5.0', '1.6.0', '1.7.0'):
         source = source.replace(
@@ -86,11 +102,13 @@ def main():
         "Use ci_resolve before external actions. Prefer ci_execute_read only when ci_executor_status shows a ready Orange-local adapter. Otherwise delegate to the named ChatGPT connector or CI.LINK. Require live evidence for execution.",
         "Use ci_resolve before external actions. Prefer ci_execute_read only when ci_executor_status shows a ready Orange-local adapter. Otherwise delegate to the named ChatGPT connector or CI.LINK. ci_operator_update is a gated self-update and requires an exact canonical Git commit SHA. Require live evidence for execution.",
         "Use ci_resolve before external actions. Prefer ci_execute_read only when ci_executor_status shows a ready Orange-local adapter. Otherwise delegate to the named ChatGPT connector or CI.LINK. ci_operator_update is a gated self-update and requires an exact canonical Git commit SHA. Use ci_vault_read/ci_vault_write for CI.VAULT operations; delete requires explicit confirmDelete. Use ci_operator_metrics for PII-safe operational KPI evidence. Require live evidence for execution.",
+        "Use ci_resolve for routing and ci_delegate for already-known operation-to-node binding. The user device is a thin surface; execution happens on external Ci nodes. Safe registered operations may proceed automatically with evidence; gated operations keep the bound executor and request only permission. Use ci_home_status before HOME repair and ci_home_repair only for the four allowlisted idempotent HOME actions; never substitute arbitrary shell. Use ci_operator_release for a complete pinned Orange release; ci_operator_update is runtime-only. Use ci_vault_read/ci_vault_write for normal CI.VAULT content operations; delete requires explicit confirmDelete. Use ci_operator_metrics for PII-safe operational KPI evidence. Require live evidence for execution.",
     ]
     new_instructions = (
         "Use ci_resolve for routing and ci_delegate for already-known operation-to-node binding. The user device is a thin surface; execution happens on external Ci nodes. "
         "Safe registered operations may proceed automatically with evidence; gated operations keep the bound executor and request only permission. Use ci_home_status before HOME repair and ci_home_repair only for the four allowlisted idempotent HOME actions; never substitute arbitrary shell. "
-        "Use ci_operator_release for a complete pinned Orange release; ci_operator_update is runtime-only. Use ci_vault_read/ci_vault_write for normal CI.VAULT content operations; delete requires explicit confirmDelete. "
+        "Use ci_technical_model_ingest to import a sha256-pinned git bundle from CI.VAULT into the local technical-model (no GitHub). "
+        "Use ci_operator_release for a complete pinned Orange release from a commit already present in the local technical-model; ci_operator_update is runtime-only. Use ci_vault_read/ci_vault_write for normal CI.VAULT content operations; delete requires explicit confirmDelete. "
         "Use ci_operator_metrics for PII-safe operational KPI evidence. Require live evidence for execution."
     )
     for old in instruction_candidates:

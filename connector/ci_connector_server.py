@@ -78,12 +78,23 @@ def json_body(h):
     try:return json.loads(raw or b'{}')
     except:return {}
 
-def token_info(header):
-    if not header or not header.startswith('Bearer '): return None
+def token_check(header):
+    """Return safe diagnostics without retaining or exposing the bearer."""
+    if not header: return None, 'missing_token'
+    if not header.startswith('Bearer ') or not header[7:].strip():
+        return None, 'invalid_authorization_header'
     raw=header[7:].strip(); c=db()
-    row=c.execute('SELECT * FROM tokens WHERE token_hash=?',(digest(raw),)).fetchone(); c.close()
-    if not row or row['resource']!=BASE_URL or row['expires']<int(time.time()): return None
-    return dict(row)
+    try:
+        row=c.execute('SELECT * FROM tokens WHERE token_hash=?',(digest(raw),)).fetchone()
+    finally:
+        c.close()
+    if not row: return None, 'unknown_token'
+    if row['resource']!=BASE_URL: return None, 'resource_mismatch'
+    if row['expires']<=int(time.time()): return None, 'expired_token'
+    return dict(row), None
+
+def token_info(header):
+    return token_check(header)[0]
 
 def has_scope(info,scope):
     return bool(info) and scope in (info.get('scope') or '').split()
@@ -221,10 +232,21 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json(200,{'jsonrpc':'2.0','id':mid,'result':{'tools':TOOLS}})
             if method=='tools/call':
                 params=b.get('params') or {}; name=params.get('name',''); args=params.get('arguments') or {}
-                scope=required_scope(name); info=token_info(self.headers.get('Authorization',''))
+                scope=required_scope(name)
+                info, reason=token_check(self.headers.get('Authorization',''))
                 if not has_scope(info,scope):
-                    challenge=f'Bearer resource_metadata="{BASE_URL}/.well-known/oauth-protected-resource", scope="{scope}", error="insufficient_scope", error_description="Ci authorization required"'
-                    return self.send_json(200,{'jsonrpc':'2.0','id':mid,'result':{'content':[{'type':'text','text':'Потрібна авторизація Ci Connector.'}],'isError':True,'_meta':{'mcp/www_authenticate':[challenge]}}})
+                    reason=reason or 'insufficient_scope'
+                    status=403 if info else 401
+                    error='insufficient_scope' if info else 'invalid_token'
+                    challenge=f'Bearer resource_metadata="{BASE_URL}/.well-known/oauth-protected-resource", scope="{scope}", error="{error}"'
+                    request_id=secrets.token_hex(8)
+                    self.log_message('auth_denied request_id=%s tool=%s reason=%s required_scope=%s',request_id,name,reason,scope)
+                    result={'content':[{'type':'text','text':f'Ci authorization failed: {reason}; required scope: {scope}; request: {request_id}.'}],
+                            'isError':True,
+                            'structuredContent':{'error':error,'reason':reason,'required_scope':scope,'request_id':request_id},
+                            '_meta':{'mcp/www_authenticate':[challenge]}}
+                    return self.send_json(status,{'jsonrpc':'2.0','id':mid,'result':result},
+                                          {'WWW-Authenticate':challenge})
                 try:
                     res=call_tool(name,args)
                     text=json.dumps(res,ensure_ascii=False,default=str)

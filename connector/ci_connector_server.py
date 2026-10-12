@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import base64, hashlib, json, os, secrets, sqlite3, sys, time
+import base64, hashlib, html, json, os, secrets, sqlite3, sys, time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse
@@ -73,6 +73,15 @@ def db():
 
 def digest(s): return hashlib.sha256(s.encode()).hexdigest()
 def b64url(raw): return base64.urlsafe_b64encode(raw).decode().rstrip('=')
+def chatgpt_redirect_allowed(uri):
+    """Allow only documented ChatGPT production OAuth callbacks."""
+    p=urlparse(uri)
+    if p.scheme != 'https' or p.netloc != 'chatgpt.com' or p.params or p.query or p.fragment:
+        return False
+    if p.path == '/connector_platform_oauth_redirect':
+        return True
+    return bool(__import__('re').fullmatch(r'/connector/oauth/[A-Za-z0-9_-]{1,160}', p.path))
+
 def json_body(h):
     n=int(h.headers.get('Content-Length','0') or 0)
     raw=h.rfile.read(n) if n else b''
@@ -183,10 +192,10 @@ def required_scope(name):
 PENDING={}
 AUTH_PAGE='''<!doctype html><html lang="uk"><meta charset="utf-8"><title>Ci · підтвердження доступу</title>
 <meta name="viewport" content="width=device-width,initial-scale=1"><style>body{background:#0b0d12;color:#eee;font:16px system-ui;display:grid;place-items:center;min-height:100vh;margin:0}.b{padding:24px;max-width:440px}button{padding:12px 18px;margin:8px 0}#status{color:#ddd}</style>
-<div class="b"><h2>Доступ до Ci</h2><p>Підтвердьте запит ChatGPT своїм ключем доступу на цьому пристрої.</p>
+<div class="b"><h2>Доступ до Ci</h2><p>Підтвердьте запит ChatGPT своїм ключем доступу на цьому пристрої. Запитані права: <strong>{scope}</strong>.</p>
 <button id="confirm" type="button">Підтвердити ключем доступу</button><p id="status" role="status"></p>
 <form id="approval" method="post" action="/oauth/approve"><input type="hidden" name="ticket" value="{ticket}"></form></div>
-<script>
+<script nonce="__CI_NONCE__">
 const ticket=document.querySelector('[name=ticket]').value, msg=document.querySelector('#status');
 const dec=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-s.length%4)%4)),x=>x.charCodeAt(0));
 const enc=b=>btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
@@ -208,7 +217,7 @@ ENROLL_PAGE='''<!doctype html><html lang="uk"><meta charset="utf-8"><title>Ci ·
 <div class="b"><h2>Реєстрація власника Ci</h2><p>Потрібен одноразовий код, виданий локально на Orange авторизованим власником. Без нього реєстрація неможлива.</p>
 <label>Одноразовий локальний код<input type="password" id="bootstrap" autocomplete="off" required></label>
 <button id="enroll">Створити ключ доступу</button><p id="status" role="status"></p></div>
-<script>
+<script nonce="__CI_NONCE__">
 const msg=document.querySelector('#status');
 const dec=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-s.length%4)%4)),x=>x.charCodeAt(0));
 const enc=b=>btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
@@ -251,7 +260,17 @@ class H(BaseHTTPRequestHandler):
         for k,v in (headers or {}).items(): self.send_header(k,v)
         self.end_headers(); self.wfile.write(raw)
     def send_html(self,html):
-        raw=html.encode(); self.send_response(200); self.send_header('Content-Type','text/html; charset=utf-8'); self.send_header('Content-Length',str(len(raw))); self.end_headers(); self.wfile.write(raw)
+        nonce=secrets.token_urlsafe(18)
+        raw=html.replace('__CI_NONCE__',nonce).encode()
+        self.send_response(200)
+        self.send_header('Content-Type','text/html; charset=utf-8')
+        self.send_header('Content-Length',str(len(raw)))
+        self.send_header('Cache-Control','no-store')
+        self.send_header('X-Content-Type-Options','nosniff')
+        self.send_header('X-Frame-Options','DENY')
+        self.send_header('Referrer-Policy','no-referrer')
+        self.send_header('Content-Security-Policy', "default-src 'none'; script-src 'nonce-"+nonce+"'; style-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+        self.end_headers(); self.wfile.write(raw)
     def redirect(self,url):
         self.send_response(302); self.send_header('Location',url); self.end_headers()
     def do_OPTIONS(self): self.send_response(204); self.cors(); self.end_headers()
@@ -277,7 +296,7 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json(400,{'error':'invalid_request'})
             requested=' '.join(s for s in scope.split() if s in SCOPES) or 'ci:read'
             ticket=secrets.token_urlsafe(24); PENDING[ticket]={'client_id':cid,'redirect_uri':ruri,'state':state,'scope':requested,'resource':resource,'challenge':challenge,'expires':time.time()+300}
-            return self.send_html(AUTH_PAGE.replace('{ticket}',ticket))
+            return self.send_html(AUTH_PAGE.replace('{ticket}',ticket).replace('{scope}',html.escape(requested)))
         if path=='/owner/enroll':
             return self.send_html(ENROLL_PAGE)
         if path=='/operator/health':
@@ -318,7 +337,9 @@ class H(BaseHTTPRequestHandler):
         if path=='/oauth/register':
             b=request_data(self); ruris=b.get('redirect_uris',[])
             if isinstance(ruris,str): ruris=[ruris]
-            if not isinstance(ruris,list) or not ruris: return self.send_json(400,{'error':'invalid_redirect_uris'})
+            if (not isinstance(ruris,list) or not (1<=len(ruris)<=4)
+                    or any(not isinstance(uri,str) or not chatgpt_redirect_allowed(uri) for uri in ruris)):
+                return self.send_json(400,{'error':'invalid_redirect_uris'})
             cid='ci_'+secrets.token_hex(12); c=db(); c.execute('INSERT INTO clients(client_id,redirect_uris,created_at) VALUES(?,?,?)',(cid,json.dumps(ruris),int(time.time()))); c.commit(); c.close()
             return self.send_json(201,{'client_id':cid,'client_id_issued_at':int(time.time()),'client_secret_expires_at':0,'redirect_uris':ruris,'grant_types':['authorization_code'],'response_types':['code'],'token_endpoint_auth_method':'none'})
         if path=='/oauth/approve':

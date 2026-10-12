@@ -65,4 +65,63 @@ class AuthorizationTests(unittest.TestCase):
         finally:
             http.shutdown();http.server_close();thread.join()
 
+    def test_owner_approval_requires_bound_strong_verification(self):
+        from urllib.parse import urlencode
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, req, fp, code, msg, headers, newurl):
+                return None
+        opener=urllib.request.build_opener(NoRedirect())
+        previous=getattr(server.ci_operator,'verify_oauth_owner_approval',None)
+        had_verifier=hasattr(server.ci_operator,'verify_oauth_owner_approval')
+        state_dir=server.STATE; auth_db=server.AUTH_DB
+        with tempfile.TemporaryDirectory() as tmp:
+            server.STATE=pathlib.Path(tmp);server.AUTH_DB=server.STATE/'auth.db'
+            ticket='unguessable-test-ticket'
+            pending={'client_id':'ci-client','redirect_uri':'https://chatgpt.com/callback',
+                'state':'state-1','scope':'ci:read','resource':server.BASE_URL,
+                'challenge':'pkce-challenge','expires':time.time()+90}
+            server.PENDING[ticket]=pending
+            if had_verifier:
+                delattr(server.ci_operator,'verify_oauth_owner_approval')
+            http=server.HTTPServer(('127.0.0.1',0),server.H)
+            thread=threading.Thread(target=http.serve_forever,daemon=True);thread.start()
+            url='http://127.0.0.1:%d/oauth/approve'%http.server_port
+            def approve():
+                req=urllib.request.Request(url,
+                    data=urlencode({'ticket':ticket}).encode(),
+                    headers={'Content-Type':'application/x-www-form-urlencoded'})
+                try: return opener.open(req,timeout=5)
+                except urllib.error.HTTPError as exc: return exc
+            try:
+                denied=approve()
+                self.assertEqual(denied.status,403)
+                self.assertEqual(json.load(denied)['error'],'owner_verification_required')
+                self.assertIn(ticket,server.PENDING)
+                self.assertEqual(server.db().execute('SELECT COUNT(*) FROM codes').fetchone()[0],0)
+                def proof(binding):
+                    return {**binding,'verified':True,'authority':'CI.AUTH.GATEWAY',
+                        'user_verified':True,'verification_method':'webauthn',
+                        'expires_at':time.time()+30,'evidence_ref':'gateway:test'}
+                server.ci_operator.verify_oauth_owner_approval=lambda binding: {**proof(binding),'client_id':'different'}
+                self.assertEqual(approve().status,403)
+                server.ci_operator.verify_oauth_owner_approval=lambda binding: {**proof(binding),'user_verified':False}
+                self.assertEqual(approve().status,403)
+                server.ci_operator.verify_oauth_owner_approval=proof
+                granted=approve()
+                self.assertEqual(granted.status,302)
+                self.assertTrue(granted.headers['Location'].startswith(pending['redirect_uri']+'?'))
+                self.assertNotIn(ticket,server.PENDING)
+                self.assertEqual(approve().status,400)
+                connection=server.db()
+                try: self.assertEqual(connection.execute('SELECT COUNT(*) FROM codes').fetchone()[0],1)
+                finally:connection.close()
+            finally:
+                server.PENDING.pop(ticket,None)
+                if had_verifier:
+                    server.ci_operator.verify_oauth_owner_approval=previous
+                elif hasattr(server.ci_operator,'verify_oauth_owner_approval'):
+                    delattr(server.ci_operator,'verify_oauth_owner_approval')
+                http.shutdown();http.server_close();thread.join()
+                server.STATE=state_dir;server.AUTH_DB=auth_db
+
 if __name__=='__main__': unittest.main()

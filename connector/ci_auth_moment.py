@@ -57,8 +57,8 @@ def create_moment(*, task_id, principal, domain, target, operation, purpose,
         raise ContractError("non_bounded_lifetime")
     for key, value in (("task_id", task_id), ("principal", principal),
                        ("target", target), ("operation", operation),
-                       ("client_id", client_id), ("resource", resource)):
-        if not isinstance(value, str) or not _ID.fullmatch(value) if key not in ("resource",) else not isinstance(value, str):
+                       ("client_id", client_id)):
+        if not isinstance(value, str) or not _ID.fullmatch(value):
             raise ContractError("invalid_" + key)
     if parent_id is not None and (not isinstance(parent_id, str) or not _ID.fullmatch(parent_id)):
         raise ContractError("invalid_parent_id")

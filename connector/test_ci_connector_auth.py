@@ -35,8 +35,34 @@ class AuthorizationTests(unittest.TestCase):
                         if reason:
                             self.assertEqual(body['structuredContent']['reason'],reason)
                             self.assertIn('resource_metadata=',response.headers['WWW-Authenticate'])
+                            self.assertIn('error_description=',response.headers['WWW-Authenticate'])
                             self.assertEqual(body['_meta']['mcp/www_authenticate'][0],response.headers['WWW-Authenticate'])
                 self.assertEqual(called,['ci_verify'])
             finally:
                 http.shutdown(); http.server_close(); thread.join()
+    def test_streamable_http_transport_and_oauth_discovery(self):
+        http=server.HTTPServer(('127.0.0.1',0),server.H)
+        thread=threading.Thread(target=http.serve_forever,daemon=True)
+        thread.start()
+        root='http://127.0.0.1:%d'%http.server_port
+        try:
+            for method in ('GET','DELETE'):
+                with self.subTest(method=method):
+                    req=urllib.request.Request(root+'/mcp',method=method)
+                    with self.assertRaises(urllib.error.HTTPError) as ctx:
+                        urllib.request.urlopen(req,timeout=5)
+                    self.assertEqual(ctx.exception.code,405)
+                    self.assertIn('POST',ctx.exception.headers['Allow'])
+            with urllib.request.urlopen(root+'/.well-known/oauth-protected-resource',timeout=5) as response:
+                resource=json.load(response)
+            self.assertEqual(resource['resource'],server.BASE_URL)
+            self.assertIn(server.BASE_URL,resource['authorization_servers'])
+            with urllib.request.urlopen(root+'/.well-known/oauth-authorization-server',timeout=5) as response:
+                auth=json.load(response)
+            self.assertEqual(auth['issuer'],server.BASE_URL)
+            self.assertIn('S256',auth['code_challenge_methods_supported'])
+            self.assertEqual(auth['registration_endpoint'],server.BASE_URL+'/oauth/register')
+        finally:
+            http.shutdown();http.server_close();thread.join()
+
 if __name__=='__main__': unittest.main()

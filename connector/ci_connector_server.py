@@ -173,9 +173,14 @@ class H(BaseHTTPRequestHandler):
     def redirect(self,url):
         self.send_response(302); self.send_header('Location',url); self.end_headers()
     def do_OPTIONS(self): self.send_response(204); self.cors(); self.end_headers()
-    def do_DELETE(self): self.send_response(204); self.end_headers()
+    def do_DELETE(self):
+        if urlparse(self.path).path == '/mcp':
+            return self.send_json(405, {'error': 'method_not_allowed'}, {'Allow': 'POST, OPTIONS'})
+        self.send_response(204); self.end_headers()
     def do_GET(self):
         p=urlparse(self.path); path=p.path; qs=parse_qs(p.query)
+        if path == '/mcp':
+            return self.send_json(405, {'error': 'method_not_allowed'}, {'Allow': 'POST, OPTIONS'})
         if path in ('/.well-known/oauth-protected-resource','/.well-known/oauth-protected-resource/mcp'):
             return self.send_json(200,{'resource':BASE_URL,'authorization_servers':[BASE_URL],'scopes_supported':SCOPES,'resource_documentation':BASE_URL+'/health'})
         if path in ('/.well-known/oauth-authorization-server','/.well-known/openid-configuration'):
@@ -238,7 +243,7 @@ class H(BaseHTTPRequestHandler):
                     reason=reason or 'insufficient_scope'
                     status=403 if info else 401
                     error='insufficient_scope' if info else 'invalid_token'
-                    challenge=f'Bearer resource_metadata="{BASE_URL}/.well-known/oauth-protected-resource", scope="{scope}", error="{error}"'
+                    challenge=f'Bearer resource_metadata="{BASE_URL}/.well-known/oauth-protected-resource", scope="{scope}", error="{error}", error_description="Ci authorization required"'
                     request_id=secrets.token_hex(8)
                     self.log_message('auth_denied request_id=%s tool=%s reason=%s required_scope=%s',request_id,name,reason,scope)
                     result={'content':[{'type':'text','text':f'Ci authorization failed: {reason}; required scope: {scope}; request: {request_id}.'}],

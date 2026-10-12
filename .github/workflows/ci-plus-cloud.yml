@@ -29,8 +29,10 @@ jobs:
 
       - run: npm ci
       - run: npm test
-      - name: Verify Ci MCP/OAuth HTTP contracts
-        run: python3 -m unittest discover -s connector -p 'test_ci_connector_auth.py' -v
+      - name: Install Ci WebAuthn verification dependency
+        run: python3 -m pip install -r connector/requirements-auth.txt
+      - name: Verify Ci MCP/OAuth and owner passkey contracts
+        run: python3 -m unittest discover -s connector -p 'test_ci_*.py' -v
 
       - name: Verify cloud contact assets
         shell: bash

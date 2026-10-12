@@ -29,6 +29,8 @@ jobs:
 
       - run: npm ci
       - run: npm test
+      - name: Verify Ci MCP/OAuth HTTP contracts
+        run: python3 -m unittest discover -s connector -p 'test_ci_connector_auth.py' -v
 
       - name: Verify cloud contact assets
         shell: bash

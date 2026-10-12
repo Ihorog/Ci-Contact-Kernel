@@ -13,6 +13,15 @@ import home_repair
 VERSION = "1.7.0"
 NODE_ID = base.NODE_ID
 
+def verify_oauth_owner_approval(binding):
+    """One-use trusted local Ci AUTH gateway. Never accept browser claims."""
+    try:
+        import ci_owner_webauthn
+        return ci_owner_webauthn.consume_verified_oauth_grant(binding)
+    except Exception:
+        return None
+
+
 
 def _evidence_present(result):
     if not isinstance(result, dict):

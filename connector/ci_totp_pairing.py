@@ -70,7 +70,7 @@ def _db():
 
 def _totp(secret):
     pyotp, _ = _require_dependencies()
-    return pyotp.TOTP(secret, digits=6, interval=30, digest="sha1")
+    return pyotp.TOTP(secret, digits=6, interval=30, digest=hashlib.sha1)
 
 
 def begin_pairing(authorization_binding, *, now=None):

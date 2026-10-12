@@ -118,5 +118,34 @@ class PasskeyStateTests(unittest.TestCase):
             owner.finish_authentication("ticket2", pending, {"id": owner._b64(b"credential")})
 
 
+class RealWebAuthnLibraryTests(unittest.TestCase):
+    def test_real_dependency_creates_required_uv_options(self):
+        lib, Criteria, Descriptor, UV, Resident = owner._lib()
+        options = lib.generate_registration_options(
+            rp_id=owner.RP_ID,
+            rp_name="Ci Owner",
+            user_id=b"1234567890abcdef1234567890abcdef",
+            user_name="Ci owner",
+            authenticator_selection=Criteria(user_verification=UV.REQUIRED, resident_key=Resident.PREFERRED),
+        )
+        import json
+        encoded = json.loads(lib.options_to_json(options))
+        self.assertEqual(encoded["rp"]["id"], owner.RP_ID)
+        self.assertEqual(encoded["authenticatorSelection"]["userVerification"], "required")
+        assert len(encoded["challenge"]) >= 32
+
+    def test_real_library_rejects_forged_attestation(self):
+        lib, *_ = owner._lib()
+        with self.assertRaises(Exception):
+            lib.verify_registration_response(
+                credential={"id":"fake","rawId":"fake","type":"public-key",
+                            "response":{"attestationObject":"fake","clientDataJSON":"fake"}},
+                expected_challenge=b"not-trusted",
+                expected_origin=owner.ORIGIN,
+                expected_rp_id=owner.RP_ID,
+                require_user_verification=True,
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

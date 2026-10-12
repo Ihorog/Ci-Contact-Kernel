@@ -13,6 +13,7 @@ import ci_unit
 import ci_unified
 sys.path.insert(0,'/home/kazkar/cit/modules/ci_operator')
 import ci_operator_runtime as ci_operator
+import ci_owner_webauthn as owner_auth
 
 SCOPES=['ci:read','ci:act']
 READ_SCHEME=[{'type':'oauth2','scopes':['ci:read']}]
@@ -180,9 +181,53 @@ def required_scope(name):
 
 
 PENDING={}
-AUTH_PAGE='''<!doctype html><html lang="uk"><meta charset="utf-8"><title>Ci Connector</title>
-<style>body{background:#0b0d12;color:#eee;font:16px system-ui;display:grid;place-items:center;height:100vh;margin:0}.b{padding:32px;border:1px solid #333;border-radius:16px;max-width:430px}button{padding:12px 22px;font-weight:700}</style>
-<div class="b"><h1>Ci Connector</h1><p>ChatGPT запитує доступ до локального Ci: факти, зв’язки, пам’ять і безпечні перевірені дії.</p><form method="post" action="/oauth/approve"><input type="hidden" name="ticket" value="{ticket}"><button>Дозволити</button></form></div></html>'''
+AUTH_PAGE='''<!doctype html><html lang="uk"><meta charset="utf-8"><title>Ci · підтвердження доступу</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><style>body{background:#0b0d12;color:#eee;font:16px system-ui;display:grid;place-items:center;min-height:100vh;margin:0}.b{padding:24px;max-width:440px}button{padding:12px 18px;margin:8px 0}#status{color:#ddd}</style>
+<div class="b"><h2>Доступ до Ci</h2><p>Підтвердьте запит ChatGPT своїм ключем доступу на цьому пристрої.</p>
+<button id="confirm" type="button">Підтвердити ключем доступу</button><p id="status" role="status"></p>
+<form id="approval" method="post" action="/oauth/approve"><input type="hidden" name="ticket" value="{ticket}"></form></div>
+<script>
+const ticket=document.querySelector('[name=ticket]').value, msg=document.querySelector('#status');
+const dec=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-s.length%4)%4)),x=>x.charCodeAt(0));
+const enc=b=>btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+async function api(path,data){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data),credentials:'same-origin'});if(!r.ok)throw Error('Запит відхилено: '+r.status);return await r.json()}
+document.querySelector('#confirm').onclick=async()=>{
+try{
+ msg.textContent='Очікується системне підтвердження';
+ const o=await api('/oauth/passkey/options',{ticket});o.challenge=dec(o.challenge);o.allowCredentials=(o.allowCredentials||[]).map(c=>({...c,id:dec(c.id)}));
+ const c=await navigator.credentials.get({publicKey:o});
+ const response={authenticatorData:enc(c.response.authenticatorData),clientDataJSON:enc(c.response.clientDataJSON),signature:enc(c.response.signature),userHandle:c.response.userHandle?enc(c.response.userHandle):null};
+ await api('/oauth/passkey/complete',{ticket,credential:{id:c.id,rawId:enc(c.rawId),type:c.type,response,clientExtensionResults:c.getClientExtensionResults()}});
+ document.querySelector('#approval').submit();
+}catch(e){msg.textContent=e.message||'Не вдалося підтвердити';}
+}
+</script>'''
+
+ENROLL_PAGE='''<!doctype html><html lang="uk"><meta charset="utf-8"><title>Ci · власний passkey</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><style>body{background:#0b0d12;color:#eee;font:16px system-ui;display:grid;place-items:center;min-height:100vh;margin:0}.b{padding:24px;max-width:440px}input,button{padding:12px;margin:8px 0;width:100%;box-sizing:border-box}#status{color:#ddd}</style>
+<div class="b"><h2>Реєстрація власника Ci</h2><p>Потрібен одноразовий код, виданий локально на Orange авторизованим власником. Без нього реєстрація неможлива.</p>
+<label>Одноразовий локальний код<input type="password" id="bootstrap" autocomplete="off" required></label>
+<button id="enroll">Створити ключ доступу</button><p id="status" role="status"></p></div>
+<script>
+const msg=document.querySelector('#status');
+const dec=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-s.length%4)%4)),x=>x.charCodeAt(0));
+const enc=b=>btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+async function api(path,data){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data),credentials:'same-origin'});if(!r.ok)throw Error('Реєстрацію відхилено: '+r.status);return await r.json()}
+document.querySelector('#enroll').onclick=async()=>{
+try{
+ const bootstrap=document.querySelector('#bootstrap').value;
+ if(!bootstrap)throw Error('Потрібен локальний код');
+ msg.textContent='Очікується системне підтвердження';
+ const o=await api('/owner/enroll/options',{bootstrap});
+ o.challenge=dec(o.challenge);o.user.id=dec(o.user.id);o.excludeCredentials=(o.excludeCredentials||[]).map(c=>({...c,id:dec(c.id)}));
+ const c=await navigator.credentials.create({publicKey:o});
+ const response={attestationObject:enc(c.response.attestationObject),clientDataJSON:enc(c.response.clientDataJSON),transports:c.response.getTransports?c.response.getTransports():[]};
+ const result=await api('/owner/enroll/complete',{bootstrap,credential:{id:c.id,rawId:enc(c.rawId),type:c.type,response,clientExtensionResults:c.getClientExtensionResults()}});
+ document.querySelector('#bootstrap').value='';
+ msg.textContent=result.verified?'Ключ власника Ci зареєстровано':'Результат не підтверджений';
+}catch(e){msg.textContent=e.message||'Реєстрація не виконана';}
+}
+</script>'''
 
 def request_data(h):
     n=int(h.headers.get('Content-Length','0') or 0); raw=h.rfile.read(n) if n else b''
@@ -233,6 +278,8 @@ class H(BaseHTTPRequestHandler):
             requested=' '.join(s for s in scope.split() if s in SCOPES) or 'ci:read'
             ticket=secrets.token_urlsafe(24); PENDING[ticket]={'client_id':cid,'redirect_uri':ruri,'state':state,'scope':requested,'resource':resource,'challenge':challenge,'expires':time.time()+300}
             return self.send_html(AUTH_PAGE.replace('{ticket}',ticket))
+        if path=='/owner/enroll':
+            return self.send_html(ENROLL_PAGE)
         if path=='/operator/health':
             return self.send_json(200,ci_operator.status())
         if path=='/health':
@@ -240,6 +287,34 @@ class H(BaseHTTPRequestHandler):
         return self.send_json(404,{'error':'not_found'})
     def do_POST(self):
         path=urlparse(self.path).path
+        if path in ('/owner/enroll/options','/owner/enroll/complete',
+                    '/oauth/passkey/options','/oauth/passkey/complete'):
+            if self.headers.get('Origin') != owner_auth.ORIGIN:
+                return self.send_json(403, {'error':'invalid_origin'})
+            if 'application/json' not in self.headers.get('Content-Type',''):
+                return self.send_json(415, {'error':'json_required'})
+            size=int(self.headers.get('Content-Length','0') or '0')
+            if size < 1 or size > 65536:
+                return self.send_json(413, {'error':'invalid_payload_size'})
+            b=request_data(self)
+            try:
+                if path=='/owner/enroll/options':
+                    return self.send_json(200,owner_auth.registration_options(b.get('bootstrap','')))
+                if path=='/owner/enroll/complete':
+                    return self.send_json(200,owner_auth.finish_registration(
+                        b.get('bootstrap',''),b.get('credential') or {}))
+                ticket=b.get('ticket','')
+                pending=PENDING.get(ticket)
+                if not pending or pending['expires']<=time.time():
+                    return self.send_json(400, {'error':'invalid_or_expired_ticket'})
+                if path=='/oauth/passkey/options':
+                    return self.send_json(200,owner_auth.authentication_options(ticket,pending))
+                return self.send_json(200,owner_auth.finish_authentication(
+                    ticket,pending,b.get('credential') or {}))
+            except (owner_auth.OwnerAuthError, ValueError, TypeError, KeyError):
+                return self.send_json(403,{'error':'passkey_verification_failed'})
+            except Exception:
+                return self.send_json(403,{'error':'passkey_unavailable'})
         if path=='/oauth/register':
             b=request_data(self); ruris=b.get('redirect_uris',[])
             if isinstance(ruris,str): ruris=[ruris]

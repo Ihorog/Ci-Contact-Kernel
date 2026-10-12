@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import os
 import shutil
 import time
 
-TARGET = Path('/home/kazkar/cit/modules/ci_connector/ci_connector_server.py')
+TARGET = Path(os.getenv('CI_CONNECTOR_TARGET', '/home/kazkar/cit/modules/ci_connector/ci_connector_server.py'))
 
 
 def replace_once(text, old, new, label):

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import base64, hashlib, json, os, secrets, sqlite3, sys, time
+import base64, hashlib, html, json, os, secrets, sqlite3, sys, time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse
@@ -13,6 +13,7 @@ import ci_unit
 import ci_unified
 sys.path.insert(0,'/home/kazkar/cit/modules/ci_operator')
 import ci_operator_runtime as ci_operator
+import ci_owner_webauthn as owner_auth
 
 SCOPES=['ci:read','ci:act']
 READ_SCHEME=[{'type':'oauth2','scopes':['ci:read']}]
@@ -72,21 +73,78 @@ def db():
 
 def digest(s): return hashlib.sha256(s.encode()).hexdigest()
 def b64url(raw): return base64.urlsafe_b64encode(raw).decode().rstrip('=')
+def chatgpt_redirect_allowed(uri):
+    """Allow only documented ChatGPT production OAuth callbacks."""
+    p=urlparse(uri)
+    if p.scheme != 'https' or p.netloc != 'chatgpt.com' or p.params or p.query or p.fragment:
+        return False
+    if p.path == '/connector_platform_oauth_redirect':
+        return True
+    return bool(__import__('re').fullmatch(r'/connector/oauth/[A-Za-z0-9_-]{1,160}', p.path))
+
 def json_body(h):
     n=int(h.headers.get('Content-Length','0') or 0)
     raw=h.rfile.read(n) if n else b''
     try:return json.loads(raw or b'{}')
     except:return {}
 
-def token_info(header):
-    if not header or not header.startswith('Bearer '): return None
+def token_check(header):
+    """Return safe diagnostics without retaining or exposing the bearer."""
+    if not header: return None, 'missing_token'
+    if not header.startswith('Bearer ') or not header[7:].strip():
+        return None, 'invalid_authorization_header'
     raw=header[7:].strip(); c=db()
-    row=c.execute('SELECT * FROM tokens WHERE token_hash=?',(digest(raw),)).fetchone(); c.close()
-    if not row or row['resource']!=BASE_URL or row['expires']<int(time.time()): return None
-    return dict(row)
+    try:
+        row=c.execute('SELECT * FROM tokens WHERE token_hash=?',(digest(raw),)).fetchone()
+    finally:
+        c.close()
+    if not row: return None, 'unknown_token'
+    if row['resource']!=BASE_URL: return None, 'resource_mismatch'
+    if row['expires']<=int(time.time()): return None, 'expired_token'
+    return dict(row), None
+
+def token_info(header):
+    return token_check(header)[0]
 
 def has_scope(info,scope):
     return bool(info) and scope in (info.get('scope') or '').split()
+
+def owner_approval_verified(ticket, pending):
+    """Require a live, owner-verified grant for this exact OAuth request.
+
+    Only the trusted local CI.AUTH.GATEWAY implementation may provide
+    verify_oauth_owner_approval. A missing verifier, exception, or a loosely
+    matching assertion fails closed. This function does not issue authority.
+    """
+    verifier = getattr(ci_operator, 'verify_oauth_owner_approval', None)
+    if not callable(verifier):
+        return False
+    binding = {
+        'ticket_digest': digest(ticket),
+        'client_id': pending['client_id'],
+        'redirect_uri': pending['redirect_uri'],
+        'scope': pending['scope'],
+        'resource': pending['resource'],
+        'challenge': pending['challenge'],
+    }
+    try:
+        evidence = verifier(dict(binding))
+    except Exception:
+        return False
+    if not isinstance(evidence, dict):
+        return False
+    now = time.time()
+    return (
+        evidence.get('verified') is True
+        and evidence.get('authority') == 'CI.AUTH.GATEWAY'
+        and evidence.get('user_verified') is True
+        and evidence.get('verification_method') in ('webauthn', 'fido2')
+        and all(evidence.get(key) == value for key, value in binding.items())
+        and isinstance(evidence.get('expires_at'), (int, float))
+        and now < evidence['expires_at'] <= pending['expires']
+        and isinstance(evidence.get('evidence_ref'), str)
+        and len(evidence['evidence_ref']) > 0
+    )
 
 def call_tool(name,args):
     if name=='search': return ci_unit.search(args.get('query',''),args.get('limit',20))
@@ -132,9 +190,53 @@ def required_scope(name):
 
 
 PENDING={}
-AUTH_PAGE='''<!doctype html><html lang="uk"><meta charset="utf-8"><title>Ci Connector</title>
-<style>body{background:#0b0d12;color:#eee;font:16px system-ui;display:grid;place-items:center;height:100vh;margin:0}.b{padding:32px;border:1px solid #333;border-radius:16px;max-width:430px}button{padding:12px 22px;font-weight:700}</style>
-<div class="b"><h1>Ci Connector</h1><p>ChatGPT запитує доступ до локального Ci: факти, зв’язки, пам’ять і безпечні перевірені дії.</p><form method="post" action="/oauth/approve"><input type="hidden" name="ticket" value="{ticket}"><button>Дозволити</button></form></div></html>'''
+AUTH_PAGE='''<!doctype html><html lang="uk"><meta charset="utf-8"><title>Ci · підтвердження доступу</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><style>body{background:#0b0d12;color:#eee;font:16px system-ui;display:grid;place-items:center;min-height:100vh;margin:0}.b{padding:24px;max-width:440px}button{padding:12px 18px;margin:8px 0}#status{color:#ddd}</style>
+<div class="b"><h2>Доступ до Ci</h2><p>Підтвердьте запит ChatGPT своїм ключем доступу на цьому пристрої. Запитані права: <strong>{scope}</strong>.</p>
+<button id="confirm" type="button">Підтвердити ключем доступу</button><p id="status" role="status"></p>
+<form id="approval" method="post" action="/oauth/approve"><input type="hidden" name="ticket" value="{ticket}"></form></div>
+<script nonce="__CI_NONCE__">
+const ticket=document.querySelector('[name=ticket]').value, msg=document.querySelector('#status');
+const dec=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-s.length%4)%4)),x=>x.charCodeAt(0));
+const enc=b=>btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+async function api(path,data){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data),credentials:'same-origin'});if(!r.ok)throw Error('Запит відхилено: '+r.status);return await r.json()}
+document.querySelector('#confirm').onclick=async()=>{
+try{
+ msg.textContent='Очікується системне підтвердження';
+ const o=await api('/oauth/passkey/options',{ticket});o.challenge=dec(o.challenge);o.allowCredentials=(o.allowCredentials||[]).map(c=>({...c,id:dec(c.id)}));
+ const c=await navigator.credentials.get({publicKey:o});
+ const response={authenticatorData:enc(c.response.authenticatorData),clientDataJSON:enc(c.response.clientDataJSON),signature:enc(c.response.signature),userHandle:c.response.userHandle?enc(c.response.userHandle):null};
+ await api('/oauth/passkey/complete',{ticket,credential:{id:c.id,rawId:enc(c.rawId),type:c.type,response,clientExtensionResults:c.getClientExtensionResults()}});
+ document.querySelector('#approval').submit();
+}catch(e){msg.textContent=e.message||'Не вдалося підтвердити';}
+}
+</script>'''
+
+ENROLL_PAGE='''<!doctype html><html lang="uk"><meta charset="utf-8"><title>Ci · власний passkey</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><style>body{background:#0b0d12;color:#eee;font:16px system-ui;display:grid;place-items:center;min-height:100vh;margin:0}.b{padding:24px;max-width:440px}input,button{padding:12px;margin:8px 0;width:100%;box-sizing:border-box}#status{color:#ddd}</style>
+<div class="b"><h2>Реєстрація власника Ci</h2><p>Потрібен одноразовий код, виданий локально на Orange авторизованим власником. Без нього реєстрація неможлива.</p>
+<label>Одноразовий локальний код<input type="password" id="bootstrap" autocomplete="off" required></label>
+<button id="enroll">Створити ключ доступу</button><p id="status" role="status"></p></div>
+<script nonce="__CI_NONCE__">
+const msg=document.querySelector('#status');
+const dec=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-s.length%4)%4)),x=>x.charCodeAt(0));
+const enc=b=>btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+async function api(path,data){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data),credentials:'same-origin'});if(!r.ok)throw Error('Реєстрацію відхилено: '+r.status);return await r.json()}
+document.querySelector('#enroll').onclick=async()=>{
+try{
+ const bootstrap=document.querySelector('#bootstrap').value;
+ if(!bootstrap)throw Error('Потрібен локальний код');
+ msg.textContent='Очікується системне підтвердження';
+ const o=await api('/owner/enroll/options',{bootstrap});
+ o.challenge=dec(o.challenge);o.user.id=dec(o.user.id);o.excludeCredentials=(o.excludeCredentials||[]).map(c=>({...c,id:dec(c.id)}));
+ const c=await navigator.credentials.create({publicKey:o});
+ const response={attestationObject:enc(c.response.attestationObject),clientDataJSON:enc(c.response.clientDataJSON),transports:c.response.getTransports?c.response.getTransports():[]};
+ const result=await api('/owner/enroll/complete',{bootstrap,credential:{id:c.id,rawId:enc(c.rawId),type:c.type,response,clientExtensionResults:c.getClientExtensionResults()}});
+ document.querySelector('#bootstrap').value='';
+ msg.textContent=result.verified?'Ключ власника Ci зареєстровано':'Результат не підтверджений';
+}catch(e){msg.textContent=e.message||'Реєстрація не виконана';}
+}
+</script>'''
 
 def request_data(h):
     n=int(h.headers.get('Content-Length','0') or 0); raw=h.rfile.read(n) if n else b''
@@ -158,13 +260,28 @@ class H(BaseHTTPRequestHandler):
         for k,v in (headers or {}).items(): self.send_header(k,v)
         self.end_headers(); self.wfile.write(raw)
     def send_html(self,html):
-        raw=html.encode(); self.send_response(200); self.send_header('Content-Type','text/html; charset=utf-8'); self.send_header('Content-Length',str(len(raw))); self.end_headers(); self.wfile.write(raw)
+        nonce=secrets.token_urlsafe(18)
+        raw=html.replace('__CI_NONCE__',nonce).encode()
+        self.send_response(200)
+        self.send_header('Content-Type','text/html; charset=utf-8')
+        self.send_header('Content-Length',str(len(raw)))
+        self.send_header('Cache-Control','no-store')
+        self.send_header('X-Content-Type-Options','nosniff')
+        self.send_header('X-Frame-Options','DENY')
+        self.send_header('Referrer-Policy','no-referrer')
+        self.send_header('Content-Security-Policy', "default-src 'none'; script-src 'nonce-"+nonce+"'; style-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+        self.end_headers(); self.wfile.write(raw)
     def redirect(self,url):
         self.send_response(302); self.send_header('Location',url); self.end_headers()
     def do_OPTIONS(self): self.send_response(204); self.cors(); self.end_headers()
-    def do_DELETE(self): self.send_response(204); self.end_headers()
+    def do_DELETE(self):
+        if urlparse(self.path).path == '/mcp':
+            return self.send_json(405, {'error': 'method_not_allowed'}, {'Allow': 'POST, OPTIONS'})
+        self.send_response(204); self.end_headers()
     def do_GET(self):
         p=urlparse(self.path); path=p.path; qs=parse_qs(p.query)
+        if path == '/mcp':
+            return self.send_json(405, {'error': 'method_not_allowed'}, {'Allow': 'POST, OPTIONS'})
         if path in ('/.well-known/oauth-protected-resource','/.well-known/oauth-protected-resource/mcp'):
             return self.send_json(200,{'resource':BASE_URL,'authorization_servers':[BASE_URL],'scopes_supported':SCOPES,'resource_documentation':BASE_URL+'/health'})
         if path in ('/.well-known/oauth-authorization-server','/.well-known/openid-configuration'):
@@ -179,7 +296,9 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json(400,{'error':'invalid_request'})
             requested=' '.join(s for s in scope.split() if s in SCOPES) or 'ci:read'
             ticket=secrets.token_urlsafe(24); PENDING[ticket]={'client_id':cid,'redirect_uri':ruri,'state':state,'scope':requested,'resource':resource,'challenge':challenge,'expires':time.time()+300}
-            return self.send_html(AUTH_PAGE.replace('{ticket}',ticket))
+            return self.send_html(AUTH_PAGE.replace('{ticket}',ticket).replace('{scope}',html.escape(requested)))
+        if path=='/owner/enroll':
+            return self.send_html(ENROLL_PAGE)
         if path=='/operator/health':
             return self.send_json(200,ci_operator.status())
         if path=='/health':
@@ -187,15 +306,50 @@ class H(BaseHTTPRequestHandler):
         return self.send_json(404,{'error':'not_found'})
     def do_POST(self):
         path=urlparse(self.path).path
+        if path in ('/owner/enroll/options','/owner/enroll/complete',
+                    '/oauth/passkey/options','/oauth/passkey/complete'):
+            if self.headers.get('Origin') != owner_auth.ORIGIN:
+                return self.send_json(403, {'error':'invalid_origin'})
+            if 'application/json' not in self.headers.get('Content-Type',''):
+                return self.send_json(415, {'error':'json_required'})
+            size=int(self.headers.get('Content-Length','0') or '0')
+            if size < 1 or size > 65536:
+                return self.send_json(413, {'error':'invalid_payload_size'})
+            b=request_data(self)
+            try:
+                if path=='/owner/enroll/options':
+                    return self.send_json(200,owner_auth.registration_options(b.get('bootstrap','')))
+                if path=='/owner/enroll/complete':
+                    return self.send_json(200,owner_auth.finish_registration(
+                        b.get('bootstrap',''),b.get('credential') or {}))
+                ticket=b.get('ticket','')
+                pending=PENDING.get(ticket)
+                if not pending or pending['expires']<=time.time():
+                    return self.send_json(400, {'error':'invalid_or_expired_ticket'})
+                if path=='/oauth/passkey/options':
+                    return self.send_json(200,owner_auth.authentication_options(ticket,pending))
+                return self.send_json(200,owner_auth.finish_authentication(
+                    ticket,pending,b.get('credential') or {}))
+            except (owner_auth.OwnerAuthError, ValueError, TypeError, KeyError):
+                return self.send_json(403,{'error':'passkey_verification_failed'})
+            except Exception:
+                return self.send_json(403,{'error':'passkey_unavailable'})
         if path=='/oauth/register':
             b=request_data(self); ruris=b.get('redirect_uris',[])
             if isinstance(ruris,str): ruris=[ruris]
-            if not isinstance(ruris,list) or not ruris: return self.send_json(400,{'error':'invalid_redirect_uris'})
+            if (not isinstance(ruris,list) or not (1<=len(ruris)<=4)
+                    or any(not isinstance(uri,str) or not chatgpt_redirect_allowed(uri) for uri in ruris)):
+                return self.send_json(400,{'error':'invalid_redirect_uris'})
             cid='ci_'+secrets.token_hex(12); c=db(); c.execute('INSERT INTO clients(client_id,redirect_uris,created_at) VALUES(?,?,?)',(cid,json.dumps(ruris),int(time.time()))); c.commit(); c.close()
             return self.send_json(201,{'client_id':cid,'client_id_issued_at':int(time.time()),'client_secret_expires_at':0,'redirect_uris':ruris,'grant_types':['authorization_code'],'response_types':['code'],'token_endpoint_auth_method':'none'})
         if path=='/oauth/approve':
-            b=request_data(self); ticket=b.get('ticket',''); pr=PENDING.pop(ticket,None)
+            b=request_data(self); ticket=b.get('ticket',''); pr=PENDING.get(ticket)
             if not pr or pr['expires']<time.time(): return self.send_json(400,{'error':'expired_approval'})
+            if not owner_approval_verified(ticket,pr):
+                return self.send_json(403,{'error':'owner_verification_required'})
+            # The trusted gateway verified the exact pending scope, challenge and client.
+            # Consume the ticket only after verified approval; prevent replay.
+            PENDING.pop(ticket,None)
             code=secrets.token_urlsafe(32); c=db(); c.execute('INSERT INTO codes(code_hash,client_id,redirect_uri,scope,resource,challenge,expires) VALUES(?,?,?,?,?,?,?)',(digest(code),pr['client_id'],pr['redirect_uri'],pr['scope'],pr['resource'],pr['challenge'],int(time.time())+300)); c.commit(); c.close()
             q={'code':code,'iss':BASE_URL};
             if pr['state']: q['state']=pr['state']
@@ -221,10 +375,21 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json(200,{'jsonrpc':'2.0','id':mid,'result':{'tools':TOOLS}})
             if method=='tools/call':
                 params=b.get('params') or {}; name=params.get('name',''); args=params.get('arguments') or {}
-                scope=required_scope(name); info=token_info(self.headers.get('Authorization',''))
+                scope=required_scope(name)
+                info, reason=token_check(self.headers.get('Authorization',''))
                 if not has_scope(info,scope):
-                    challenge=f'Bearer resource_metadata="{BASE_URL}/.well-known/oauth-protected-resource", scope="{scope}", error="insufficient_scope", error_description="Ci authorization required"'
-                    return self.send_json(200,{'jsonrpc':'2.0','id':mid,'result':{'content':[{'type':'text','text':'Потрібна авторизація Ci Connector.'}],'isError':True,'_meta':{'mcp/www_authenticate':[challenge]}}})
+                    reason=reason or 'insufficient_scope'
+                    status=403 if info else 401
+                    error='insufficient_scope' if info else 'invalid_token'
+                    challenge=f'Bearer resource_metadata="{BASE_URL}/.well-known/oauth-protected-resource", scope="{scope}", error="{error}", error_description="Ci authorization required"'
+                    request_id=secrets.token_hex(8)
+                    self.log_message('auth_denied request_id=%s tool=%s reason=%s required_scope=%s',request_id,name,reason,scope)
+                    result={'content':[{'type':'text','text':f'Ci authorization failed: {reason}; required scope: {scope}; request: {request_id}.'}],
+                            'isError':True,
+                            'structuredContent':{'error':error,'reason':reason,'required_scope':scope,'request_id':request_id},
+                            '_meta':{'mcp/www_authenticate':[challenge]}}
+                    return self.send_json(status,{'jsonrpc':'2.0','id':mid,'result':result},
+                                          {'WWW-Authenticate':challenge})
                 try:
                     res=call_tool(name,args)
                     text=json.dumps(res,ensure_ascii=False,default=str)

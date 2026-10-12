@@ -99,6 +99,43 @@ def token_info(header):
 def has_scope(info,scope):
     return bool(info) and scope in (info.get('scope') or '').split()
 
+def owner_approval_verified(ticket, pending):
+    """Require a live, owner-verified grant for this exact OAuth request.
+
+    Only the trusted local CI.AUTH.GATEWAY implementation may provide
+    verify_oauth_owner_approval. A missing verifier, exception, or a loosely
+    matching assertion fails closed. This function does not issue authority.
+    """
+    verifier = getattr(ci_operator, 'verify_oauth_owner_approval', None)
+    if not callable(verifier):
+        return False
+    binding = {
+        'ticket_digest': digest(ticket),
+        'client_id': pending['client_id'],
+        'redirect_uri': pending['redirect_uri'],
+        'scope': pending['scope'],
+        'resource': pending['resource'],
+        'challenge': pending['challenge'],
+    }
+    try:
+        evidence = verifier(dict(binding))
+    except Exception:
+        return False
+    if not isinstance(evidence, dict):
+        return False
+    now = time.time()
+    return (
+        evidence.get('verified') is True
+        and evidence.get('authority') == 'CI.AUTH.GATEWAY'
+        and evidence.get('user_verified') is True
+        and evidence.get('verification_method') in ('webauthn', 'fido2')
+        and all(evidence.get(key) == value for key, value in binding.items())
+        and isinstance(evidence.get('expires_at'), (int, float))
+        and now < evidence['expires_at'] <= pending['expires']
+        and isinstance(evidence.get('evidence_ref'), str)
+        and len(evidence['evidence_ref']) > 0
+    )
+
 def call_tool(name,args):
     if name=='search': return ci_unit.search(args.get('query',''),args.get('limit',20))
     if name=='fetch': return ci_unified.ci_get(args.get('id',''))
@@ -210,8 +247,13 @@ class H(BaseHTTPRequestHandler):
             cid='ci_'+secrets.token_hex(12); c=db(); c.execute('INSERT INTO clients(client_id,redirect_uris,created_at) VALUES(?,?,?)',(cid,json.dumps(ruris),int(time.time()))); c.commit(); c.close()
             return self.send_json(201,{'client_id':cid,'client_id_issued_at':int(time.time()),'client_secret_expires_at':0,'redirect_uris':ruris,'grant_types':['authorization_code'],'response_types':['code'],'token_endpoint_auth_method':'none'})
         if path=='/oauth/approve':
-            b=request_data(self); ticket=b.get('ticket',''); pr=PENDING.pop(ticket,None)
+            b=request_data(self); ticket=b.get('ticket',''); pr=PENDING.get(ticket)
             if not pr or pr['expires']<time.time(): return self.send_json(400,{'error':'expired_approval'})
+            if not owner_approval_verified(ticket,pr):
+                return self.send_json(403,{'error':'owner_verification_required'})
+            # The trusted gateway verified the exact pending scope, challenge and client.
+            # Consume the ticket only after verified approval; prevent replay.
+            PENDING.pop(ticket,None)
             code=secrets.token_urlsafe(32); c=db(); c.execute('INSERT INTO codes(code_hash,client_id,redirect_uri,scope,resource,challenge,expires) VALUES(?,?,?,?,?,?,?)',(digest(code),pr['client_id'],pr['redirect_uri'],pr['scope'],pr['resource'],pr['challenge'],int(time.time())+300)); c.commit(); c.close()
             q={'code':code,'iss':BASE_URL};
             if pr['state']: q['state']=pr['state']

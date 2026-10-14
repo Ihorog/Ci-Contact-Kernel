@@ -129,6 +129,7 @@ final class CiVoiceController {
         if (wasActive && !closed) callback.onConversationEnded();
     }
 
+    @android.annotation.TargetApi(31)
     private void startListening(boolean preferOffline) {
         if (closed || !conversationActive) return;
         cancelPendingRetry();
@@ -164,6 +165,7 @@ final class CiVoiceController {
         }
     }
 
+    @android.annotation.TargetApi(31)
     private void ensureRecognizer() {
         if (recognizer != null) return;
         recognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(context);

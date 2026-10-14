@@ -324,7 +324,9 @@ public final class CiOverlayService extends Service {
             lastTapUpTime = 0;
             if (pendingSingleTap != null) handler.removeCallbacks(pendingSingleTap);
             pendingSingleTap = null;
-            resetToZeroState();
+            // Double tap is the only explicit voice on/off switch.
+            // No microphone session is started when Ci Point is idle.
+            performCiClick();
             return;
         }
         lastTapUpTime = now;
@@ -337,11 +339,6 @@ public final class CiOverlayService extends Service {
             }
             if (overlayState == OverlayState.DOCKED) {
                 undock(false);
-                return;
-            }
-            if (voiceController != null && voiceController.isConversationActive()) {
-                stopVoiceContact();
-                pulseResult();
                 return;
             }
             showWatchHalo();
@@ -631,7 +628,7 @@ public final class CiOverlayService extends Service {
         if (command == CiGestureRouter.Command.DISMISS_CONTEXT) {
             dismissContextHalo(direction);
         } else if (command == CiGestureRouter.Command.BROWSE_NEWER) {
-            requestContext("context_newer", "left");
+            showLocalCommanderHalo();
         } else if (command == CiGestureRouter.Command.BROWSE_OLDER) {
             requestContext("context_older", "right");
         }
@@ -862,8 +859,43 @@ public final class CiOverlayService extends Service {
         else setState(stableStateFromPrefs());
     }
 
+    private void showLocalCommanderHalo() {
+        stopVoiceContact();
+        invalidateContextRequests();
+        clearResultProjection();
+        org.json.JSONArray cards = new org.json.JSONArray();
+        try {
+            cards.put(new org.json.JSONObject().put("id", "ci-local-context")
+                    .put("label", "Контекст")
+                    .put("context", new org.json.JSONObject().put("intent", "Мій локальний контекст")));
+            cards.put(new org.json.JSONObject().put("id", "ci-local-actions")
+                    .put("label", "Операції")
+                    .put("context", new org.json.JSONObject().put("intent", "Файли, додатки, нагадування")));
+            cards.put(new org.json.JSONObject().put("id", "ci-local-command")
+                    .put("label", " ")
+                    .put("context", new org.json.JSONObject().put("intent", "Я командир: власна команда")));
+            showContextHalo(new org.json.JSONObject().put("cards", cards));
+        } catch (org.json.JSONException ignored) { }
+    }
+
+    private void openLocalOperator(String mode) {
+        invalidateContextRequests();
+        clearContextHalo();
+        Intent intent = new Intent(this, CiOperatorActivity.class);
+        intent.putExtra(CiOperatorActivity.EXTRA_MODE, mode);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try { startActivity(intent); }
+        catch (android.content.ActivityNotFoundException | SecurityException e) {
+            handleVoiceError("local_operator_unavailable");
+        }
+    }
+
     private void handleContextCardTap(CiContextCard card) {
-        if (contextProvider == null || card == null) return;
+        if (card == null) return;
+        if ("ci-local-command".equals(card.id)) { openLocalOperator(CiOperatorActivity.MODE_COMMAND); return; }
+        if ("ci-local-context".equals(card.id)) { openLocalOperator(CiOperatorActivity.MODE_CONTEXT); return; }
+        if ("ci-local-actions".equals(card.id)) { openLocalOperator(CiOperatorActivity.MODE_ACTIONS); return; }
+        if (contextProvider == null) return;
         vibrate();
         final long generation = ++contextGeneration;
         clearContextHalo();

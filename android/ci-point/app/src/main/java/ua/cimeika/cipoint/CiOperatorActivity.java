@@ -136,7 +136,8 @@ public final class CiOperatorActivity extends Activity {
                 || s.contains("нотатки") || s.contains("щоденник")
                 || s.startsWith("запиши ") || s.startsWith("занотуй ") || s.startsWith("нотатка:")
                 || s.contains("файл") || s.contains("відео") || s.contains("фільм")
-                || s.contains("кіно") || s.contains("застосунок") || s.contains("додаток");
+                || s.contains("кіно") || s.contains("застосунок") || s.contains("додаток")
+                || s.startsWith("відкрий ") || s.startsWith("запусти ");
     }
 
     private void executeCommand(String raw) {
@@ -157,6 +158,7 @@ public final class CiOperatorActivity extends Activity {
         if (lower.contains("відео")) { chooseDocument(REQUEST_VIDEO, "video/*"); return; }
         if (lower.contains("файл")) { chooseDocument(REQUEST_OPEN, "*/*"); return; }
         if (lower.contains("додат") || lower.contains("застосун")) { chooseApp(); return; }
+        if (lower.startsWith("відкрий ") || lower.startsWith("запусти ")) { openNamedApp(text); return; }
         new AlertDialog.Builder(this)
                 .setTitle("Локальна команда не визначена")
                 .setMessage("Можна зберегти як особисту нотатку або відкрити Gemma у Box. Автоматичного передавання тексту до Box поки немає.")
@@ -321,22 +323,53 @@ public final class CiOperatorActivity extends Activity {
         catch (ActivityNotFoundException | SecurityException e) { message("Немає сумісного застосунку."); }
     }
 
-    private void chooseApp() {
+    private void openNamedApp(String instruction) {
+        String name = instruction.replaceFirst("(?iu)^(відкрий|запусти)\\s+", "").trim()
+                .toLowerCase(new Locale("uk"));
+        if (name.isEmpty()) { chooseApp(); return; }
+        List<ResolveInfo> matching = new ArrayList<>();
+        for (ResolveInfo app : listApps()) {
+            String label = app.loadLabel(getPackageManager()).toString().toLowerCase(new Locale("uk"));
+            if (label.equals(name) || label.contains(name)) matching.add(app);
+        }
+        if (matching.size() == 1) {
+            openResolvedApp(matching.get(0));
+        } else if (!matching.isEmpty()) {
+            chooseFromApps(matching);
+        } else {
+            message("Застосунок за назвою не знайдено. Обери зі списку.");
+            chooseApp();
+        }
+    }
+
+    private List<ResolveInfo> listApps() {
         Intent launcher = new Intent(Intent.ACTION_MAIN);
         launcher.addCategory(Intent.CATEGORY_LAUNCHER);
         List<ResolveInfo> apps = new ArrayList<>(getPackageManager().queryIntentActivities(launcher, 0));
-        Collections.sort(apps, Comparator.comparing(a -> a.loadLabel(getPackageManager()).toString().toLowerCase(Locale.ROOT)));
+        Collections.sort(apps, Comparator.comparing(a ->
+                a.loadLabel(getPackageManager()).toString().toLowerCase(Locale.ROOT)));
+        return apps;
+    }
+
+    private void openResolvedApp(ResolveInfo app) {
+        Intent intent = new Intent(Intent.ACTION_MAIN);
+        intent.addCategory(Intent.CATEGORY_LAUNCHER);
+        intent.setClassName(app.activityInfo.packageName, app.activityInfo.name);
+        launch(intent);
+    }
+
+    private void chooseApp() {
+        chooseFromApps(listApps());
+    }
+
+    private void chooseFromApps(List<ResolveInfo> apps) {
         if (apps.isEmpty()) { message("Android не надав список застосунків."); return; }
         String[] labels = new String[apps.size()];
         for (int i = 0; i < apps.size(); i++) labels[i] = apps.get(i).loadLabel(getPackageManager()).toString();
         new AlertDialog.Builder(this)
                 .setTitle("Відкрити застосунок")
                 .setItems(labels, (dialog, which) -> {
-                    ResolveInfo app = apps.get(which);
-                    Intent launch = new Intent(Intent.ACTION_MAIN);
-                    launch.addCategory(Intent.CATEGORY_LAUNCHER);
-                    launch.setClassName(app.activityInfo.packageName, app.activityInfo.name);
-                    launch(launch);
+                    openResolvedApp(apps.get(which));
                 })
                 .setNegativeButton("Скасувати", null).show();
     }

@@ -105,7 +105,9 @@ final class CiContextHalo {
         card.setMaxLines(2);
         card.setEllipsize(android.text.TextUtils.TruncateAt.END);
         card.setPadding(dp(24), dp(8), dp(24), dp(8));
-        card.setContentDescription("Сі: " + model.label);
+        card.setContentDescription("ci-local-command".equals(model.id)
+                ? "Я командир: власний контекст або команда"
+                : "Сі: " + model.label);
         card.setBackground(backgroundFor(model));
         card.setElevation(dp(14));
         card.setAlpha(0f);

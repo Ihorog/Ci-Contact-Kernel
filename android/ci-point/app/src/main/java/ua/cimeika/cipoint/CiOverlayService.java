@@ -117,6 +117,11 @@ public final class CiOverlayService extends Service {
             @Override public void onListeningChanged(boolean listening) { handler.post(() -> handleVoiceListening(listening)); }
             @Override public void onConversationEnded() { handler.post(() -> handleVoiceConversationEnded()); }
             @Override public void onTranscript(String text) { handler.post(() -> handleVoiceTranscript(text)); }
+            @Override public boolean onLocalCommand(String text) {
+                if (!CiOperatorActivity.supportsCommand(text)) return false;
+                handler.post(() -> openLocalCommand(text));
+                return true;
+            }
             @Override public void onResult(org.json.JSONObject result) { handler.post(() -> handleVoiceResult(result)); }
             @Override public void onError(String error) { handler.post(() -> handleVoiceError(error)); }
         });
@@ -876,6 +881,18 @@ public final class CiOverlayService extends Service {
                     .put("context", new org.json.JSONObject().put("intent", "Я командир: власна команда")));
             showContextHalo(new org.json.JSONObject().put("cards", cards));
         } catch (org.json.JSONException ignored) { }
+    }
+
+    private void openLocalCommand(String text) {
+        invalidateContextRequests();
+        clearContextHalo();
+        Intent intent = new Intent(this, CiOperatorActivity.class);
+        intent.putExtra(CiOperatorActivity.EXTRA_COMMAND_TEXT, text);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try { startActivity(intent); }
+        catch (android.content.ActivityNotFoundException | SecurityException e) {
+            handleVoiceError("local_command_unavailable");
+        }
     }
 
     private void openLocalOperator(String mode) {

@@ -66,6 +66,7 @@ public final class CiOverlayService extends Service {
     private CiGestureRouter gestureRouter;
     private CiSwipeVisualLayer swipeVisuals;
     private CiExternalAssistantAdapter externalAssistant;
+    private CiBoxRuntime boxRuntime;
     private org.json.JSONObject lastDisplayableResult;
     private long contextGeneration;
     private long interactionGeneration;
@@ -106,6 +107,7 @@ public final class CiOverlayService extends Service {
         gestureRouter = new CiGestureRouter();
         swipeVisuals = new CiSwipeVisualLayer(this, windowManager);
         externalAssistant = new ChatGptAndroidAdapter(this);
+        boxRuntime = new CiBoxRuntime(this);
         contextHalo = new CiContextHalo(this, windowManager, new CiContextHalo.Callback() {
             @Override public void onCardTap(CiContextCard card) { handler.post(() -> handleContextCardTap(card)); }
             @Override public void onCardSwipe(CiContextCard card, String direction) { handler.post(() -> handleContextCardSwipe(card, direction)); }
@@ -168,6 +170,7 @@ public final class CiOverlayService extends Service {
         if (swipeVisuals != null) swipeVisuals.clear();
         swipeVisuals = null;
         externalAssistant = null;
+        boxRuntime = null;
         clearContextHalo();
         contextHalo = null;
         clearWatchHalo();
@@ -744,6 +747,16 @@ public final class CiOverlayService extends Service {
             ciLogo.setScaleY(1f);
             ciLogo.setTranslationZ(dp(8));
         }
+        // Box runs Gemma locally. Open the existing installation without
+        // requesting private model files or modifying the Box package.
+        // Until Box offers an inference API, the user starts Voice in Box.
+        if (boxRuntime != null && boxRuntime.open()) {
+            if (voiceController != null && voiceController.isConversationActive()) {
+                voiceController.stop();
+            }
+            return;
+        }
+        // Preserve Ci's existing voice flow on devices without Box.
         performCiClick();
     }
 

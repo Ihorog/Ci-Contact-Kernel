@@ -202,10 +202,13 @@ public final class CiOperatorActivity extends Activity {
             pendingExport = "";
             return;
         }
-        int grants = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        // Persist only the permitted read grant. Editing happens during this
+        // user-initiated picker session and still requires overwrite confirmation.
         try {
-            if ("content".equals(uri.getScheme()) && grants != 0) {
-                getContentResolver().takePersistableUriPermission(uri, grants);
+            if ("content".equals(uri.getScheme())
+                    && (data.getFlags() & Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0) {
+                getContentResolver().takePersistableUriPermission(
+                        uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
             }
         } catch (SecurityException ignored) { /* Provider may not persist grants. */ }
         if (requestCode == REQUEST_EDIT) {

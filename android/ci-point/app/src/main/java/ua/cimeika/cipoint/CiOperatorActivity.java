@@ -10,11 +10,8 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.provider.AlarmClock;
 import android.provider.CalendarContract;
-import android.provider.DocumentsContract;
-import android.content.ContentResolver;
 import android.content.Context;
 import android.view.Gravity;
-import android.view.View;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
@@ -42,6 +39,7 @@ import java.util.regex.Pattern;
  */
 public final class CiOperatorActivity extends Activity {
     static final String EXTRA_MODE = "ci_mode";
+    static final String EXTRA_COMMAND_TEXT = "ci_command_text";
     static final String MODE_COMMAND = "command";
     static final String MODE_FILES = "files";
     static final String MODE_ACTIONS = "actions";
@@ -89,6 +87,7 @@ public final class CiOperatorActivity extends Activity {
         addButton(root, "Виконати команду", () -> executeCommand(command.getText().toString()));
         addButton(root, "Знайти / відкрити файл", () -> chooseDocument(REQUEST_OPEN, "*/*"));
         addButton(root, "Редагувати текстовий файл", () -> chooseDocument(REQUEST_EDIT, "text/*"));
+        addButton(root, "Зберегти зміни відкритого файлу", this::confirmOverwrite);
         addButton(root, "Зберегти текст у новий файл", this::createTextDocument);
         addButton(root, "Мої нотатки / щоденник", this::showNotes);
         addButton(root, "Знайти відеофайл і вибрати плеєр", () -> chooseDocument(REQUEST_VIDEO, "video/*"));
@@ -104,6 +103,12 @@ public final class CiOperatorActivity extends Activity {
         root.addView(status);
 
         setContentView(scroll);
+        String incomingCommand = getIntent().getStringExtra(EXTRA_COMMAND_TEXT);
+        if (incomingCommand != null && !incomingCommand.trim().isEmpty()) {
+            command.setText(incomingCommand);
+            command.post(() -> executeCommand(incomingCommand));
+            return;
+        }
         String mode = getIntent().getStringExtra(EXTRA_MODE);
         if (MODE_FILES.equals(mode)) chooseDocument(REQUEST_OPEN, "*/*");
         else if (MODE_CONTEXT.equals(mode)) showNotes();
@@ -122,6 +127,16 @@ public final class CiOperatorActivity extends Activity {
         b.setAllCaps(false);
         root.addView(b, new LinearLayout.LayoutParams(-1, -2));
         b.setOnClickListener(v -> callback.run());
+    }
+
+    static boolean supportsCommand(String raw) {
+        if (raw == null) return false;
+        String s = raw.trim().toLowerCase(new Locale("uk"));
+        return s.contains("будильник") || s.contains("нагадай") || s.contains("нагадування")
+                || s.contains("нотатки") || s.contains("щоденник")
+                || s.startsWith("запиши ") || s.startsWith("занотуй ") || s.startsWith("нотатка:")
+                || s.contains("файл") || s.contains("відео") || s.contains("фільм")
+                || s.contains("кіно") || s.contains("застосунок") || s.contains("додаток");
     }
 
     private void executeCommand(String raw) {
@@ -222,7 +237,7 @@ public final class CiOperatorActivity extends Activity {
     }
 
     private void confirmOverwrite() {
-        if (editingUri == null) return;
+        if (editingUri == null) { message("Спочатку вибери файл через «Редагувати текстовий файл»."); return; }
         new AlertDialog.Builder(this)
                 .setTitle("Перезаписати файл?")
                 .setMessage("Попередній вміст вибраного файлу буде замінено.")

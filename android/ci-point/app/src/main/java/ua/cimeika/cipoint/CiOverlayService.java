@@ -66,6 +66,7 @@ public final class CiOverlayService extends Service {
     private CiGestureRouter gestureRouter;
     private CiSwipeVisualLayer swipeVisuals;
     private CiExternalAssistantAdapter externalAssistant;
+    private CiBoxRuntime boxRuntime;
     private org.json.JSONObject lastDisplayableResult;
     private long contextGeneration;
     private long interactionGeneration;
@@ -106,6 +107,7 @@ public final class CiOverlayService extends Service {
         gestureRouter = new CiGestureRouter();
         swipeVisuals = new CiSwipeVisualLayer(this, windowManager);
         externalAssistant = new ChatGptAndroidAdapter(this);
+        boxRuntime = new CiBoxRuntime(this);
         contextHalo = new CiContextHalo(this, windowManager, new CiContextHalo.Callback() {
             @Override public void onCardTap(CiContextCard card) { handler.post(() -> handleContextCardTap(card)); }
             @Override public void onCardSwipe(CiContextCard card, String direction) { handler.post(() -> handleContextCardSwipe(card, direction)); }
@@ -115,6 +117,11 @@ public final class CiOverlayService extends Service {
             @Override public void onListeningChanged(boolean listening) { handler.post(() -> handleVoiceListening(listening)); }
             @Override public void onConversationEnded() { handler.post(() -> handleVoiceConversationEnded()); }
             @Override public void onTranscript(String text) { handler.post(() -> handleVoiceTranscript(text)); }
+            @Override public boolean onLocalCommand(String text) {
+                if (!CiOperatorActivity.supportsCommand(text)) return false;
+                handler.post(() -> openLocalCommand(text));
+                return true;
+            }
             @Override public void onResult(org.json.JSONObject result) { handler.post(() -> handleVoiceResult(result)); }
             @Override public void onError(String error) { handler.post(() -> handleVoiceError(error)); }
         });
@@ -168,6 +175,7 @@ public final class CiOverlayService extends Service {
         if (swipeVisuals != null) swipeVisuals.clear();
         swipeVisuals = null;
         externalAssistant = null;
+        boxRuntime = null;
         clearContextHalo();
         contextHalo = null;
         clearWatchHalo();
@@ -321,7 +329,9 @@ public final class CiOverlayService extends Service {
             lastTapUpTime = 0;
             if (pendingSingleTap != null) handler.removeCallbacks(pendingSingleTap);
             pendingSingleTap = null;
-            resetToZeroState();
+            // Double tap is the only explicit voice on/off switch.
+            // No microphone session is started when Ci Point is idle.
+            performCiClick();
             return;
         }
         lastTapUpTime = now;
@@ -334,11 +344,6 @@ public final class CiOverlayService extends Service {
             }
             if (overlayState == OverlayState.DOCKED) {
                 undock(false);
-                return;
-            }
-            if (voiceController != null && voiceController.isConversationActive()) {
-                stopVoiceContact();
-                pulseResult();
                 return;
             }
             showWatchHalo();
@@ -628,7 +633,7 @@ public final class CiOverlayService extends Service {
         if (command == CiGestureRouter.Command.DISMISS_CONTEXT) {
             dismissContextHalo(direction);
         } else if (command == CiGestureRouter.Command.BROWSE_NEWER) {
-            requestContext("context_newer", "left");
+            showLocalCommanderHalo();
         } else if (command == CiGestureRouter.Command.BROWSE_OLDER) {
             requestContext("context_older", "right");
         }
@@ -744,6 +749,16 @@ public final class CiOverlayService extends Service {
             ciLogo.setScaleY(1f);
             ciLogo.setTranslationZ(dp(8));
         }
+        // Box runs Gemma locally. Open the existing installation without
+        // requesting private model files or modifying the Box package.
+        // Until Box offers an inference API, the user starts Voice in Box.
+        if (boxRuntime != null && boxRuntime.open()) {
+            if (voiceController != null && voiceController.isConversationActive()) {
+                voiceController.stop();
+            }
+            return;
+        }
+        // Preserve Ci's existing voice flow on devices without Box.
         performCiClick();
     }
 
@@ -849,8 +864,55 @@ public final class CiOverlayService extends Service {
         else setState(stableStateFromPrefs());
     }
 
+    private void showLocalCommanderHalo() {
+        stopVoiceContact();
+        invalidateContextRequests();
+        clearResultProjection();
+        org.json.JSONArray cards = new org.json.JSONArray();
+        try {
+            cards.put(new org.json.JSONObject().put("id", "ci-local-context")
+                    .put("label", "Контекст")
+                    .put("context", new org.json.JSONObject().put("intent", "Мій локальний контекст")));
+            cards.put(new org.json.JSONObject().put("id", "ci-local-actions")
+                    .put("label", "Операції")
+                    .put("context", new org.json.JSONObject().put("intent", "Файли, додатки, нагадування")));
+            cards.put(new org.json.JSONObject().put("id", "ci-local-command")
+                    .put("label", " ")
+                    .put("context", new org.json.JSONObject().put("intent", "Я командир: власна команда")));
+            showContextHalo(new org.json.JSONObject().put("cards", cards));
+        } catch (org.json.JSONException ignored) { }
+    }
+
+    private void openLocalCommand(String text) {
+        invalidateContextRequests();
+        clearContextHalo();
+        Intent intent = new Intent(this, CiOperatorActivity.class);
+        intent.putExtra(CiOperatorActivity.EXTRA_COMMAND_TEXT, text);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try { startActivity(intent); }
+        catch (android.content.ActivityNotFoundException | SecurityException e) {
+            handleVoiceError("local_command_unavailable");
+        }
+    }
+
+    private void openLocalOperator(String mode) {
+        invalidateContextRequests();
+        clearContextHalo();
+        Intent intent = new Intent(this, CiOperatorActivity.class);
+        intent.putExtra(CiOperatorActivity.EXTRA_MODE, mode);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try { startActivity(intent); }
+        catch (android.content.ActivityNotFoundException | SecurityException e) {
+            handleVoiceError("local_operator_unavailable");
+        }
+    }
+
     private void handleContextCardTap(CiContextCard card) {
-        if (contextProvider == null || card == null) return;
+        if (card == null) return;
+        if ("ci-local-command".equals(card.id)) { openLocalOperator(CiOperatorActivity.MODE_COMMAND); return; }
+        if ("ci-local-context".equals(card.id)) { openLocalOperator(CiOperatorActivity.MODE_CONTEXT); return; }
+        if ("ci-local-actions".equals(card.id)) { openLocalOperator(CiOperatorActivity.MODE_ACTIONS); return; }
+        if (contextProvider == null) return;
         vibrate();
         final long generation = ++contextGeneration;
         clearContextHalo();

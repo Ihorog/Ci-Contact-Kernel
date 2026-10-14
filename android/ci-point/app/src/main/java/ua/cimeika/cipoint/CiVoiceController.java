@@ -31,6 +31,7 @@ final class CiVoiceController {
         void onListeningChanged(boolean listening);
         void onConversationEnded();
         void onTranscript(String text);
+        boolean onLocalCommand(String text);
         void onResult(JSONObject result);
         void onError(String error);
     }
@@ -68,8 +69,12 @@ final class CiVoiceController {
                 @Override public void onDone(String utteranceId) {
                     mainHandler.post(() -> {
                         if (closed || !conversationActive) return;
-                        resumeAfterSpeech = false;
-                        stopConversation();
+                        if (resumeAfterSpeech) {
+                            resumeAfterSpeech = false;
+                            startListening(true);
+                        } else {
+                            stopConversation();
+                        }
                     });
                 }
 
@@ -124,14 +129,18 @@ final class CiVoiceController {
         if (wasActive && !closed) callback.onConversationEnded();
     }
 
+    @android.annotation.TargetApi(31)
     private void startListening(boolean preferOffline) {
         if (closed || !conversationActive) return;
         cancelPendingRetry();
         listenRequestId++;
         preferOfflineActive = preferOffline;
-        if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+        // Only use Android's on-device recognition; never silently switch
+        // to a cloud speech recognizer while Ci is in local mode.
+        if (android.os.Build.VERSION.SDK_INT < 31
+                || !SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) {
             stopConversation();
-            callback.onError("speech_recognizer_unavailable");
+            callback.onError("on_device_speech_unavailable");
             return;
         }
         ensureRecognizer();
@@ -156,9 +165,10 @@ final class CiVoiceController {
         }
     }
 
+    @android.annotation.TargetApi(31)
     private void ensureRecognizer() {
         if (recognizer != null) return;
-        recognizer = SpeechRecognizer.createSpeechRecognizer(context);
+        recognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(context);
         recognizer.setRecognitionListener(new RecognitionListener() {
             @Override public void onReadyForSpeech(Bundle params) {
                 if (!closed && conversationActive) setListening(true);
@@ -181,11 +191,10 @@ final class CiVoiceController {
                 setListening(false);
                 if (!conversationActive) return;
 
-                if ((error == SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED
-                        || error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE)
-                        && preferOfflineActive) {
-                    try { recognizer.cancel(); } catch (Exception ignored) { }
-                    scheduleRetry(false, 180L);
+                if (error == SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED
+                        || error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE) {
+                    stopConversation();
+                    callback.onError("on_device_ukrainian_unavailable");
                     return;
                 }
 
@@ -222,7 +231,11 @@ final class CiVoiceController {
                     return;
                 }
                 callback.onTranscript(text);
-                submit(text);
+                if (callback.onLocalCommand(text)) {
+                    stopConversation(); // Android UI confirms the requested device operation.
+                } else {
+                    submit(text); // Existing Ci network path; not an inference API for Box.
+                }
             }
 
             @Override public void onPartialResults(Bundle partialResults) { }
@@ -330,7 +343,9 @@ final class CiVoiceController {
             stopConversation();
             return;
         }
-        resumeAfterSpeech = false;
+        // Only an explicitly started voice session may return to listening.
+        // Inactivity and recognizer errors still stop the microphone.
+        resumeAfterSpeech = true;
         try {
             tts.speak(
                     value,

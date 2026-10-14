@@ -54,7 +54,8 @@ final class CiContextCard {
 
         String intent = context.optString("intent", "").trim();
         String label = raw.optString("label", intent).trim();
-        if (label.isEmpty()) label = intent.isEmpty() ? "Сі" : intent;
+        if ("ci-local-command".equals(raw.optString("id", ""))) label = ""; // Blank command cell by design.
+        else if (label.isEmpty()) label = intent.isEmpty() ? "Сі" : intent;
 
         return new CiContextCard(
                 raw.optString("id", "ci-card"),

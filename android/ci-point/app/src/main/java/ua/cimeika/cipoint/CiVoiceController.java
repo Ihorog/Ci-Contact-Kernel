@@ -68,8 +68,12 @@ final class CiVoiceController {
                 @Override public void onDone(String utteranceId) {
                     mainHandler.post(() -> {
                         if (closed || !conversationActive) return;
-                        resumeAfterSpeech = false;
-                        stopConversation();
+                        if (resumeAfterSpeech) {
+                            resumeAfterSpeech = false;
+                            startListening(true);
+                        } else {
+                            stopConversation();
+                        }
                     });
                 }
 
@@ -330,7 +334,9 @@ final class CiVoiceController {
             stopConversation();
             return;
         }
-        resumeAfterSpeech = false;
+        // Only an explicitly started voice session may return to listening.
+        // Inactivity and recognizer errors still stop the microphone.
+        resumeAfterSpeech = true;
         try {
             tts.speak(
                     value,
